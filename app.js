@@ -1,8 +1,18 @@
-const STORAGE_KEY = "gyosei-app-data-v2";
-const LEGACY_CASES_KEY = "gyosei-cases";
+const STORAGE_KEY = "gyosei-app-data-v3";
+const LEGACY_STORAGE_KEYS = ["gyosei-app-data-v2", "gyosei-cases"];
 const STATUS_ORDER = ["未着手", "進行中", "完了"];
 
-const state = loadState();
+const state = {
+  cases: [],
+  sales: [],
+  expenses: [],
+};
+
+const editState = {
+  caseId: null,
+  saleId: null,
+  expenseId: null,
+};
 
 const tabs = Array.from(document.querySelectorAll(".tab-btn"));
 const panels = {
@@ -17,154 +27,271 @@ const caseForm = document.getElementById("case-form");
 const caseList = document.getElementById("case-list");
 const caseEmpty = document.getElementById("case-empty");
 const clearBtn = document.getElementById("clear-btn");
+const caseSubmitBtn = caseForm.querySelector('button[type="submit"]');
 
 const saleForm = document.getElementById("sale-form");
 const saleCaseSelect = document.getElementById("sale-case-id");
 const salesList = document.getElementById("sales-list");
 const salesEmpty = document.getElementById("sales-empty");
+const saleSubmitBtn = saleForm.querySelector('button[type="submit"]');
 
 const expenseForm = document.getElementById("expense-form");
 const expenseCaseSelect = document.getElementById("expense-case-id");
 const expensesList = document.getElementById("expenses-list");
 const expensesEmpty = document.getElementById("expenses-empty");
+const expenseSubmitBtn = expenseForm.querySelector('button[type="submit"]');
 
 const caseItemTemplate = document.getElementById("case-item-template");
 const saleItemTemplate = document.getElementById("sale-item-template");
 const expenseItemTemplate = document.getElementById("expense-item-template");
 
-bindEvents();
-renderAll();
+initialize();
+
+function initialize() {
+  const loaded = loadData();
+  state.cases = loaded.cases;
+  state.sales = loaded.sales;
+  state.expenses = loaded.expenses;
+
+  bindEvents();
+  renderAll();
+}
 
 function bindEvents() {
   tabs.forEach((btn) => {
     btn.addEventListener("click", () => activateTab(btn.dataset.tab));
   });
 
-  caseForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const customerName = caseForm.elements.customerName.value.trim();
-    const caseName = caseForm.elements.caseName.value.trim();
-    if (!customerName || !caseName) return;
-
-    state.cases.push({
-      id: crypto.randomUUID(),
-      customerName,
-      caseName,
-      estimateAmount: normalizeAmount(caseForm.elements.amount.value),
-      receivedDate: caseForm.elements.receivedDate.value || "",
-      dueDate: caseForm.elements.dueDate.value || "",
-      status: normalizeStatus(caseForm.elements.status.value),
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-
-    persist();
-    caseForm.reset();
-    caseForm.elements.status.value = "未着手";
-    renderAll();
-  });
+  caseForm.addEventListener("submit", handleCaseSubmit);
+  saleForm.addEventListener("submit", handleSaleSubmit);
+  expenseForm.addEventListener("submit", handleExpenseSubmit);
 
   clearBtn.addEventListener("click", () => {
+    if (!window.confirm("案件・売上・経費の全データを削除します。よろしいですか？")) return;
     state.cases = [];
     state.sales = [];
     state.expenses = [];
-    persist();
+    resetEditMode("case");
+    resetEditMode("sale");
+    resetEditMode("expense");
+    saveData();
     renderAll();
   });
 
-  caseList.addEventListener("click", (event) => {
-    const btn = event.target;
-    if (!(btn instanceof HTMLButtonElement) || !btn.classList.contains("delete-btn")) return;
-    const item = btn.closest(".item");
-    if (!item) return;
+  caseList.addEventListener("click", handleCaseListAction);
+  salesList.addEventListener("click", handleSalesListAction);
+  expensesList.addEventListener("click", handleExpensesListAction);
+}
 
-    const id = item.dataset.id;
-    state.cases = state.cases.filter((c) => c.id !== id);
-    state.sales = state.sales.filter((s) => s.caseId !== id);
-    state.expenses = state.expenses.filter((e) => e.caseId !== id);
-    persist();
-    renderAll();
-  });
+function handleCaseSubmit(event) {
+  event.preventDefault();
 
-  saleForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (!state.cases.length) return;
+  const customerName = caseForm.elements.customerName.value.trim();
+  const caseName = caseForm.elements.caseName.value.trim();
+  if (!customerName || !caseName) return;
 
-    const invoiceAmount = normalizeAmount(document.getElementById("invoice-amount").value);
-    if (invoiceAmount === null) return;
+  const payload = {
+    customerName,
+    caseName,
+    estimateAmount: normalizeAmount(caseForm.elements.amount.value),
+    receivedDate: caseForm.elements.receivedDate.value || "",
+    dueDate: caseForm.elements.dueDate.value || "",
+    status: normalizeStatus(caseForm.elements.status.value),
+    updatedAt: Date.now(),
+  };
 
-    const isUnpaidChecked = document.getElementById("is-unpaid").checked;
-    const paidAmount = normalizeAmount(document.getElementById("paid-amount").value);
+  if (editState.caseId) {
+    const index = state.cases.findIndex((item) => item.id === editState.caseId);
+    if (index !== -1) {
+      state.cases[index] = { ...state.cases[index], ...payload };
+    }
+  } else {
+    state.cases.push({
+      id: crypto.randomUUID(),
+      ...payload,
+      createdAt: Date.now(),
+    });
+  }
 
+  resetCaseForm();
+  saveData();
+  renderAll();
+}
+
+function handleSaleSubmit(event) {
+  event.preventDefault();
+  if (!state.cases.length) return;
+
+  const invoiceAmount = normalizeAmount(saleForm.elements.invoiceAmount.value);
+  if (invoiceAmount === null) return;
+
+  const paidAmount = normalizeAmount(saleForm.elements.paidAmount.value);
+
+  const payload = {
+    caseId: saleCaseSelect.value,
+    invoiceAmount,
+    paidAmount,
+    paidDate: saleForm.elements.paidDate.value || "",
+    isUnpaid: saleForm.elements.isUnpaid.checked || (paidAmount ?? 0) < invoiceAmount,
+  };
+
+  if (!payload.caseId) return;
+
+  if (editState.saleId) {
+    const index = state.sales.findIndex((item) => item.id === editState.saleId);
+    if (index !== -1) {
+      state.sales[index] = {
+        ...state.sales[index],
+        ...payload,
+        updatedAt: Date.now(),
+      };
+    }
+  } else {
     state.sales.push({
       id: crypto.randomUUID(),
-      caseId: saleCaseSelect.value,
-      invoiceAmount,
-      paidAmount,
-      paidDate: document.getElementById("paid-date").value || "",
-      isUnpaid: isUnpaidChecked || (paidAmount ?? 0) < invoiceAmount,
+      ...payload,
       createdAt: Date.now(),
     });
+  }
 
-    persist();
-    saleForm.reset();
-    renderAll();
-  });
+  resetSaleForm();
+  saveData();
+  renderAll();
+}
 
-  salesList.addEventListener("click", (event) => {
-    const btn = event.target;
-    if (!(btn instanceof HTMLButtonElement) || !btn.classList.contains("delete-btn")) return;
-    const item = btn.closest(".item");
-    if (!item) return;
+function handleExpenseSubmit(event) {
+  event.preventDefault();
 
-    const id = item.dataset.id;
-    state.sales = state.sales.filter((s) => s.id !== id);
-    persist();
-    renderAll();
-  });
+  const date = expenseForm.elements.expenseDate.value;
+  const content = expenseForm.elements.expenseContent.value.trim();
+  const amount = normalizeAmount(expenseForm.elements.expenseAmount.value);
 
-  expenseForm.addEventListener("submit", (event) => {
-    event.preventDefault();
+  if (!date || !content || amount === null) return;
 
-    const date = document.getElementById("expense-date").value;
-    const content = document.getElementById("expense-content").value.trim();
-    const amount = normalizeAmount(document.getElementById("expense-amount").value);
+  const payload = {
+    date,
+    content,
+    amount,
+    caseId: expenseCaseSelect.value || null,
+  };
 
-    if (!date || !content || amount === null) return;
-
+  if (editState.expenseId) {
+    const index = state.expenses.findIndex((item) => item.id === editState.expenseId);
+    if (index !== -1) {
+      state.expenses[index] = {
+        ...state.expenses[index],
+        ...payload,
+        updatedAt: Date.now(),
+      };
+    }
+  } else {
     state.expenses.push({
       id: crypto.randomUUID(),
-      date,
-      content,
-      amount,
-      caseId: expenseCaseSelect.value || null,
+      ...payload,
       createdAt: Date.now(),
     });
+  }
 
-    persist();
-    expenseForm.reset();
+  resetExpenseForm();
+  saveData();
+  renderAll();
+}
+
+function handleCaseListAction(event) {
+  const btn = event.target;
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const item = btn.closest(".item");
+  if (!item) return;
+  const id = item.dataset.id;
+
+  if (btn.classList.contains("edit-btn")) {
+    const target = state.cases.find((entry) => entry.id === id);
+    if (!target) return;
+    editState.caseId = target.id;
+    caseForm.elements.customerName.value = target.customerName;
+    caseForm.elements.caseName.value = target.caseName;
+    caseForm.elements.amount.value = target.estimateAmount ?? "";
+    caseForm.elements.receivedDate.value = target.receivedDate || "";
+    caseForm.elements.dueDate.value = target.dueDate || "";
+    caseForm.elements.status.value = normalizeStatus(target.status);
+    caseSubmitBtn.textContent = "案件を更新";
+    return;
+  }
+
+  if (btn.classList.contains("delete-btn")) {
+    if (!window.confirm("この案件を削除しますか？関連する売上・経費も削除されます。")) return;
+    state.cases = state.cases.filter((entry) => entry.id !== id);
+    state.sales = state.sales.filter((entry) => entry.caseId !== id);
+    state.expenses = state.expenses.filter((entry) => entry.caseId !== id);
+    if (editState.caseId === id) resetCaseForm();
+    saveData();
     renderAll();
-  });
+  }
+}
 
-  expensesList.addEventListener("click", (event) => {
-    const btn = event.target;
-    if (!(btn instanceof HTMLButtonElement) || !btn.classList.contains("delete-btn")) return;
-    const item = btn.closest(".item");
-    if (!item) return;
+function handleSalesListAction(event) {
+  const btn = event.target;
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const item = btn.closest(".item");
+  if (!item) return;
+  const id = item.dataset.id;
 
-    const id = item.dataset.id;
-    state.expenses = state.expenses.filter((e) => e.id !== id);
-    persist();
+  if (btn.classList.contains("edit-btn")) {
+    const target = state.sales.find((entry) => entry.id === id);
+    if (!target) return;
+    editState.saleId = target.id;
+    saleCaseSelect.value = target.caseId;
+    saleForm.elements.invoiceAmount.value = target.invoiceAmount;
+    saleForm.elements.paidAmount.value = target.paidAmount ?? "";
+    saleForm.elements.paidDate.value = target.paidDate || "";
+    saleForm.elements.isUnpaid.checked = Boolean(target.isUnpaid);
+    saleSubmitBtn.textContent = "売上を更新";
+    return;
+  }
+
+  if (btn.classList.contains("delete-btn")) {
+    if (!window.confirm("この売上を削除しますか？")) return;
+    state.sales = state.sales.filter((entry) => entry.id !== id);
+    if (editState.saleId === id) resetSaleForm();
+    saveData();
     renderAll();
-  });
+  }
+}
+
+function handleExpensesListAction(event) {
+  const btn = event.target;
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const item = btn.closest(".item");
+  if (!item) return;
+  const id = item.dataset.id;
+
+  if (btn.classList.contains("edit-btn")) {
+    const target = state.expenses.find((entry) => entry.id === id);
+    if (!target) return;
+    editState.expenseId = target.id;
+    expenseForm.elements.expenseDate.value = target.date;
+    expenseForm.elements.expenseContent.value = target.content;
+    expenseForm.elements.expenseAmount.value = target.amount;
+    expenseCaseSelect.value = target.caseId || "";
+    expenseSubmitBtn.textContent = "経費を更新";
+    return;
+  }
+
+  if (btn.classList.contains("delete-btn")) {
+    if (!window.confirm("この経費を削除しますか？")) return;
+    state.expenses = state.expenses.filter((entry) => entry.id !== id);
+    if (editState.expenseId === id) resetExpenseForm();
+    saveData();
+    renderAll();
+  }
 }
 
 function renderAll() {
-  renderDashboard();
   renderCaseOptions();
   renderCases();
   renderSales();
   renderExpenses();
+  renderDashboard();
 }
 
 function activateTab(tabKey) {
@@ -186,7 +313,7 @@ function renderDashboard() {
 
   summaryGrid.innerHTML = "";
   [
-    { label: `対象月`, value: monthLabel(currentMonth), cls: "" },
+    { label: "対象月", value: monthLabel(currentMonth), cls: "" },
     { label: "月別売上合計", value: formatCurrency(sales), cls: "" },
     { label: "月別経費合計", value: formatCurrency(expenses), cls: "" },
     { label: "利益（売上−経費）", value: formatCurrency(profit), cls: "profit" },
@@ -232,7 +359,7 @@ function renderCases() {
 
 function renderSales() {
   salesList.innerHTML = "";
-  const sorted = state.sales.slice().sort((a, b) => b.createdAt - a.createdAt);
+  const sorted = state.sales.slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
 
   sorted.forEach((sale) => {
     const node = saleItemTemplate.content.cloneNode(true);
@@ -240,11 +367,9 @@ function renderSales() {
     const title = node.querySelector(".title");
     const meta = node.querySelector(".meta");
 
-    const caseName = resolveCaseName(sale.caseId);
     item.dataset.id = sale.id;
-    title.textContent = `${caseName}｜請求: ${formatCurrency(sale.invoiceAmount)}`;
+    title.textContent = `${resolveCaseName(sale.caseId)}｜請求: ${formatCurrency(sale.invoiceAmount)}`;
     meta.textContent = `入金: ${formatCurrency(sale.paidAmount)} / 入金日: ${formatDate(sale.paidDate)} / 未入金: ${sale.isUnpaid ? "はい" : "いいえ"}`;
-
     salesList.appendChild(node);
   });
 
@@ -266,7 +391,6 @@ function renderExpenses() {
     item.dataset.id = expense.id;
     title.textContent = `${formatDate(expense.date)}｜${expense.content}`;
     meta.textContent = `金額: ${formatCurrency(expense.amount)} / 紐付け: ${expense.caseId ? resolveCaseName(expense.caseId) : "なし"}`;
-
     expensesList.appendChild(node);
   });
 
@@ -277,6 +401,31 @@ function resolveCaseName(caseId) {
   const found = state.cases.find((c) => c.id === caseId);
   if (!found) return "（削除済み案件）";
   return `${found.customerName}｜${found.caseName}`;
+}
+
+function resetCaseForm() {
+  resetEditMode("case");
+  caseForm.reset();
+  caseForm.elements.status.value = "未着手";
+  caseSubmitBtn.textContent = "案件を追加";
+}
+
+function resetSaleForm() {
+  resetEditMode("sale");
+  saleForm.reset();
+  saleSubmitBtn.textContent = "売上を登録";
+}
+
+function resetExpenseForm() {
+  resetEditMode("expense");
+  expenseForm.reset();
+  expenseSubmitBtn.textContent = "経費を登録";
+}
+
+function resetEditMode(target) {
+  if (target === "case") editState.caseId = null;
+  if (target === "sale") editState.saleId = null;
+  if (target === "expense") editState.expenseId = null;
 }
 
 function sortCases(a, b) {
@@ -350,27 +499,30 @@ function escapeHtml(text) {
     .replaceAll("'", "&#039;");
 }
 
-function persist() {
+function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function loadState() {
+function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return sanitizeState(parsed);
-    }
+    if (raw) return sanitizeData(JSON.parse(raw));
 
-    const legacyRaw = localStorage.getItem(LEGACY_CASES_KEY);
-    const legacyCases = legacyRaw ? JSON.parse(legacyRaw) : [];
-    return sanitizeState({ cases: legacyCases, sales: [], expenses: [] });
+    const oldV2Raw = localStorage.getItem(LEGACY_STORAGE_KEYS[0]);
+    if (oldV2Raw) return sanitizeData(JSON.parse(oldV2Raw));
+
+    const legacyCasesRaw = localStorage.getItem(LEGACY_STORAGE_KEYS[1]);
+    if (legacyCasesRaw) {
+      return sanitizeData({ cases: JSON.parse(legacyCasesRaw), sales: [], expenses: [] });
+    }
   } catch {
     return { cases: [], sales: [], expenses: [] };
   }
+
+  return { cases: [], sales: [], expenses: [] };
 }
 
-function sanitizeState(input) {
+function sanitizeData(input) {
   const safe = input && typeof input === "object" ? input : {};
   const cases = Array.isArray(safe.cases) ? safe.cases : [];
   const sales = Array.isArray(safe.sales) ? safe.sales : [];
@@ -404,6 +556,7 @@ function sanitizeState(input) {
           paidDate: String(s.paidDate || ""),
           isUnpaid: Boolean(s.isUnpaid) || (paidAmount ?? 0) < (invoiceAmount ?? 0),
           createdAt: Number.isFinite(s.createdAt) ? s.createdAt : Date.now(),
+          updatedAt: Number.isFinite(s.updatedAt) ? s.updatedAt : Date.now(),
         };
       })
       .filter((s) => s.caseId),
@@ -416,6 +569,7 @@ function sanitizeState(input) {
         amount: normalizeAmount(e.amount) ?? 0,
         caseId: e.caseId ? String(e.caseId) : null,
         createdAt: Number.isFinite(e.createdAt) ? e.createdAt : Date.now(),
+        updatedAt: Number.isFinite(e.updatedAt) ? e.updatedAt : Date.now(),
       }))
       .filter((e) => e.date && e.content),
   };

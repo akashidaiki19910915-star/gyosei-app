@@ -81,22 +81,22 @@
             <form id="sale-form" class="form">
               <label>
                 対象案件 <span class="required">必須</span>
-                <select id="sale-case-id" required></select>
+                <select id="sale-case-id" name="saleCaseId" required></select>
               </label>
               <label>
                 請求額（円） <span class="required">必須</span>
-                <input id="invoice-amount" type="number" min="0" step="1" required />
+                <input id="invoice-amount" name="invoiceAmount" type="number" min="0" step="1" required />
               </label>
               <label>
                 入金額（円）
-                <input id="paid-amount" type="number" min="0" step="1" />
+                <input id="paid-amount" name="paidAmount" type="number" min="0" step="1" />
               </label>
               <label>
                 入金日
-                <input id="paid-date" type="date" />
+                <input id="paid-date" name="paidDate" type="date" />
               </label>
               <label class="checkbox">
-                <input id="is-unpaid" type="checkbox" />
+                <input id="is-unpaid" name="isUnpaid" type="checkbox" />
                 未入金フラグを立てる
               </label>
               <button type="submit">売上を登録</button>
@@ -119,20 +119,20 @@
               <div class="date-grid">
                 <label>
                   日付 <span class="required">必須</span>
-                  <input id="expense-date" type="date" required />
+                  <input id="expense-date" name="expenseDate" type="date" required />
                 </label>
                 <label>
                   案件（任意）
-                  <select id="expense-case-id"></select>
+                  <select id="expense-case-id" name="expenseCaseId"></select>
                 </label>
               </div>
               <label>
                 内容 <span class="required">必須</span>
-                <input id="expense-content" type="text" maxlength="120" placeholder="例：交通費、印紙代" required />
+                <input id="expense-content" name="expenseContent" type="text" maxlength="120" placeholder="例：交通費、印紙代" required />
               </label>
               <label>
                 金額（円） <span class="required">必須</span>
-                <input id="expense-amount" type="number" min="0" step="1" required />
+                <input id="expense-amount" name="expenseAmount" type="number" min="0" step="1" required />
               </label>
               <button type="submit">経費を登録</button>
             </form>
@@ -153,7 +153,7 @@
           <p class="title"></p>
           <p class="meta"></p>
         </div>
-        <button type="button" class="danger-btn delete-btn">削除</button>
+        <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
       </li>
     </template>
 
@@ -163,7 +163,7 @@
           <p class="title"></p>
           <p class="meta"></p>
         </div>
-        <button type="button" class="danger-btn delete-btn">削除</button>
+        <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
       </li>
     </template>
 
@@ -173,7 +173,7 @@
           <p class="title"></p>
           <p class="meta"></p>
         </div>
-        <button type="button" class="danger-btn delete-btn">削除</button>
+        <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
       </li>
     </template>
 
