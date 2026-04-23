@@ -1,12 +1,14 @@
 :root {
-  --bg: #f7f8fb;
+  --bg: #f3f6fb;
   --card: #ffffff;
   --text: #1f2937;
-  --muted: #6b7280;
-  --primary: #2563eb;
-  --primary-dark: #1d4ed8;
-  --border: #e5e7eb;
-  --ok: #16a34a;
+  --muted: #5b6475;
+  --primary: #2159d6;
+  --primary-dark: #1a46aa;
+  --border: #dbe2ee;
+  --danger: #d12f2f;
+  --danger-dark: #ac2222;
+  --focus: #90b4ff;
 }
 
 * {
@@ -15,44 +17,52 @@
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", system-ui, sans-serif;
   background: var(--bg);
   color: var(--text);
+  line-height: 1.5;
 }
 
 .top-bar {
-  padding: 1.25rem 1rem;
+  padding: 1.2rem 1rem;
   background: var(--card);
   border-bottom: 1px solid var(--border);
 }
 
 .top-bar h1 {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: 1.5rem;
 }
 
 .top-bar p {
-  margin: 0.25rem 0 0;
+  margin: 0.35rem 0 0;
   color: var(--muted);
 }
 
 .layout {
-  max-width: 900px;
+  max-width: 1080px;
   margin: 1rem auto;
-  padding: 0 1rem 1rem;
+  padding: 0 1rem 1.2rem;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 1rem;
 }
 
 .panel {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 1rem;
 }
 
-.form {
+h2 {
+  margin-top: 0;
+  margin-bottom: 0.8rem;
+  font-size: 1.15rem;
+}
+
+.form,
+.edit-form {
   display: grid;
   gap: 0.75rem;
 }
@@ -60,19 +70,23 @@ body {
 label {
   display: grid;
   gap: 0.35rem;
-  font-size: 0.92rem;
+  font-size: 0.93rem;
+}
+
+.required {
+  color: #b42318;
+  font-size: 0.82rem;
+  margin-left: 0.35rem;
 }
 
 input,
 select,
-textarea,
 button {
   font: inherit;
 }
 
 input,
-select,
-textarea {
+select {
   width: 100%;
   padding: 0.6rem 0.65rem;
   border: 1px solid var(--border);
@@ -80,10 +94,17 @@ textarea {
   background: #fff;
 }
 
+input:focus,
+select:focus,
+button:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
 button {
   border: 0;
   border-radius: 8px;
-  padding: 0.6rem 0.8rem;
+  padding: 0.58rem 0.8rem;
   background: var(--primary);
   color: #fff;
   cursor: pointer;
@@ -93,53 +114,122 @@ button:hover {
   background: var(--primary-dark);
 }
 
+.ghost-btn {
+  background: #e9eefb;
+  color: #1d3e89;
+}
+
+.ghost-btn:hover {
+  background: #d9e4fb;
+}
+
+.danger-btn {
+  background: var(--danger);
+}
+
+.danger-btn:hover {
+  background: var(--danger-dark);
+}
+
 .panel-title-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
-.ghost-btn {
-  background: #eef2ff;
-  color: #1e3a8a;
+.actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
-.request-list {
+.case-list {
   list-style: none;
   margin: 0.75rem 0 0;
   padding: 0;
   display: grid;
+  gap: 0.8rem;
+}
+
+.case-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.8rem;
+  background: #fcfdff;
+}
+
+.case-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 0.7rem;
 }
 
-.request-item {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.75rem;
+.case-name {
+  margin: 0.45rem 0;
+  font-weight: 600;
 }
 
-.request-meta {
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  padding: 0.2rem 0.55rem;
+  color: #fff;
+  background: #6b7280;
+}
+
+.status-badge[data-status="未着手"] {
+  background: #475467;
+}
+
+.status-badge[data-status="進行中"] {
+  background: #1d4ed8;
+}
+
+.status-badge[data-status="完了"] {
+  background: #1e8b4d;
+}
+
+.meta-grid {
   display: grid;
-  gap: 0.2rem;
-}
-
-.request-meta .service,
-.request-meta .created,
-.empty,
-.notes {
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.35rem;
   color: var(--muted);
+  font-size: 0.9rem;
 }
 
-.notes {
-  margin: 0.55rem 0;
+.item-actions,
+.edit-actions {
+  margin-top: 0.65rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
-.done-btn {
-  background: var(--ok);
+.save-btn {
+  background: #198754;
+}
+
+.save-btn:hover {
+  background: #11653f;
+}
+
+.date-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
 }
 
 .empty {
   margin-top: 0.75rem;
-  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .date-grid {
+    grid-template-columns: 1fr;
+  }
 }
