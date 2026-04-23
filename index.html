@@ -1,66 +1,131 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Admin Services MVP</title>
+    <title>行政書士案件管理</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <header class="top-bar">
-      <h1>Administrative Services</h1>
-      <p>Fast request tracking for daily admin work.</p>
+      <h1>行政書士 案件管理</h1>
+      <p>ローカルで動く、軽量な案件管理ツール</p>
     </header>
 
     <main class="layout">
       <section class="panel">
-        <h2>New Request</h2>
-        <form id="request-form" class="form">
+        <h2>新規案件登録</h2>
+        <form id="case-form" class="form">
           <label>
-            Requester
-            <input id="requester" name="requester" type="text" required maxlength="60" />
+            顧客名 <span class="required">必須</span>
+            <input id="customer-name" name="customerName" type="text" required maxlength="80" />
           </label>
 
           <label>
-            Service Type
-            <select id="service" name="service" required>
-              <option value="">Select a service</option>
-              <option>Document Processing</option>
-              <option>Scheduling</option>
-              <option>Travel Approval</option>
-              <option>Facilities Support</option>
+            案件名 <span class="required">必須</span>
+            <input id="case-name" name="caseName" type="text" required maxlength="120" />
+          </label>
+
+          <label>
+            金額（円）
+            <input id="amount" name="amount" type="number" min="0" step="1" placeholder="例: 50000" />
+          </label>
+
+          <div class="date-grid">
+            <label>
+              受付日
+              <input id="received-date" name="receivedDate" type="date" />
+            </label>
+
+            <label>
+              期限日
+              <input id="due-date" name="dueDate" type="date" />
+            </label>
+          </div>
+
+          <label>
+            ステータス
+            <select id="status" name="status">
+              <option value="未着手">未着手</option>
+              <option value="進行中">進行中</option>
+              <option value="完了">完了</option>
             </select>
           </label>
 
-          <label>
-            Notes
-            <textarea id="notes" name="notes" rows="4" maxlength="300" placeholder="Short context..."></textarea>
-          </label>
-
-          <button type="submit">Add Request</button>
+          <button type="submit">案件を追加</button>
         </form>
       </section>
 
       <section class="panel">
         <div class="panel-title-row">
-          <h2>Open Requests</h2>
-          <button id="clear-btn" type="button" class="ghost-btn">Clear All</button>
+          <h2>案件一覧（期限順）</h2>
+          <div class="actions">
+            <button id="csv-btn" type="button" class="ghost-btn">CSV出力</button>
+            <button id="clear-btn" type="button" class="danger-btn">全件削除</button>
+          </div>
         </div>
 
-        <div id="empty-state" class="empty">No requests yet.</div>
-        <ul id="request-list" class="request-list" aria-live="polite"></ul>
+        <div id="empty-state" class="empty">案件はまだ登録されていません。</div>
+        <ul id="case-list" class="case-list" aria-live="polite"></ul>
       </section>
     </main>
 
-    <template id="request-template">
-      <li class="request-item">
-        <div class="request-meta">
-          <strong class="requester"></strong>
-          <span class="service"></span>
-          <small class="created"></small>
+    <template id="case-template">
+      <li class="case-item">
+        <div class="case-main">
+          <div class="case-header">
+            <strong class="customer-name"></strong>
+            <span class="status-badge"></span>
+          </div>
+          <p class="case-name"></p>
+          <div class="meta-grid">
+            <span class="amount"></span>
+            <span class="received-date"></span>
+            <span class="due-date"></span>
+          </div>
         </div>
-        <p class="notes"></p>
-        <button class="done-btn" type="button">Mark Done</button>
+
+        <form class="edit-form" hidden>
+          <label>
+            顧客名
+            <input name="customerName" type="text" required maxlength="80" />
+          </label>
+          <label>
+            案件名
+            <input name="caseName" type="text" required maxlength="120" />
+          </label>
+          <label>
+            金額（円）
+            <input name="amount" type="number" min="0" step="1" />
+          </label>
+          <div class="date-grid">
+            <label>
+              受付日
+              <input name="receivedDate" type="date" />
+            </label>
+            <label>
+              期限日
+              <input name="dueDate" type="date" />
+            </label>
+          </div>
+          <label>
+            ステータス
+            <select name="status">
+              <option value="未着手">未着手</option>
+              <option value="進行中">進行中</option>
+              <option value="完了">完了</option>
+            </select>
+          </label>
+          <div class="edit-actions">
+            <button type="submit" class="save-btn">保存</button>
+            <button type="button" class="cancel-btn ghost-btn">キャンセル</button>
+          </div>
+        </form>
+
+        <div class="item-actions">
+          <button type="button" class="edit-btn">編集</button>
+          <button type="button" class="delete-btn danger-btn">削除</button>
+        </div>
       </li>
     </template>
 
