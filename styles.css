@@ -161,3 +161,20 @@ button:hover { background: var(--primary-dark); }
   .date-grid { grid-template-columns: 1fr; }
   .item { flex-direction: column; }
 }
+
+.secondary-btn {
+  background: #4b5563;
+}
+
+.secondary-btn:hover {
+  background: #374151;
+}
+
+.row-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.row-actions button {
+  white-space: nowrap;
+}
