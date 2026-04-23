@@ -1,4 +1,4 @@
-const STORAGE_KEY = "gyosei-app-data-v3";
+const DATA_STORAGE_KEY = "gyosei-app-data-v3";
 const LEGACY_STORAGE_KEYS = ["gyosei-app-data-v2", "gyosei-cases"];
 const STATUS_ORDER = ["未着手", "進行中", "完了"];
 
@@ -54,7 +54,11 @@ function initialize() {
   state.expenses = loaded.expenses;
 
   bindEvents();
-  renderAll();
+  renderCaseOptions();
+  renderCases();
+  renderSales();
+  renderExpenses();
+  renderDashboard();
 }
 
 function bindEvents() {
@@ -75,7 +79,7 @@ function bindEvents() {
     resetEditMode("sale");
     resetEditMode("expense");
     saveData();
-    renderAll();
+    renderAfterDataChanged();
   });
 
   caseList.addEventListener("click", handleCaseListAction);
@@ -115,7 +119,7 @@ function handleCaseSubmit(event) {
 
   resetCaseForm();
   saveData();
-  renderAll();
+  renderAfterDataChanged();
 }
 
 function handleSaleSubmit(event) {
@@ -156,7 +160,7 @@ function handleSaleSubmit(event) {
 
   resetSaleForm();
   saveData();
-  renderAll();
+  renderAfterDataChanged();
 }
 
 function handleExpenseSubmit(event) {
@@ -194,7 +198,7 @@ function handleExpenseSubmit(event) {
 
   resetExpenseForm();
   saveData();
-  renderAll();
+  renderAfterDataChanged();
 }
 
 function handleCaseListAction(event) {
@@ -225,7 +229,7 @@ function handleCaseListAction(event) {
     state.expenses = state.expenses.filter((entry) => entry.caseId !== id);
     if (editState.caseId === id) resetCaseForm();
     saveData();
-    renderAll();
+    renderAfterDataChanged();
   }
 }
 
@@ -254,7 +258,7 @@ function handleSalesListAction(event) {
     state.sales = state.sales.filter((entry) => entry.id !== id);
     if (editState.saleId === id) resetSaleForm();
     saveData();
-    renderAll();
+    renderAfterDataChanged();
   }
 }
 
@@ -282,11 +286,11 @@ function handleExpensesListAction(event) {
     state.expenses = state.expenses.filter((entry) => entry.id !== id);
     if (editState.expenseId === id) resetExpenseForm();
     saveData();
-    renderAll();
+    renderAfterDataChanged();
   }
 }
 
-function renderAll() {
+function renderAfterDataChanged() {
   renderCaseOptions();
   renderCases();
   renderSales();
@@ -339,6 +343,7 @@ function renderCaseOptions() {
 }
 
 function renderCases() {
+  if (!caseList || !caseEmpty || !caseItemTemplate) return;
   caseList.innerHTML = "";
   const sorted = state.cases.slice().sort(sortCases);
 
@@ -358,6 +363,7 @@ function renderCases() {
 }
 
 function renderSales() {
+  if (!salesList || !salesEmpty || !saleItemTemplate) return;
   salesList.innerHTML = "";
   const sorted = state.sales.slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
 
@@ -377,6 +383,7 @@ function renderSales() {
 }
 
 function renderExpenses() {
+  if (!expensesList || !expensesEmpty || !expenseItemTemplate) return;
   expensesList.innerHTML = "";
   const sorted = state.expenses
     .slice()
@@ -500,20 +507,26 @@ function escapeHtml(text) {
 }
 
 function saveData() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(state));
 }
 
 function loadData() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(DATA_STORAGE_KEY);
     if (raw) return sanitizeData(JSON.parse(raw));
 
     const oldV2Raw = localStorage.getItem(LEGACY_STORAGE_KEYS[0]);
-    if (oldV2Raw) return sanitizeData(JSON.parse(oldV2Raw));
+    if (oldV2Raw) {
+      const migrated = sanitizeData(JSON.parse(oldV2Raw));
+      localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(migrated));
+      return migrated;
+    }
 
     const legacyCasesRaw = localStorage.getItem(LEGACY_STORAGE_KEYS[1]);
     if (legacyCasesRaw) {
-      return sanitizeData({ cases: JSON.parse(legacyCasesRaw), sales: [], expenses: [] });
+      const migrated = sanitizeData({ cases: JSON.parse(legacyCasesRaw), sales: [], expenses: [] });
+      localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(migrated));
+      return migrated;
     }
   } catch {
     return { cases: [], sales: [], expenses: [] };
