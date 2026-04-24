@@ -2,7 +2,14 @@ const SUPABASE_URL = "https://ueelzyftlbnvjvpsmpyt.supabase.co";
 const SUPABASE_KEY = "sb_publishable_0DrKsieUcCyEZN_HRg8LhQ_QqFTPMtp";
 const STATUS_ORDER = ["未着手", "進行中", "完了"];
 
-const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storageKey: "gyosei-app-auth",
+  },
+});
 
 const state = {
   cases: [],
@@ -69,6 +76,18 @@ let loadingCount = 0;
 let isResuming = false;
 
 initialize();
+
+if (window.location.protocol === "file:") {
+  document.body.innerHTML = `
+    <main class="auth-container">
+      <section class="panel auth-panel">
+        <h1>このアプリは https:// で開いてください</h1>
+        <p class="auth-caption">GitHub Pages などの HTTPS 環境でのみ、Supabase Auth のログイン状態を正しく保持できます。</p>
+      </section>
+    </main>
+  `;
+  throw new Error("file:// では Supabase Auth を利用できません。HTTPS で配信してください。");
+}
 
 async function initialize() {
   setLoading(true);
