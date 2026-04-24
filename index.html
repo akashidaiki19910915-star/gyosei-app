@@ -111,6 +111,28 @@
 
         <section class="dashboard panel">
           <h2>ダッシュボード</h2>
+          <section id="deadline-alert-card" class="deadline-alert-card" aria-live="polite">
+            <div class="deadline-alert-header">
+              <h3>期限アラート</h3>
+            </div>
+            <div id="deadline-alert-summary" class="deadline-alert-summary"></div>
+            <div id="deadline-alert-empty" class="empty">期限アラートはありません。</div>
+            <div id="deadline-alert-list-wrap" class="table-wrap" hidden>
+              <table class="deadline-alert-table">
+                <thead>
+                  <tr>
+                    <th>顧客名</th>
+                    <th>案件名</th>
+                    <th>期限日</th>
+                    <th>ステータス</th>
+                    <th>残り日数</th>
+                    <th>編集</th>
+                  </tr>
+                </thead>
+                <tbody id="deadline-alert-body"></tbody>
+              </table>
+            </div>
+          </section>
           <section class="status-summary-card" aria-labelledby="status-summary-heading">
             <div class="status-summary-header">
               <h3 id="status-summary-heading">ステータス別案件数</h3>

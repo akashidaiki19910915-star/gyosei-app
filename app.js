@@ -2,6 +2,7 @@ const SUPABASE_URL = "https://ueelzyftlbnvjvpsmpyt.supabase.co";
 const SUPABASE_KEY = "sb_publishable_0DrKsieUcCyEZN_HRg8LhQ_QqFTPMtp";
 const STATUS_ORDER = ["未着手", "進行中", "完了"];
 const STATUS_FILTER_KEYS = [...STATUS_ORDER, "その他"];
+const DEADLINE_FILTER_KEYS = ["all", "overdue", "within7", "within30"];
 
 const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
@@ -80,6 +81,11 @@ const unpaidListWrap = document.getElementById("unpaid-list-wrap");
 const statusSummaryList = document.getElementById("status-summary-list");
 const statusSummaryTotal = document.getElementById("status-summary-total");
 const statusFilterClearBtn = document.getElementById("status-filter-clear-btn");
+const deadlineAlertCard = document.getElementById("deadline-alert-card");
+const deadlineAlertSummary = document.getElementById("deadline-alert-summary");
+const deadlineAlertBody = document.getElementById("deadline-alert-body");
+const deadlineAlertEmpty = document.getElementById("deadline-alert-empty");
+const deadlineAlertListWrap = document.getElementById("deadline-alert-list-wrap");
 
 const caseForm = document.getElementById("case-form");
 const caseList = document.getElementById("case-list");
@@ -196,6 +202,8 @@ function bindEvents() {
   aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
   statusSummaryList?.addEventListener("click", handleStatusSummaryClick);
   statusFilterClearBtn?.addEventListener("click", () => applyCaseStatusFilter("all"));
+  deadlineAlertSummary?.addEventListener("click", handleDeadlineAlertClick);
+  deadlineAlertBody?.addEventListener("click", handleDeadlineAlertClick);
   caseSearchInput?.addEventListener("input", handleCaseSearchInput);
   caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
   caseDeadlineFilterSelect?.addEventListener("change", handleCaseDeadlineFilterChange);
@@ -260,9 +268,7 @@ function handleCaseStatusFilterChange(event) {
 }
 
 function handleCaseDeadlineFilterChange(event) {
-  const next = event?.target?.value;
-  state.caseDeadlineFilter = ["all", "overdue", "within7", "within30"].includes(next) ? next : "all";
-  renderCases();
+  applyCaseDeadlineFilter(event?.target?.value || "all");
 }
 
 function clearCaseFilters() {
@@ -271,6 +277,26 @@ function clearCaseFilters() {
   applyCaseStatusFilter("all");
   if (caseSearchInput) caseSearchInput.value = "";
   if (caseDeadlineFilterSelect) caseDeadlineFilterSelect.value = "all";
+  renderCases();
+}
+
+function handleDeadlineAlertClick(event) {
+  const button = event.target.closest("button");
+  if (!(button instanceof HTMLButtonElement)) return;
+  const filter = button.dataset.deadlineFilter;
+  if (filter) {
+    applyCaseDeadlineFilter(filter, { activateCases: true });
+    return;
+  }
+  const caseId = button.dataset.caseId;
+  if (caseId) startCaseEdit(caseId);
+}
+
+function applyCaseDeadlineFilter(nextFilter, options = {}) {
+  const normalizedFilter = DEADLINE_FILTER_KEYS.includes(nextFilter) ? nextFilter : "all";
+  state.caseDeadlineFilter = normalizedFilter;
+  if (caseDeadlineFilterSelect) caseDeadlineFilterSelect.value = normalizedFilter;
+  if (options.activateCases) activateTab("cases");
   renderCases();
 }
 
@@ -578,16 +604,7 @@ async function handleCaseListAction(event) {
   const id = item.dataset.id;
 
   if (btn.classList.contains("edit-btn")) {
-    const target = state.cases.find((entry) => entry.id === id);
-    if (!target) return;
-    editState.caseId = target.id;
-    caseForm.elements.customerName.value = target.customerName;
-    caseForm.elements.caseName.value = target.caseName;
-    caseForm.elements.amount.value = target.estimateAmount ?? "";
-    caseForm.elements.receivedDate.value = target.receivedDate || "";
-    caseForm.elements.dueDate.value = target.dueDate || "";
-    caseForm.elements.status.value = normalizeStatus(target.status);
-    caseSubmitBtn.textContent = "案件を更新";
+    startCaseEdit(id);
     return;
   }
 
@@ -620,6 +637,21 @@ async function handleCaseListAction(event) {
       await refreshAfterMutation("案件を削除しました。");
     }, "案件と関連データの削除に失敗しました。");
   }
+}
+
+function startCaseEdit(caseId) {
+  const target = state.cases.find((entry) => entry.id === caseId);
+  if (!target) return;
+  activateTab("cases");
+  editState.caseId = target.id;
+  caseForm.elements.customerName.value = target.customerName;
+  caseForm.elements.caseName.value = target.caseName;
+  caseForm.elements.amount.value = target.estimateAmount ?? "";
+  caseForm.elements.receivedDate.value = target.receivedDate || "";
+  caseForm.elements.dueDate.value = target.dueDate || "";
+  caseForm.elements.status.value = normalizeStatus(target.status);
+  caseSubmitBtn.textContent = "案件を更新";
+  caseForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function handleSalesListAction(event) {
@@ -1064,6 +1096,7 @@ function renderDashboard() {
     div.innerHTML = `<p class="label">${card.label}</p><p class="value">${card.value}</p>`;
     summaryGrid.appendChild(div);
   });
+  renderDeadlineAlertCard();
   renderStatusSummaryCard();
 
   renderUnpaidAlert({
@@ -1079,6 +1112,83 @@ function renderDashboard() {
     year: state.selectedYear,
   });
   renderUnpaidList();
+}
+
+function renderDeadlineAlertCard() {
+  if (!deadlineAlertCard || !deadlineAlertSummary || !deadlineAlertBody || !deadlineAlertEmpty || !deadlineAlertListWrap) return;
+  const targets = getDeadlineAlertTargets();
+  const counts = { overdue: 0, within7: 0, within30: 0 };
+  targets.forEach((item) => {
+    counts[item.deadlineStatus] += 1;
+  });
+
+  deadlineAlertCard.classList.toggle("has-alert", targets.length > 0);
+  deadlineAlertSummary.innerHTML = "";
+
+  [
+    { key: "overdue", label: "期限切れ", count: counts.overdue },
+    { key: "within7", label: "7日以内", count: counts.within7 },
+    { key: "within30", label: "30日以内", count: counts.within30 },
+  ].forEach((entry) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `deadline-alert-chip ${entry.key}`;
+    button.dataset.deadlineFilter = entry.key;
+    button.textContent = `${entry.label}: ${entry.count}件`;
+    button.disabled = entry.count === 0;
+    deadlineAlertSummary.appendChild(button);
+  });
+
+  deadlineAlertBody.innerHTML = "";
+  deadlineAlertEmpty.hidden = targets.length > 0;
+  deadlineAlertListWrap.hidden = targets.length === 0;
+  if (!targets.length) return;
+
+  targets
+    .slice()
+    .sort((a, b) => {
+      if (a.remainingDays !== b.remainingDays) return a.remainingDays - b.remainingDays;
+      return sortCases(a, b);
+    })
+    .forEach((entry) => {
+      const tr = document.createElement("tr");
+      tr.className =
+        entry.deadlineStatus === "overdue" ? "deadline-overdue" :
+        entry.deadlineStatus === "within7" ? "deadline-within7" :
+        "deadline-within30";
+      tr.innerHTML = `
+        <td>${escapeHtml(entry.customerName)}</td>
+        <td>${escapeHtml(entry.caseName)}</td>
+        <td>${formatDate(entry.dueDate)}</td>
+        <td>${escapeHtml(entry.status)}</td>
+        <td>${formatRemainingDays(entry.remainingDays)}</td>
+        <td><button type="button" class="secondary-btn" data-case-id="${entry.id}">編集</button></td>
+      `;
+      deadlineAlertBody.appendChild(tr);
+    });
+}
+
+function getDeadlineAlertTargets() {
+  return state.cases
+    .map((entry) => {
+      const info = getCaseDeadlineInfo(entry);
+      if (!info) return null;
+      return { ...entry, ...info };
+    })
+    .filter(Boolean);
+}
+
+function getCaseDeadlineInfo(entry) {
+  if (!entry?.dueDate) return null;
+  if (getStatusCategory(entry.status) === "完了") return null;
+  const dueTimestamp = toDateOnlyTimestamp(entry.dueDate);
+  const todayTimestamp = getTodayTimestamp();
+  if (!Number.isFinite(dueTimestamp) || !Number.isFinite(todayTimestamp)) return null;
+  const remainingDays = Math.floor((dueTimestamp - todayTimestamp) / 86400000);
+  if (remainingDays < 0) return { deadlineStatus: "overdue", remainingDays };
+  if (remainingDays <= 7) return { deadlineStatus: "within7", remainingDays };
+  if (remainingDays <= 30) return { deadlineStatus: "within30", remainingDays };
+  return null;
 }
 
 function renderStatusSummaryCard() {
@@ -1610,16 +1720,40 @@ function matchesCaseSearch(entry, query) {
 
 function matchesDeadlineFilter(entry, filterKey) {
   if (filterKey === "all") return true;
-  const dueTimestamp = toSortTimestamp(entry.dueDate);
-  if (!Number.isFinite(dueTimestamp) || dueTimestamp === Number.MAX_SAFE_INTEGER) return false;
+  const info = getCaseDeadlineInfo(entry);
+  if (!info) return false;
+  if (filterKey === "overdue") return info.deadlineStatus === "overdue";
+  if (filterKey === "within7") return info.deadlineStatus === "within7";
+  if (filterKey === "within30") return info.deadlineStatus === "within30" || info.deadlineStatus === "within7";
+  return true;
+}
+
+function getTodayTimestamp() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayTimestamp = today.getTime();
-  const diffDays = Math.floor((dueTimestamp - todayTimestamp) / (1000 * 60 * 60 * 24));
-  if (filterKey === "overdue") return diffDays < 0;
-  if (filterKey === "within7") return diffDays >= 0 && diffDays <= 7;
-  if (filterKey === "within30") return diffDays >= 0 && diffDays <= 30;
-  return true;
+  return today.getTime();
+}
+
+function toDateOnlyTimestamp(value) {
+  if (!value) return Number.NaN;
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [yearText, monthText, dayText] = value.split("-");
+    const year = Number(yearText);
+    const monthIndex = Number(monthText) - 1;
+    const day = Number(dayText);
+    return new Date(year, monthIndex, day).getTime();
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return Number.NaN;
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function formatRemainingDays(remainingDays) {
+  if (!Number.isFinite(remainingDays)) return "-";
+  if (remainingDays < 0) return `${Math.abs(remainingDays)}日超過`;
+  if (remainingDays === 0) return "今日まで";
+  return `残り${remainingDays}日`;
 }
 
 function getSalesPaymentLabel(sale) {
