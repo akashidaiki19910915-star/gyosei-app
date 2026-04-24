@@ -102,7 +102,7 @@ if (window.location.protocol === "file:") {
 }
 
 async function initialize() {
-  setLoading(true);
+  showLoading(true);
   setAuthControlsDisabled(true);
   try {
     bindEvents();
@@ -115,7 +115,7 @@ async function initialize() {
     await applyAuthState();
 
     sbClient.auth.onAuthStateChange(async (_event, sessionState) => {
-      setLoading(true);
+      showLoading(true);
       try {
         currentUser = sessionState?.user ?? null;
         await applyAuthState();
@@ -123,7 +123,7 @@ async function initialize() {
         console.error("認証状態の更新に失敗しました。", error);
         showAuthMessage("認証状態の確認に失敗しました。ページを再読み込みしてください。", true);
       } finally {
-        setLoading(false);
+        showLoading(false);
       }
     });
   } catch (error) {
@@ -132,7 +132,7 @@ async function initialize() {
     authView.hidden = false;
     appView.hidden = true;
   } finally {
-    setLoading(false);
+    showLoading(false);
     setAuthControlsDisabled(false);
   }
 }
@@ -158,6 +158,7 @@ function bindEvents() {
   aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("focus", handleWindowFocus);
+  window.addEventListener("pageshow", handlePageShow);
   exportCasesCsvBtn?.addEventListener("click", handleExportCasesCsv);
   exportSalesCsvBtn?.addEventListener("click", handleExportSalesCsv);
   exportExpensesCsvBtn?.addEventListener("click", handleExportExpensesCsv);
@@ -187,18 +188,25 @@ function handleTargetYearChange(event) {
 
 async function handleVisibilityChange() {
   if (document.hidden) return;
+  showLoading(false);
   await handleResumeRefresh("visibilitychange");
 }
 
 async function handleWindowFocus() {
+  showLoading(false);
   await handleResumeRefresh("focus");
+}
+
+async function handlePageShow() {
+  showLoading(false);
+  await handleResumeRefresh("pageshow");
 }
 
 async function handleResumeRefresh(trigger) {
   if (!currentUser || isResuming) return;
 
   isResuming = true;
-  setLoading(true);
+  showLoading(true);
   try {
     await loadAllData();
     renderAfterDataChanged();
@@ -207,7 +215,7 @@ async function handleResumeRefresh(trigger) {
     showAppMessage("画面復帰時のデータ更新に失敗しました。", true);
   } finally {
     isResuming = false;
-    setLoading(false);
+    showLoading(false);
   }
 }
 
@@ -751,7 +759,7 @@ async function handleCsvImportSubmit(event) {
   if (!window.confirm(`「${file.name}」を${importTypeToLabel(importType)}として取り込みます。よろしいですか？`)) return;
 
   await withLoading(async () => {
-    const text = await file.text();
+    const text = await readCsvFileTextWithEncodingFallback(file);
     const result = await importCsvByType(importType, text);
     await loadAllData();
     renderAfterDataChanged();
@@ -1227,6 +1235,35 @@ function parseCsvText(text) {
   return rows;
 }
 
+async function readCsvFileTextWithEncodingFallback(file) {
+  const buffer = await file.arrayBuffer();
+  let utf8Text = "";
+  try {
+    utf8Text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch (_error) {
+    utf8Text = "";
+  }
+
+  if (utf8Text && !isLikelyMojibake(utf8Text)) return utf8Text;
+
+  try {
+    const shiftJisText = new TextDecoder("shift_jis").decode(buffer);
+    if (shiftJisText) return shiftJisText;
+  } catch (_error) {
+    // shift_jis decode failed: fall through to utf-8 tolerant decode
+  }
+
+  return utf8Text || new TextDecoder("utf-8").decode(buffer);
+}
+
+function isLikelyMojibake(text) {
+  if (!text) return false;
+  if (text.includes("\uFFFD")) return true;
+  const suspiciousPattern = /(?:Ã.|Â.|ã.|�)/g;
+  const suspiciousMatches = text.match(suspiciousPattern);
+  return Boolean(suspiciousMatches && suspiciousMatches.length >= 3);
+}
+
 function sanitizeHeader(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -1539,7 +1576,7 @@ async function ensureMonthlyFixedExpenses() {
 }
 
 async function withLoading(task, fallbackMessage, authArea = false) {
-  setLoading(true);
+  showLoading(true);
   try {
     clearAppMessage();
     if (authArea) showAuthMessage("", false);
@@ -1553,11 +1590,11 @@ async function withLoading(task, fallbackMessage, authArea = false) {
       showAppMessage(`${fallbackMessage}\n詳細: ${message}`, true);
     }
   } finally {
-    setLoading(false);
+    showLoading(false);
   }
 }
 
-function setLoading(isLoading) {
+function showLoading(isLoading) {
   if (!loadingOverlay) return;
 
   if (isLoading) {
@@ -1568,6 +1605,10 @@ function setLoading(isLoading) {
 
   loadingCount = Math.max(0, loadingCount - 1);
   loadingOverlay.hidden = true;
+}
+
+function setLoading(isLoading) {
+  showLoading(isLoading);
 }
 
 function clearLoadingState() {
