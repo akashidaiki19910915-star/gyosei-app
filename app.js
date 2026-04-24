@@ -464,11 +464,30 @@ async function handleCaseListAction(event) {
     if (!window.confirm("この案件を削除しますか？関連する売上・経費も削除されます。")) return;
 
     await withLoading(async () => {
-      const { error } = await sbClient.from("cases").delete().eq("id", id).eq("user_id", currentUser.id);
-      if (error) throw error;
+      const salesDeleteRes = await sbClient
+        .from("sales")
+        .delete()
+        .eq("case_id", id)
+        .eq("user_id", currentUser.id);
+      if (salesDeleteRes.error) throw salesDeleteRes.error;
+
+      const expensesDeleteRes = await sbClient
+        .from("expenses")
+        .delete()
+        .eq("case_id", id)
+        .eq("user_id", currentUser.id);
+      if (expensesDeleteRes.error) throw expensesDeleteRes.error;
+
+      const caseDeleteRes = await sbClient
+        .from("cases")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", currentUser.id);
+      if (caseDeleteRes.error) throw caseDeleteRes.error;
+
       if (editState.caseId === id) resetCaseForm();
       await refreshAfterMutation("案件を削除しました。");
-    }, "案件の削除に失敗しました。");
+    }, "案件と関連データの削除に失敗しました。");
   }
 }
 
