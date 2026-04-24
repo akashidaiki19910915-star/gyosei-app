@@ -57,6 +57,15 @@ const yearFilter = document.getElementById("year-filter");
 const aggregationRadios = Array.from(document.querySelectorAll('input[name="aggregation-unit"]'));
 const yearlyBreakdown = document.getElementById("yearly-breakdown");
 const yearlyBreakdownBody = document.getElementById("yearly-breakdown-body");
+const unpaidAlertCard = document.getElementById("unpaid-alert-card");
+const unpaidAlertSummary = document.getElementById("unpaid-alert-summary");
+const unpaidAlertPeriod = document.getElementById("unpaid-alert-period");
+const unpaidAlertBody = document.getElementById("unpaid-alert-body");
+const unpaidAlertEmpty = document.getElementById("unpaid-alert-empty");
+const unpaidAlertListWrap = document.getElementById("unpaid-alert-list-wrap");
+const unpaidListBody = document.getElementById("unpaid-list-body");
+const unpaidListEmpty = document.getElementById("unpaid-list-empty");
+const unpaidListWrap = document.getElementById("unpaid-list-wrap");
 
 const caseForm = document.getElementById("case-form");
 const caseList = document.getElementById("case-list");
@@ -155,6 +164,7 @@ function bindEvents() {
   salesList.addEventListener("click", handleSalesListAction);
   expensesList.addEventListener("click", handleExpensesListAction);
   fixedExpensesList.addEventListener("click", handleFixedExpensesListAction);
+  unpaidListBody?.addEventListener("click", handleUnpaidListAction);
   targetMonthInput?.addEventListener("input", handleTargetMonthChange);
   targetYearInput?.addEventListener("input", handleTargetYearChange);
   aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
@@ -523,15 +533,7 @@ async function handleSalesListAction(event) {
   const id = item.dataset.id;
 
   if (btn.classList.contains("edit-btn")) {
-    const target = state.sales.find((entry) => entry.id === id);
-    if (!target) return;
-    editState.saleId = target.id;
-    saleCaseSelect.value = target.caseId;
-    saleForm.elements.invoiceAmount.value = target.invoiceAmount;
-    saleForm.elements.paidAmount.value = target.paidAmount ?? "";
-    saleForm.elements.paidDate.value = target.paidDate || "";
-    saleForm.elements.isUnpaid.checked = Boolean(target.isUnpaid);
-    saleSubmitBtn.textContent = "売上を更新";
+    startSaleEdit(id);
     return;
   }
 
@@ -574,6 +576,30 @@ async function handleExpensesListAction(event) {
       await refreshAfterMutation("経費を削除しました。");
     }, "経費の削除に失敗しました。");
   }
+}
+
+function handleUnpaidListAction(event) {
+  const btn = event.target;
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const saleId = btn.dataset.saleId;
+  if (!saleId) return;
+  if (btn.classList.contains("edit-sale-btn")) {
+    startSaleEdit(saleId);
+  }
+}
+
+function startSaleEdit(saleId) {
+  const target = state.sales.find((entry) => entry.id === saleId);
+  if (!target) return;
+  activateTab("sales");
+  editState.saleId = target.id;
+  saleCaseSelect.value = target.caseId;
+  saleForm.elements.invoiceAmount.value = target.invoiceAmount;
+  saleForm.elements.paidAmount.value = target.paidAmount ?? "";
+  saleForm.elements.paidDate.value = target.paidDate || "";
+  saleForm.elements.isUnpaid.checked = Boolean(target.isUnpaid);
+  saleSubmitBtn.textContent = "売上を更新";
+  saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function handleFixedExpensesListAction(event) {
@@ -919,12 +945,93 @@ function renderDashboard() {
     summaryGrid.appendChild(div);
   });
 
+  renderUnpaidAlert({
+    mode: state.selectedAggregation,
+    monthKey: state.selectedMonth,
+    year: state.selectedYear,
+  });
   renderYearlyBreakdown(salesByMonth, expenseByMonth);
   renderCaseProfitList({
     mode: state.selectedAggregation,
     monthKey: state.selectedMonth,
     year: state.selectedYear,
   });
+  renderUnpaidList();
+}
+
+function renderUnpaidAlert(filter = {}) {
+  const unpaidSales = getUnpaidSales();
+  const count = unpaidSales.length;
+  const totalUnpaidAmount = unpaidSales.reduce((sum, sale) => sum + getUnpaidAmount(sale), 0);
+  const filteredUnpaid = unpaidSales.filter((sale) => isWithinFilterDate(sale.paidDate || sale.createdAt, filter));
+  const periodCount = filteredUnpaid.length;
+  const periodAmount = filteredUnpaid.reduce((sum, sale) => sum + getUnpaidAmount(sale), 0);
+
+  if (unpaidAlertCard) unpaidAlertCard.classList.toggle("has-unpaid", count > 0);
+  if (unpaidAlertSummary) {
+    unpaidAlertSummary.textContent = count > 0
+      ? `未入金 ${count}件 / 未入金合計 ${formatCurrency(totalUnpaidAmount)}`
+      : "未入金はありません。";
+  }
+  if (unpaidAlertPeriod) {
+    unpaidAlertPeriod.textContent = filter.mode === "year"
+      ? `対象年(${filter.year}年): ${periodCount}件 / ${formatCurrency(periodAmount)}`
+      : `対象月(${monthLabel(filter.monthKey || state.selectedMonth)}): ${periodCount}件 / ${formatCurrency(periodAmount)}`;
+  }
+  if (unpaidAlertEmpty) unpaidAlertEmpty.hidden = count > 0;
+  if (unpaidAlertListWrap) unpaidAlertListWrap.hidden = count === 0;
+  if (!unpaidAlertBody) return;
+  unpaidAlertBody.innerHTML = "";
+
+  unpaidSales
+    .slice()
+    .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
+    .forEach((sale) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(resolveCaseName(sale.caseId))}</td>
+        <td>${formatCurrency(sale.invoiceAmount)}</td>
+        <td>${formatCurrency(sale.paidAmount)}</td>
+        <td>${formatCurrency(getUnpaidAmount(sale))}</td>
+        <td>${formatDate(sale.paidDate || toDateString(sale.createdAt))}</td>
+      `;
+      unpaidAlertBody.appendChild(tr);
+    });
+}
+
+function renderUnpaidList() {
+  const unpaidSales = getUnpaidSales().slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+  if (!unpaidListBody || !unpaidListEmpty || !unpaidListWrap) return;
+  unpaidListBody.innerHTML = "";
+  unpaidListEmpty.hidden = unpaidSales.length > 0;
+  unpaidListWrap.hidden = unpaidSales.length === 0;
+
+  unpaidSales.forEach((sale) => {
+    const linkedCase = state.cases.find((entry) => entry.id === sale.caseId);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(linkedCase?.customerName || "（削除済み顧客）")}</td>
+      <td>${escapeHtml(linkedCase?.caseName || "（削除済み案件）")}</td>
+      <td>${formatCurrency(sale.invoiceAmount)}</td>
+      <td>${formatCurrency(sale.paidAmount)}</td>
+      <td>${formatCurrency(getUnpaidAmount(sale))}</td>
+      <td>${formatDate(sale.paidDate)}</td>
+      <td><button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button></td>
+    `;
+    unpaidListBody.appendChild(tr);
+  });
+}
+
+function getUnpaidSales() {
+  return state.sales.filter((sale) => {
+    const invoiceAmount = sale.invoiceAmount ?? 0;
+    const paidAmount = sale.paidAmount ?? 0;
+    return Boolean(sale.isUnpaid) || paidAmount < invoiceAmount || !sale.paidDate;
+  });
+}
+
+function getUnpaidAmount(sale) {
+  return Math.max((sale.invoiceAmount ?? 0) - (sale.paidAmount ?? 0), 0);
 }
 
 function renderCaseOptions() {
@@ -1234,6 +1341,12 @@ function formatDate(dateText) {
   const date = new Date(dateText);
   if (Number.isNaN(date.getTime())) return "未設定";
   return new Intl.DateTimeFormat("ja-JP").format(date);
+}
+
+function toDateString(dateSource) {
+  const date = dateSource instanceof Date ? dateSource : new Date(dateSource);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function normalizeAmount(raw) {
