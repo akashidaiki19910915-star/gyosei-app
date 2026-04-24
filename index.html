@@ -57,14 +57,38 @@
         </nav>
 
         <section class="dashboard panel">
-          <h2>月次ダッシュボード</h2>
-          <div class="dashboard-filter">
-            <label for="target-month">
-              対象月
-              <input id="target-month" name="targetMonth" type="month" />
-            </label>
+          <h2>ダッシュボード</h2>
+          <div class="dashboard-filter-group">
+            <fieldset class="aggregation-switch" aria-label="集計単位の切替">
+              <legend>集計単位</legend>
+              <label><input type="radio" name="aggregation-unit" value="month" checked /> 月別</label>
+              <label><input type="radio" name="aggregation-unit" value="year" /> 年別</label>
+            </fieldset>
+            <div id="month-filter" class="dashboard-filter">
+              <label for="target-month">
+                対象月
+                <input id="target-month" name="targetMonth" type="month" />
+              </label>
+            </div>
+            <div id="year-filter" class="dashboard-filter" hidden>
+              <label for="target-year">
+                対象年
+                <input id="target-year" name="targetYear" type="number" min="2000" max="9999" step="1" />
+              </label>
+            </div>
           </div>
           <div class="summary-grid" id="summary-grid"></div>
+          <section id="yearly-breakdown" class="yearly-breakdown" hidden>
+            <h3 class="subheading">月別内訳（1月〜12月）</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>月</th><th>売上</th><th>経費</th><th>利益</th></tr>
+                </thead>
+                <tbody id="yearly-breakdown-body"></tbody>
+              </table>
+            </div>
+          </section>
           <h3 class="subheading">案件別利益一覧</h3>
           <div id="case-profit-empty" class="empty">案件データがありません。</div>
           <ul id="case-profit-list" class="item-list compact-list"></ul>

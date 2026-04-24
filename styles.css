@@ -186,6 +186,70 @@ button:hover { background: var(--primary-dark); }
   max-width: 240px;
 }
 
+.dashboard-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  align-items: end;
+  margin-bottom: 0.75rem;
+}
+
+.aggregation-switch {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.45rem 0.65rem 0.6rem;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+.aggregation-switch legend {
+  font-size: 0.9rem;
+  padding: 0 0.2rem;
+  color: var(--muted);
+}
+
+.aggregation-switch label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.aggregation-switch input {
+  width: auto;
+}
+
+.yearly-breakdown {
+  margin-top: 0.8rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+th, td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+thead th {
+  background: #f4f7fd;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
 .summary-card {
   border: 1px solid var(--border);
   border-radius: 10px;
