@@ -5,14 +5,15 @@ const STATUS_FILTER_KEYS = [...STATUS_ORDER, "その他"];
 const DEADLINE_FILTER_KEYS = ["all", "overdue", "within7", "within30"];
 const ESTIMATE_STATUS_ORDER = ["作成中", "提出済", "受注", "失注"];
 const OFFICE_INFO = {
-  name: "赤司行政書士事務所",
-  postalCode: "",
-  address: "",
-  tel: "",
+  name: "あかし行政書士事務所",
+  zip: "574-0044",
+  address: "大阪府大東市諸福2-2-14",
+  tel: "090-8193-4812",
   email: "akashigyousei@gmail.com",
-  invoiceNumber: "",
-  bank: "",
-  note: "お振込手数料は貴社にてご負担をお願いいたします。",
+  registrationNumber: "",
+  transferInfo: "",
+  invoiceNote: "振込手数料はご負担をお願いいたします。",
+  estimateNote: "本見積の有効期限内にご発注をお願いいたします。",
 };
 
 const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -2464,11 +2465,11 @@ function buildInvoiceDocumentFromEstimate(estimate, noteOverride = null) {
       dateField: "estimateDate",
     }),
     companyName: OFFICE_INFO.name,
-    companyZip: OFFICE_INFO.postalCode,
+    companyZip: OFFICE_INFO.zip,
     companyAddress: OFFICE_INFO.address,
     companyPhone: OFFICE_INFO.tel,
     companyEmail: OFFICE_INFO.email,
-    registrationNumber: OFFICE_INFO.invoiceNumber,
+    registrationNumber: OFFICE_INFO.registrationNumber,
     details: rows.map((row, index) => ({
       no: index + 1,
       itemName: row.item_name,
@@ -2479,8 +2480,8 @@ function buildInvoiceDocumentFromEstimate(estimate, noteOverride = null) {
     subtotal: estimate.subtotal ?? 0,
     tax: estimate.tax ?? 0,
     total: estimate.total ?? 0,
-    transferInfo: OFFICE_INFO.bank,
-    note: asTrimmedText(noteOverride ?? "") || estimate.memo || OFFICE_INFO.note || "",
+    transferInfo: OFFICE_INFO.transferInfo,
+    note: asTrimmedText(noteOverride ?? "") || estimate.memo || OFFICE_INFO.invoiceNote || "",
   };
 }
 
@@ -2509,11 +2510,11 @@ function buildInvoiceDocumentFromCase(foundCase, noteOverride = null) {
       candidates: state.cases,
     }),
     companyName: OFFICE_INFO.name,
-    companyZip: OFFICE_INFO.postalCode,
+    companyZip: OFFICE_INFO.zip,
     companyAddress: OFFICE_INFO.address,
     companyPhone: OFFICE_INFO.tel,
     companyEmail: OFFICE_INFO.email,
-    registrationNumber: OFFICE_INFO.invoiceNumber,
+    registrationNumber: OFFICE_INFO.registrationNumber,
     details: [{
       no: 1,
       itemName: foundCase.caseName,
@@ -2524,8 +2525,8 @@ function buildInvoiceDocumentFromCase(foundCase, noteOverride = null) {
     subtotal,
     tax,
     total,
-    transferInfo: OFFICE_INFO.bank,
-    note: asTrimmedText(noteOverride ?? "") || OFFICE_INFO.note || "",
+    transferInfo: OFFICE_INFO.transferInfo,
+    note: asTrimmedText(noteOverride ?? "") || OFFICE_INFO.invoiceNote || "",
   };
 }
 
@@ -2660,7 +2661,7 @@ function buildEstimateDocumentFromEstimate(estimate) {
     }),
     validUntil: estimate.validUntil || "",
     companyName: OFFICE_INFO.name,
-    companyZip: OFFICE_INFO.postalCode,
+    companyZip: OFFICE_INFO.zip,
     companyAddress: OFFICE_INFO.address,
     companyPhone: OFFICE_INFO.tel,
     companyEmail: OFFICE_INFO.email,
@@ -2669,7 +2670,7 @@ function buildEstimateDocumentFromEstimate(estimate) {
     tax: estimate.tax ?? 0,
     total: estimate.total ?? 0,
     paymentTerms: "お支払い条件：請求書受領後7日以内に銀行振込",
-    note: estimate.memo || OFFICE_INFO.note,
+    note: estimate.memo || OFFICE_INFO.estimateNote,
   };
 }
 
@@ -2698,6 +2699,7 @@ function createBusinessDocumentSheet(documentData, options = { type: "invoice" }
   const numberLabel = isInvoice ? "請求書番号" : "見積番号";
   const numberValue = isInvoice ? documentData.invoiceNumber : documentData.estimateNumber;
   const dateValue = isInvoice ? documentData.invoiceDate : documentData.estimateDate;
+  const hasCompanyZip = Boolean(asTrimmedText(documentData.companyZip || ""));
   const hasCompanyAddress = Boolean(asTrimmedText(documentData.companyAddress || ""));
   const hasCompanyPhone = Boolean(asTrimmedText(documentData.companyPhone || ""));
   const hasRegistrationNumber = Boolean(asTrimmedText(documentData.registrationNumber || ""));
@@ -2716,14 +2718,16 @@ function createBusinessDocumentSheet(documentData, options = { type: "invoice" }
   rows[3][6] = numberValue || "";
   rows[4][5] = "事務所名";
   rows[4][6] = documentData.companyName || "";
-  rows[5][5] = hasCompanyAddress ? "住所" : "";
-  rows[5][6] = hasCompanyAddress ? (documentData.companyAddress || "") : "";
-  rows[6][5] = hasCompanyPhone ? "電話" : "";
-  rows[6][6] = hasCompanyPhone ? (documentData.companyPhone || "") : "";
-  rows[7][5] = "メール";
-  rows[7][6] = documentData.companyEmail || "";
-  rows[8][5] = isInvoice ? (hasRegistrationNumber ? "登録番号" : "") : "有効期限";
-  rows[8][6] = isInvoice ? (hasRegistrationNumber ? (documentData.registrationNumber || "") : "") : (documentData.validUntil || "");
+  rows[5][5] = hasCompanyZip ? "郵便番号" : "";
+  rows[5][6] = hasCompanyZip ? `〒${documentData.companyZip || ""}` : "";
+  rows[6][5] = hasCompanyAddress ? "住所" : "";
+  rows[6][6] = hasCompanyAddress ? (documentData.companyAddress || "") : "";
+  rows[7][5] = hasCompanyPhone ? "電話" : "";
+  rows[7][6] = hasCompanyPhone ? `TEL: ${documentData.companyPhone || ""}` : "";
+  rows[8][5] = "メール";
+  rows[8][6] = documentData.companyEmail ? `Email: ${documentData.companyEmail}` : "";
+  rows[9][5] = isInvoice ? (hasRegistrationNumber ? "登録番号" : "") : "有効期限";
+  rows[9][6] = isInvoice ? (hasRegistrationNumber ? (documentData.registrationNumber || "") : "") : (documentData.validUntil || "");
 
   rows[10][0] = sentence;
   rows[11][0] = amountLabel;
@@ -2796,7 +2800,7 @@ function createBusinessDocumentSheet(documentData, options = { type: "invoice" }
   for (let c = 5; c <= 6; c += 1) {
     applyBusinessCellStyle(ws, 28, c, { border: true, bold: true, numFmt: c === 6 ? "¥#,##0" : undefined, align: c === 6 ? "right" : "center", fillGray: true });
   }
-  for (let r = 2; r <= 8; r += 1) {
+  for (let r = 2; r <= 9; r += 1) {
     applyBusinessCellStyle(ws, r, 5, { bold: true });
     applyBusinessCellStyle(ws, r, 6, {});
   }
@@ -2827,7 +2831,7 @@ function buildBusinessDocumentHtml(documentData, options = { type: "invoice" }) 
     hasCompanyZip ? `〒${escapeHtml(documentData.companyZip)}` : "",
     hasCompanyAddress ? escapeHtml(documentData.companyAddress) : "",
     hasCompanyPhone ? `TEL: ${escapeHtml(documentData.companyPhone)}` : "",
-    documentData.companyEmail ? `メール: ${escapeHtml(documentData.companyEmail)}` : "",
+    documentData.companyEmail ? `Email: ${escapeHtml(documentData.companyEmail)}` : "",
   ].filter(Boolean).join("<br />");
   const transferSectionHtml = hasTransferInfo
     ? `<div>
@@ -2929,7 +2933,7 @@ body { margin: 0; background: #fff; color: #111827; font-family: "Hiragino Kaku 
 
 function requestInvoiceMemo(defaultValue = "") {
   const initialValue = asTrimmedText(defaultValue || "");
-  const input = window.prompt("請求書備考を入力してください（未入力の場合は事務所既定文を使用）", initialValue);
+  const input = window.prompt("請求書備考を入力してください（未入力の場合は既定文を使用）", initialValue);
   if (input === null) return null;
   return asTrimmedText(input);
 }
