@@ -1,6 +1,7 @@
 const SUPABASE_URL = "https://ueelzyftlbnvjvpsmpyt.supabase.co";
 const SUPABASE_KEY = "sb_publishable_0DrKsieUcCyEZN_HRg8LhQ_QqFTPMtp";
 const STATUS_ORDER = ["未着手", "進行中", "完了"];
+const STATUS_FILTER_KEYS = [...STATUS_ORDER, "その他"];
 
 const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
@@ -19,6 +20,7 @@ const state = {
   selectedAggregation: "month",
   selectedMonth: toMonthKey(new Date()),
   selectedYear: new Date().getFullYear(),
+  caseStatusFilter: "all",
 };
 const editState = { caseId: null, saleId: null, expenseId: null, fixedExpenseId: null };
 
@@ -66,6 +68,9 @@ const unpaidAlertListWrap = document.getElementById("unpaid-alert-list-wrap");
 const unpaidListBody = document.getElementById("unpaid-list-body");
 const unpaidListEmpty = document.getElementById("unpaid-list-empty");
 const unpaidListWrap = document.getElementById("unpaid-list-wrap");
+const statusSummaryList = document.getElementById("status-summary-list");
+const statusSummaryTotal = document.getElementById("status-summary-total");
+const statusFilterClearBtn = document.getElementById("status-filter-clear-btn");
 
 const caseForm = document.getElementById("case-form");
 const caseList = document.getElementById("case-list");
@@ -168,6 +173,8 @@ function bindEvents() {
   targetMonthInput?.addEventListener("input", handleTargetMonthChange);
   targetYearInput?.addEventListener("input", handleTargetYearChange);
   aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
+  statusSummaryList?.addEventListener("click", handleStatusSummaryClick);
+  statusFilterClearBtn?.addEventListener("click", () => applyCaseStatusFilter("all"));
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("focus", handleWindowFocus);
   window.addEventListener("pageshow", handlePageShow);
@@ -197,6 +204,20 @@ function handleTargetYearChange(event) {
   const nextValue = normalizeYear(event?.target?.value);
   state.selectedYear = nextValue || new Date().getFullYear();
   renderDashboard();
+}
+
+function handleStatusSummaryClick(event) {
+  const btn = event.target.closest(".status-filter-btn");
+  if (!btn) return;
+  applyCaseStatusFilter(btn.dataset.statusFilter || "all");
+}
+
+function applyCaseStatusFilter(nextFilter) {
+  if (nextFilter !== "all" && !STATUS_FILTER_KEYS.includes(nextFilter)) return;
+  state.caseStatusFilter = nextFilter;
+  activateTab("cases");
+  renderDashboard();
+  renderCases();
 }
 
 
@@ -681,7 +702,7 @@ function handleExportCasesCsv() {
     estimate_amount: entry.estimateAmount ?? "",
     received_date: entry.receivedDate || "",
     due_date: entry.dueDate || "",
-    status: normalizeStatus(entry.status),
+    status: normalizeStoredStatus(entry.status),
   }));
   downloadCsvFile("cases.csv", ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status"], rows);
 }
@@ -742,7 +763,7 @@ function handleExportAllCsv() {
       estimate_amount: entry.estimateAmount ?? "",
       received_date: entry.receivedDate || "",
       due_date: entry.dueDate || "",
-      status: normalizeStatus(entry.status),
+      status: normalizeStoredStatus(entry.status),
     });
   });
   state.sales.forEach((entry) => {
@@ -820,7 +841,7 @@ function exportExcel() {
       estimate_amount: entry.estimateAmount ?? "",
       received_date: entry.receivedDate || "",
       due_date: entry.dueDate || "",
-      status: normalizeStatus(entry.status),
+      status: normalizeStoredStatus(entry.status),
     }));
     const saleRows = state.sales.map((entry) => {
       const foundCase = state.cases.find((c) => c.id === entry.caseId);
@@ -944,6 +965,7 @@ function renderDashboard() {
     div.innerHTML = `<p class="label">${card.label}</p><p class="value">${card.value}</p>`;
     summaryGrid.appendChild(div);
   });
+  renderStatusSummaryCard();
 
   renderUnpaidAlert({
     mode: state.selectedAggregation,
@@ -957,6 +979,26 @@ function renderDashboard() {
     year: state.selectedYear,
   });
   renderUnpaidList();
+}
+
+function renderStatusSummaryCard() {
+  if (!statusSummaryList || !statusSummaryTotal) return;
+  const counts = countCasesByStatus();
+  statusSummaryList.innerHTML = "";
+  if (statusFilterClearBtn) statusFilterClearBtn.disabled = state.caseStatusFilter === "all";
+
+  STATUS_FILTER_KEYS.forEach((statusKey) => {
+    const button = document.createElement("button");
+    const count = counts[statusKey] || 0;
+    button.type = "button";
+    button.className = `status-filter-btn status-${toStatusClassKey(statusKey)}`.trim();
+    button.dataset.statusFilter = statusKey;
+    button.setAttribute("aria-pressed", String(state.caseStatusFilter === statusKey));
+    button.innerHTML = `<span>${statusKey}</span><strong>${count}件</strong>`;
+    statusSummaryList.appendChild(button);
+  });
+
+  statusSummaryTotal.textContent = `全案件数：${state.cases.length}件`;
 }
 
 function renderUnpaidAlert(filter = {}) {
@@ -1049,9 +1091,12 @@ function renderCaseOptions() {
 function renderCases() {
   caseList.innerHTML = "";
   const sorted = state.cases.slice().sort(sortCases);
+  const filteredCases = state.caseStatusFilter === "all"
+    ? sorted
+    : sorted.filter((entry) => getStatusCategory(entry.status) === state.caseStatusFilter);
   const profitsByCaseId = buildCaseProfitMap();
 
-  sorted.forEach((entry) => {
+  filteredCases.forEach((entry) => {
     const node = caseItemTemplate.content.cloneNode(true);
     const item = node.querySelector(".item");
     const title = node.querySelector(".title");
@@ -1067,7 +1112,12 @@ function renderCases() {
     caseList.appendChild(node);
   });
 
-  caseEmpty.hidden = sorted.length > 0;
+  caseEmpty.hidden = filteredCases.length > 0;
+  if (!filteredCases.length && state.caseStatusFilter !== "all") {
+    caseEmpty.textContent = `「${state.caseStatusFilter}」の案件はありません。`;
+  } else {
+    caseEmpty.textContent = "案件はまだ登録されていません。";
+  }
 }
 
 function renderCaseProfitList(filter = {}) {
@@ -1256,10 +1306,19 @@ function sortCases(a, b) {
   const dueB = toSortTimestamp(b.dueDate);
   if (dueA !== dueB) return dueA - dueB;
 
-  const statusA = STATUS_ORDER.indexOf(normalizeStatus(a.status));
-  const statusB = STATUS_ORDER.indexOf(normalizeStatus(b.status));
+  const statusA = STATUS_FILTER_KEYS.indexOf(getStatusCategory(a.status));
+  const statusB = STATUS_FILTER_KEYS.indexOf(getStatusCategory(b.status));
   if (statusA !== statusB) return statusA - statusB;
   return a.createdAt - b.createdAt;
+}
+
+function countCasesByStatus() {
+  const counts = { 未着手: 0, 進行中: 0, 完了: 0, その他: 0 };
+  state.cases.forEach((entry) => {
+    const category = getStatusCategory(entry.status);
+    counts[category] += 1;
+  });
+  return counts;
 }
 
 function toSortTimestamp(value) {
@@ -1358,6 +1417,24 @@ function normalizeAmount(raw) {
 
 function normalizeStatus(status) {
   return STATUS_ORDER.includes(status) ? status : "未着手";
+}
+
+function normalizeStoredStatus(status) {
+  if (status === null || status === undefined) return "未着手";
+  const normalized = String(status).trim();
+  return normalized || "未着手";
+}
+
+function getStatusCategory(status) {
+  const normalized = normalizeStoredStatus(status);
+  return STATUS_ORDER.includes(normalized) ? normalized : "その他";
+}
+
+function toStatusClassKey(status) {
+  if (status === "未着手") return "not-started";
+  if (status === "進行中") return "in-progress";
+  if (status === "完了") return "completed";
+  return "other";
 }
 
 function normalizeDayOfMonth(raw) {
@@ -1636,7 +1713,7 @@ async function importRowsByType(importType, tableData) {
           estimate_amount: parseFlexibleAmount(row.estimate_amount),
           received_date: parseFlexibleDate(row.received_date),
           due_date: parseFlexibleDate(row.due_date),
-          status: normalizeStatus(row.status),
+          status: normalizeStoredStatus(row.status),
         });
       } catch (_error) {
         result.errorCount += 1;
@@ -1784,7 +1861,7 @@ function mapCaseFromDb(row) {
     estimateAmount: normalizeAmount(row.estimate_amount),
     receivedDate: row.received_date || "",
     dueDate: row.due_date || "",
-    status: normalizeStatus(row.status),
+    status: normalizeStoredStatus(row.status),
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
   };
