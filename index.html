@@ -111,6 +111,28 @@
 
         <section class="dashboard panel">
           <h2>ダッシュボード</h2>
+          <section id="unpaid-alert-card" class="unpaid-alert-card" aria-live="polite">
+            <div class="unpaid-alert-header">
+              <h3>未入金アラート</h3>
+              <p id="unpaid-alert-period" class="unpaid-alert-period"></p>
+            </div>
+            <p id="unpaid-alert-summary" class="unpaid-alert-summary"></p>
+            <div id="unpaid-alert-empty" class="empty" hidden>未入金はありません。</div>
+            <div id="unpaid-alert-list-wrap" class="table-wrap" hidden>
+              <table class="unpaid-alert-table">
+                <thead>
+                  <tr>
+                    <th>対象案件</th>
+                    <th>請求額</th>
+                    <th>入金額</th>
+                    <th>未入金額</th>
+                    <th>入金予定日/請求日</th>
+                  </tr>
+                </thead>
+                <tbody id="unpaid-alert-body"></tbody>
+              </table>
+            </div>
+          </section>
           <div class="dashboard-filter-group">
             <fieldset class="aggregation-switch" aria-label="集計単位の切替">
               <legend>集計単位</legend>
@@ -145,6 +167,24 @@
           <h3 class="subheading">案件別利益一覧</h3>
           <div id="case-profit-empty" class="empty">案件データがありません。</div>
           <ul id="case-profit-list" class="item-list compact-list"></ul>
+          <h3 class="subheading">未入金一覧（全期間）</h3>
+          <div id="unpaid-list-empty" class="empty">未入金はありません。</div>
+          <div id="unpaid-list-wrap" class="table-wrap" hidden>
+            <table>
+              <thead>
+                <tr>
+                  <th>顧客名</th>
+                  <th>案件名</th>
+                  <th>請求額</th>
+                  <th>入金額</th>
+                  <th>未入金額</th>
+                  <th>入金日</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="unpaid-list-body"></tbody>
+            </table>
+          </div>
         </section>
 
         <section id="tab-cases" class="tab-panel active">

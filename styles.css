@@ -230,6 +230,47 @@ button:hover { background: var(--primary-dark); }
   margin-top: 0.8rem;
 }
 
+.unpaid-alert-card {
+  border: 1px solid #f3d2d2;
+  background: #fff7f7;
+  border-radius: 10px;
+  padding: 0.8rem;
+  margin-bottom: 0.75rem;
+}
+
+.unpaid-alert-card.has-unpaid {
+  border-color: #c51616;
+  background: #fff0f0;
+}
+
+.unpaid-alert-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.unpaid-alert-header h3 {
+  margin: 0;
+  color: #9f1239;
+}
+
+.unpaid-alert-period {
+  margin: 0;
+  color: #7f1d1d;
+  font-size: 0.9rem;
+}
+
+.unpaid-alert-summary {
+  margin: 0.45rem 0 0.5rem;
+  font-weight: 700;
+}
+
+.unpaid-alert-table thead th {
+  background: #fde8e8;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
