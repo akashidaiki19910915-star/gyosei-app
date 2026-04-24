@@ -765,6 +765,10 @@ async function handleCaseListAction(event) {
     startCaseEdit(id);
     return;
   }
+  if (btn.classList.contains("case-print-btn")) {
+    openInvoicePrintPreviewFromCase(id);
+    return;
+  }
   if (btn.classList.contains("case-xlsx-btn")) {
     exportInvoiceDataForCase(id);
     return;
@@ -1897,6 +1901,8 @@ function renderEstimates() {
         <button type="button" class="secondary-btn estimate-edit-btn">編集</button>
         <button type="button" class="danger-btn estimate-delete-btn">削除</button>
         <button type="button" class="secondary-btn estimate-case-btn" ${entry.caseId ? "disabled" : ""}>案件化</button>
+        <button type="button" class="secondary-btn estimate-estimate-print-btn">見積書出力</button>
+        <button type="button" class="secondary-btn estimate-print-btn">請求書出力</button>
         <button type="button" class="secondary-btn estimate-estimate-xlsx-btn">見積Excel</button>
         <button type="button" class="secondary-btn estimate-xlsx-btn">請求Excel</button>
         <button type="button" class="secondary-btn estimate-sale-btn">売上登録</button>
@@ -1939,6 +1945,8 @@ async function handleEstimateListAction(event) {
     await ensureCaseFromEstimate(estimateId, true);
     await refreshAfterMutation("案件化しました。");
   }, "案件化に失敗しました。");
+  if (btn.classList.contains("estimate-estimate-print-btn")) return openEstimatePrintPreview(estimateId);
+  if (btn.classList.contains("estimate-print-btn")) return openInvoicePrintPreviewFromEstimate(estimateId);
   if (btn.classList.contains("estimate-estimate-xlsx-btn")) return exportEstimateDataForEstimate(estimateId);
   if (btn.classList.contains("estimate-xlsx-btn")) return exportInvoiceDataForEstimate(estimateId);
   if (btn.classList.contains("estimate-sale-btn")) return withLoading(async () => {
@@ -1982,6 +1990,13 @@ function renderCases() {
     }
     profitMeta.textContent = `売上合計: ${formatCurrency(totals.sales)} / 経費合計: ${formatCurrency(totals.expenses)} / 利益: ${formatCurrency(totals.profit)}`;
     profitMeta.classList.toggle("loss-text", totals.profit < 0);
+    if (rowActions && !rowActions.querySelector(".case-print-btn")) {
+      const printBtn = document.createElement("button");
+      printBtn.type = "button";
+      printBtn.className = "secondary-btn case-print-btn";
+      printBtn.textContent = "請求書出力";
+      rowActions.appendChild(printBtn);
+    }
     if (rowActions && !rowActions.querySelector(".case-xlsx-btn")) {
       const xlsxBtn = document.createElement("button");
       xlsxBtn.type = "button";
@@ -2388,6 +2403,34 @@ function exportInvoiceDataForCase(caseId) {
   downloadInvoiceWorkbook(invoiceData);
 }
 
+function openEstimatePrintPreview(estimateId) {
+  const estimate = state.estimates.find((entry) => entry.id === estimateId);
+  if (!estimate) return;
+  openBusinessDocumentPrintWindow(buildEstimateDocumentFromEstimate(estimate), { type: "estimate" });
+}
+
+function openInvoicePrintPreviewFromEstimate(estimateId) {
+  const estimate = state.estimates.find((entry) => entry.id === estimateId);
+  if (!estimate) return;
+  openBusinessDocumentPrintWindow(buildInvoiceDocumentFromEstimate(estimate), { type: "invoice" });
+}
+
+function openInvoicePrintPreviewFromCase(caseId) {
+  const foundCase = state.cases.find((entry) => entry.id === caseId);
+  if (!foundCase) return;
+  openBusinessDocumentPrintWindow(buildInvoiceDocumentFromCase(foundCase), { type: "invoice" });
+}
+
+function openBusinessDocumentPrintWindow(documentData, options = { type: "invoice" }) {
+  const win = window.open("", "_blank", "noopener,noreferrer");
+  if (!win) {
+    showAppMessage("帳票画面を開けませんでした。ポップアップ許可を確認してください。", true);
+    return;
+  }
+  win.document.write(buildBusinessDocumentHtml(documentData, options));
+  win.document.close();
+}
+
 function downloadInvoiceWorkbook(invoiceData) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, createBusinessDocumentSheet(invoiceData, { type: "invoice" }), "請求書");
@@ -2560,6 +2603,122 @@ function createBusinessDocumentSheet(documentData, options = { type: "invoice" }
     applyBusinessCellStyle(ws, r, 6, {});
   }
   return ws;
+}
+
+function buildBusinessDocumentHtml(documentData, options = { type: "invoice" }) {
+  const isInvoice = options.type === "invoice";
+  const title = isInvoice ? "請求書" : "見積書";
+  const description = isInvoice ? "下記のとおりご請求申し上げます。" : "下記のとおり、お見積もり申し上げます。";
+  const emphasizedLabel = isInvoice ? "請求金額" : "合計金額（税込）";
+  const numberLabel = isInvoice ? "請求書番号" : "見積番号";
+  const numberValue = isInvoice ? documentData.invoiceNumber : documentData.estimateNumber;
+  const dateLabel = isInvoice ? "請求日" : "見積日";
+  const dateValue = isInvoice ? documentData.invoiceDate : documentData.estimateDate;
+  const extraLabel = isInvoice ? "登録番号" : "有効期限";
+  const extraValue = isInvoice ? documentData.registrationNumber : documentData.validUntil;
+  const tableHeader = isInvoice
+    ? "<tr><th>品名</th><th>単価</th><th>数量</th><th>金額</th></tr>"
+    : "<tr><th>摘要</th><th>数量</th><th>単位</th><th>単価</th><th>金額</th></tr>";
+  const detailRows = (documentData.details || []).map((row) => {
+    if (isInvoice) {
+      return `<tr><td>${escapeHtml(row.itemName || "")}</td><td class="align-right">${formatCurrencyCompact(row.unitPrice)}</td><td class="align-right">${escapeHtml(String(row.quantity || ""))}</td><td class="align-right">${formatCurrencyCompact(row.amount)}</td></tr>`;
+    }
+    return `<tr><td>${escapeHtml(row.itemName || "")}</td><td class="align-right">${escapeHtml(String(row.quantity || ""))}</td><td>${escapeHtml(row.unit || "式")}</td><td class="align-right">${formatCurrencyCompact(row.unitPrice)}</td><td class="align-right">${formatCurrencyCompact(row.amount)}</td></tr>`;
+  }).join("");
+  const headerToneClass = isInvoice ? "tone-dark" : "tone-blue";
+
+  return `<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>${title}</title>
+<style>
+@page { size: A4 portrait; margin: 10mm; }
+body { margin: 0; background: #fff; color: #111827; font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif; }
+.print-toolbar { max-width: 210mm; margin: 10px auto 0; display: flex; justify-content: flex-end; }
+.print-btn { border: 0; background: #1f2937; color: #fff; border-radius: 8px; padding: 8px 16px; cursor: pointer; }
+.sheet { width: 190mm; min-height: 267mm; margin: 10px auto; padding: 12mm; border: 1px solid #d1d5db; background: #fff; }
+.title { text-align: center; font-size: 34px; letter-spacing: 0.2em; margin: 0 0 20px; font-weight: 700; }
+.header-grid { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 10px; }
+.left-block { flex: 1; }
+.recipient { font-size: 21px; margin-top: 6px; border-bottom: 1px solid #111827; display: inline-block; padding-bottom: 4px; }
+.right-block { width: 320px; font-size: 13px; }
+.kv-row { display: grid; grid-template-columns: 96px 1fr; padding: 2px 0; }
+.office-block { margin: 16px 0 10px auto; width: 320px; font-size: 13px; line-height: 1.7; }
+.intro { margin: 14px 0; font-size: 14px; }
+.emphasis { border: 2px solid #111827; padding: 10px 14px; margin: 12px 0 14px; display: inline-flex; gap: 16px; align-items: baseline; }
+.emphasis-label { font-size: 14px; font-weight: 700; }
+.emphasis-value { font-size: 30px; font-weight: 800; }
+.details-table { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: fixed; font-size: 13px; }
+.details-table th, .details-table td { border: 1px solid #374151; padding: 7px 8px; }
+.details-table th { color: #fff; }
+.details-table.tone-blue th { background: #1d4ed8; }
+.details-table.tone-dark th { background: #111827; }
+.align-right { text-align: right; }
+.totals { width: 260px; margin: 12px 0 0 auto; border-collapse: collapse; font-size: 13px; }
+.totals th, .totals td { border: 1px solid #374151; padding: 7px 8px; }
+.totals th { background: #f3f4f6; text-align: left; }
+.totals .total-row th, .totals .total-row td { font-weight: 700; font-size: 15px; }
+.footer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 16px; font-size: 13px; }
+.note-box { border: 1px solid #9ca3af; min-height: 64px; padding: 8px; white-space: pre-wrap; line-height: 1.6; }
+@media print {
+  .print-toolbar { display: none; }
+  .sheet { margin: 0 auto; border: 0; width: 100%; min-height: auto; padding: 0; }
+}
+</style>
+</head>
+<body>
+  <div class="print-toolbar"><button class="print-btn" onclick="window.print()">印刷 / PDF保存</button></div>
+  <main class="sheet">
+    <h1 class="title">${title}</h1>
+    <section class="header-grid">
+      <div class="left-block">
+        <p class="recipient">${escapeHtml(documentData.customerName || "顧客名未設定")} 御中</p>
+      </div>
+      <div class="right-block">
+        <div class="kv-row"><strong>${numberLabel}</strong><span>${escapeHtml(numberValue || "-")}</span></div>
+        <div class="kv-row"><strong>${dateLabel}</strong><span>${escapeHtml(formatDate(dateValue))}</span></div>
+        <div class="kv-row"><strong>${extraLabel}</strong><span>${escapeHtml(extraValue || "-")}</span></div>
+      </div>
+    </section>
+    <section class="office-block">
+      <strong>${escapeHtml(documentData.companyName || "")}</strong><br />
+      〒${escapeHtml(documentData.companyZip || "100-0001")}<br />
+      ${escapeHtml(documentData.companyAddress || "")}<br />
+      TEL: ${escapeHtml(documentData.companyPhone || "")}<br />
+      メール: ${escapeHtml(documentData.companyEmail || "")}
+    </section>
+    <p class="intro">${description}</p>
+    <div class="emphasis"><span class="emphasis-label">${emphasizedLabel}</span><span class="emphasis-value">${formatCurrencyCompact(documentData.total)}</span></div>
+    <table class="details-table ${headerToneClass}">
+      <thead>${tableHeader}</thead>
+      <tbody>${detailRows || (isInvoice ? "<tr><td colspan='4'>明細なし</td></tr>" : "<tr><td colspan='5'>明細なし</td></tr>")}</tbody>
+    </table>
+    <table class="totals">
+      <tr><th>小計</th><td class="align-right">${formatCurrencyCompact(documentData.subtotal)}</td></tr>
+      <tr><th>消費税10%</th><td class="align-right">${formatCurrencyCompact(documentData.tax)}</td></tr>
+      <tr class="total-row"><th>合計</th><td class="align-right">${formatCurrencyCompact(documentData.total)}</td></tr>
+    </table>
+    <section class="footer-grid">
+      <div>
+        <strong>${isInvoice ? "振込先" : "備考"}</strong>
+        <div class="note-box">${escapeHtml(isInvoice ? (documentData.transferInfo || "記載なし") : (documentData.note || "記載なし"))}</div>
+      </div>
+      <div>
+        <strong>${isInvoice ? "備考" : "支払条件 / 有効期限"}</strong>
+        <div class="note-box">${escapeHtml(isInvoice ? (documentData.note || "記載なし") : `${documentData.paymentTerms || "支払条件: 記載なし"}\n有効期限: ${documentData.validUntil || "記載なし"}`)}</div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function formatCurrencyCompact(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "¥0";
+  return `¥${new Intl.NumberFormat("ja-JP").format(Math.floor(amount))}`;
 }
 
 function applyBusinessCellStyle(ws, row, col, options = {}) {
