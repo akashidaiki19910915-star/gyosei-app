@@ -4,7 +4,7 @@ const STATUS_ORDER = ["未着手", "進行中", "完了"];
 
 const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const state = { cases: [], sales: [], expenses: [] };
+const state = { cases: [], sales: [], expenses: [], selectedMonth: toMonthKey(new Date()) };
 const editState = { caseId: null, saleId: null, expenseId: null };
 
 const authView = document.getElementById("auth-view");
@@ -27,6 +27,7 @@ const panels = {
 const summaryGrid = document.getElementById("summary-grid");
 const caseProfitList = document.getElementById("case-profit-list");
 const caseProfitEmpty = document.getElementById("case-profit-empty");
+const targetMonthInput = document.getElementById("target-month");
 
 const caseForm = document.getElementById("case-form");
 const caseList = document.getElementById("case-list");
@@ -106,8 +107,15 @@ function bindEvents() {
   caseList.addEventListener("click", handleCaseListAction);
   salesList.addEventListener("click", handleSalesListAction);
   expensesList.addEventListener("click", handleExpensesListAction);
+  targetMonthInput?.addEventListener("input", handleTargetMonthChange);
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("focus", handleWindowFocus);
+}
+
+function handleTargetMonthChange(event) {
+  const nextValue = normalizeMonthKey(event?.target?.value);
+  state.selectedMonth = nextValue || toMonthKey(new Date());
+  renderDashboard();
 }
 
 
@@ -453,17 +461,18 @@ function activateTab(tabKey) {
 }
 
 function renderDashboard() {
+  state.selectedMonth = normalizeMonthKey(state.selectedMonth) || toMonthKey(new Date());
+  if (targetMonthInput) targetMonthInput.value = state.selectedMonth;
+
   const salesByMonth = aggregateByMonth(state.sales, (s) => s.paidDate || s.createdAt, (s) => s.invoiceAmount);
   const expenseByMonth = aggregateByMonth(state.expenses, (e) => e.date, (e) => e.amount);
-  const monthKeys = [...new Set([...Object.keys(salesByMonth), ...Object.keys(expenseByMonth)])].sort().reverse();
-  const currentMonth = monthKeys[0] || toMonthKey(new Date());
-  const sales = salesByMonth[currentMonth] || 0;
-  const expenses = expenseByMonth[currentMonth] || 0;
+  const sales = salesByMonth[state.selectedMonth] || 0;
+  const expenses = expenseByMonth[state.selectedMonth] || 0;
   const profit = sales - expenses;
 
   summaryGrid.innerHTML = "";
   [
-    { label: "対象月", value: monthLabel(currentMonth), cls: "" },
+    { label: "対象月", value: monthLabel(state.selectedMonth), cls: "" },
     { label: "月別売上合計", value: formatCurrency(sales), cls: "" },
     { label: "月別経費合計", value: formatCurrency(expenses), cls: "" },
     { label: "利益（売上−経費）", value: formatCurrency(profit), cls: `profit ${profit < 0 ? "loss" : ""}`.trim() },
@@ -474,7 +483,7 @@ function renderDashboard() {
     summaryGrid.appendChild(div);
   });
 
-  renderCaseProfitList();
+  renderCaseProfitList(state.selectedMonth);
 }
 
 function renderCaseOptions() {
@@ -513,10 +522,16 @@ function renderCases() {
   caseEmpty.hidden = sorted.length > 0;
 }
 
-function renderCaseProfitList() {
+function renderCaseProfitList(monthKey = "") {
   if (!caseProfitList || !caseProfitEmpty) return;
-  const profitsByCaseId = buildCaseProfitMap();
-  const sortedCases = state.cases.slice().sort(sortCases);
+  const profitsByCaseId = buildCaseProfitMap(monthKey);
+  const sortedCases = state.cases
+    .filter((entry) => {
+      if (!monthKey) return true;
+      const totals = profitsByCaseId[entry.id];
+      return Boolean(totals) && (totals.sales !== 0 || totals.expenses !== 0);
+    })
+    .sort(sortCases);
   caseProfitList.innerHTML = "";
 
   sortedCases.forEach((entry) => {
@@ -533,9 +548,14 @@ function renderCaseProfitList() {
   });
 
   caseProfitEmpty.hidden = sortedCases.length > 0;
+  if (!sortedCases.length) {
+    caseProfitEmpty.textContent = monthKey ? "選択した対象月の案件データはありません。" : "案件データがありません。";
+  } else {
+    caseProfitEmpty.textContent = "案件データがありません。";
+  }
 }
 
-function buildCaseProfitMap() {
+function buildCaseProfitMap(monthKey = "") {
   const map = {};
   state.cases.forEach((entry) => {
     map[entry.id] = { sales: 0, expenses: 0, profit: 0 };
@@ -543,11 +563,13 @@ function buildCaseProfitMap() {
 
   state.sales.forEach((sale) => {
     if (!sale.caseId || !map[sale.caseId]) return;
+    if (monthKey && !isSameMonthKey(sale.paidDate || sale.createdAt, monthKey)) return;
     map[sale.caseId].sales += sale.invoiceAmount || 0;
   });
 
   state.expenses.forEach((expense) => {
     if (!expense.caseId || !map[expense.caseId]) return;
+    if (monthKey && !isSameMonthKey(expense.date, monthKey)) return;
     map[expense.caseId].expenses += expense.amount || 0;
   });
 
@@ -663,6 +685,17 @@ function monthLabel(key) {
   const [y, m] = key.split("-");
   if (!y || !m) return "-";
   return `${y}年${Number(m)}月`;
+}
+
+function normalizeMonthKey(value) {
+  if (typeof value !== "string") return "";
+  if (!/^\d{4}-\d{2}$/.test(value)) return "";
+  const month = Number(value.slice(5, 7));
+  return month >= 1 && month <= 12 ? value : "";
+}
+
+function isSameMonthKey(dateSource, monthKey) {
+  return toMonthKey(dateSource) === monthKey;
 }
 
 function formatCurrency(value) {

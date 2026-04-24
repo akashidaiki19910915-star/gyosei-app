@@ -181,6 +181,11 @@ button:hover { background: var(--primary-dark); }
   gap: 0.65rem;
 }
 
+.dashboard-filter {
+  margin-bottom: 0.75rem;
+  max-width: 240px;
+}
+
 .summary-card {
   border: 1px solid var(--border);
   border-radius: 10px;
