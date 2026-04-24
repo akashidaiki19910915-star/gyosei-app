@@ -15,11 +15,12 @@ const state = {
   cases: [],
   sales: [],
   expenses: [],
+  fixedExpenses: [],
   selectedAggregation: "month",
   selectedMonth: toMonthKey(new Date()),
   selectedYear: new Date().getFullYear(),
 };
-const editState = { caseId: null, saleId: null, expenseId: null };
+const editState = { caseId: null, saleId: null, expenseId: null, fixedExpenseId: null };
 
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
@@ -66,10 +67,15 @@ const expenseCaseSelect = document.getElementById("expense-case-id");
 const expensesList = document.getElementById("expenses-list");
 const expensesEmpty = document.getElementById("expenses-empty");
 const expenseSubmitBtn = expenseForm.querySelector('button[type="submit"]');
+const fixedExpenseForm = document.getElementById("fixed-expense-form");
+const fixedExpensesList = document.getElementById("fixed-expenses-list");
+const fixedExpensesEmpty = document.getElementById("fixed-expenses-empty");
+const fixedExpenseSubmitBtn = fixedExpenseForm.querySelector('button[type="submit"]');
 
 const caseItemTemplate = document.getElementById("case-item-template");
 const saleItemTemplate = document.getElementById("sale-item-template");
 const expenseItemTemplate = document.getElementById("expense-item-template");
+const fixedExpenseItemTemplate = document.getElementById("fixed-expense-item-template");
 
 let currentUser = null;
 let loadingCount = 0;
@@ -134,11 +140,13 @@ function bindEvents() {
   caseForm.addEventListener("submit", handleCaseSubmit);
   saleForm.addEventListener("submit", handleSaleSubmit);
   expenseForm.addEventListener("submit", handleExpenseSubmit);
+  fixedExpenseForm.addEventListener("submit", handleFixedExpenseSubmit);
 
   clearBtn.addEventListener("click", handleClearAll);
   caseList.addEventListener("click", handleCaseListAction);
   salesList.addEventListener("click", handleSalesListAction);
   expensesList.addEventListener("click", handleExpensesListAction);
+  fixedExpensesList.addEventListener("click", handleFixedExpensesListAction);
   targetMonthInput?.addEventListener("input", handleTargetMonthChange);
   targetYearInput?.addEventListener("input", handleTargetYearChange);
   aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
@@ -209,6 +217,7 @@ async function applyAuthState() {
     resetCaseForm();
     resetSaleForm();
     resetExpenseForm();
+    resetFixedExpenseForm();
     renderAfterDataChanged();
   }, "データの読み込みに失敗しました。テーブル設定を確認してください。");
 }
@@ -253,19 +262,30 @@ async function handleLogout() {
 async function loadAllData() {
   if (!currentUser) return;
 
-  const [casesRes, salesRes, expensesRes] = await Promise.all([
+  const [casesRes, salesRes, expensesRes, fixedExpensesRes] = await Promise.all([
     sbClient.from("cases").select("*").eq("user_id", currentUser.id),
     sbClient.from("sales").select("*").eq("user_id", currentUser.id),
     sbClient.from("expenses").select("*").eq("user_id", currentUser.id),
+    sbClient.from("fixed_expenses").select("*").eq("user_id", currentUser.id),
   ]);
 
   if (casesRes.error) throw casesRes.error;
   if (salesRes.error) throw salesRes.error;
   if (expensesRes.error) throw expensesRes.error;
+  if (fixedExpensesRes.error) throw fixedExpensesRes.error;
 
   state.cases = (casesRes.data || []).map(mapCaseFromDb);
   state.sales = (salesRes.data || []).map(mapSaleFromDb);
   state.expenses = (expensesRes.data || []).map(mapExpenseFromDb);
+  state.fixedExpenses = (fixedExpensesRes.data || []).map(mapFixedExpenseFromDb);
+
+  const createdCount = await ensureMonthlyFixedExpenses();
+  if (createdCount > 0) {
+    const refreshExpensesRes = await sbClient.from("expenses").select("*").eq("user_id", currentUser.id);
+    if (refreshExpensesRes.error) throw refreshExpensesRes.error;
+    state.expenses = (refreshExpensesRes.data || []).map(mapExpenseFromDb);
+    showAppMessage(`${createdCount}件の固定費を当月分として自動計上しました。`, false);
+  }
 }
 
 async function refreshAfterMutation(successMessage) {
@@ -363,7 +383,10 @@ async function handleExpenseSubmit(event) {
 
   await withLoading(async () => {
     if (editState.expenseId) {
-      const { error } = await sbClient.from("expenses").update(payload).eq("id", editState.expenseId).eq("user_id", currentUser.id);
+      const currentExpense = state.expenses.find((entry) => entry.id === editState.expenseId);
+      const updatePayload = { ...payload };
+      if (currentExpense?.fixedExpenseId) updatePayload.fixed_expense_id = currentExpense.fixedExpenseId;
+      const { error } = await sbClient.from("expenses").update(updatePayload).eq("id", editState.expenseId).eq("user_id", currentUser.id);
       if (error) throw error;
       resetExpenseForm();
       await refreshAfterMutation("経費を更新しました。");
@@ -375,6 +398,45 @@ async function handleExpenseSubmit(event) {
     resetExpenseForm();
     await refreshAfterMutation("経費を登録しました。");
   }, "経費の保存に失敗しました。入力内容を確認してください。");
+}
+
+async function handleFixedExpenseSubmit(event) {
+  event.preventDefault();
+  if (!currentUser) return;
+
+  const content = fixedExpenseForm.elements.fixedExpenseContent.value.trim();
+  const amount = normalizeAmount(fixedExpenseForm.elements.fixedExpenseAmount.value);
+  const dayOfMonth = normalizeDayOfMonth(fixedExpenseForm.elements.fixedExpenseDayOfMonth.value);
+  const startDate = fixedExpenseForm.elements.fixedExpenseStartDate.value;
+  if (!content || amount === null || !dayOfMonth || !startDate) return;
+
+  const payload = {
+    user_id: currentUser.id,
+    content,
+    amount,
+    day_of_month: dayOfMonth,
+    start_date: startDate,
+    active: Boolean(fixedExpenseForm.elements.fixedExpenseActive.checked),
+  };
+
+  await withLoading(async () => {
+    if (editState.fixedExpenseId) {
+      const { error } = await sbClient
+        .from("fixed_expenses")
+        .update(payload)
+        .eq("id", editState.fixedExpenseId)
+        .eq("user_id", currentUser.id);
+      if (error) throw error;
+      resetFixedExpenseForm();
+      await refreshAfterMutation("固定費を更新しました。");
+      return;
+    }
+
+    const { error } = await sbClient.from("fixed_expenses").insert(payload);
+    if (error) throw error;
+    resetFixedExpenseForm();
+    await refreshAfterMutation("固定費を登録しました。");
+  }, "固定費の保存に失敗しました。入力内容を確認してください。");
 }
 
 async function handleCaseListAction(event) {
@@ -471,24 +533,74 @@ async function handleExpensesListAction(event) {
   }
 }
 
+async function handleFixedExpensesListAction(event) {
+  const btn = event.target;
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const item = btn.closest(".item");
+  if (!item || !currentUser) return;
+  const id = item.dataset.id;
+
+  if (btn.classList.contains("edit-btn")) {
+    const target = state.fixedExpenses.find((entry) => entry.id === id);
+    if (!target) return;
+    editState.fixedExpenseId = target.id;
+    fixedExpenseForm.elements.fixedExpenseContent.value = target.content;
+    fixedExpenseForm.elements.fixedExpenseAmount.value = target.amount;
+    fixedExpenseForm.elements.fixedExpenseDayOfMonth.value = target.dayOfMonth;
+    fixedExpenseForm.elements.fixedExpenseStartDate.value = target.startDate || "";
+    fixedExpenseForm.elements.fixedExpenseActive.checked = Boolean(target.active);
+    fixedExpenseSubmitBtn.textContent = "固定費を更新";
+    return;
+  }
+
+  if (btn.classList.contains("toggle-btn")) {
+    const target = state.fixedExpenses.find((entry) => entry.id === id);
+    if (!target) return;
+
+    await withLoading(async () => {
+      const { error } = await sbClient
+        .from("fixed_expenses")
+        .update({ active: !target.active })
+        .eq("id", id)
+        .eq("user_id", currentUser.id);
+      if (error) throw error;
+      await refreshAfterMutation("固定費の有効/無効を更新しました。");
+    }, "固定費の有効/無効更新に失敗しました。");
+    return;
+  }
+
+  if (btn.classList.contains("delete-btn")) {
+    if (!window.confirm("この固定費を削除しますか？")) return;
+    await withLoading(async () => {
+      const { error } = await sbClient.from("fixed_expenses").delete().eq("id", id).eq("user_id", currentUser.id);
+      if (error) throw error;
+      if (editState.fixedExpenseId === id) resetFixedExpenseForm();
+      await refreshAfterMutation("固定費を削除しました。");
+    }, "固定費の削除に失敗しました。");
+  }
+}
+
 async function handleClearAll() {
   if (!currentUser) return;
-  if (!window.confirm("案件・売上・経費の全データを削除します。よろしいですか？")) return;
+  if (!window.confirm("案件・売上・経費・固定費の全データを削除します。よろしいですか？")) return;
 
   await withLoading(async () => {
-    const [salesRes, expensesRes, casesRes] = await Promise.all([
+    const [salesRes, expensesRes, fixedExpensesRes, casesRes] = await Promise.all([
       sbClient.from("sales").delete().eq("user_id", currentUser.id),
       sbClient.from("expenses").delete().eq("user_id", currentUser.id),
+      sbClient.from("fixed_expenses").delete().eq("user_id", currentUser.id),
       sbClient.from("cases").delete().eq("user_id", currentUser.id),
     ]);
 
     if (salesRes.error) throw salesRes.error;
     if (expensesRes.error) throw expensesRes.error;
+    if (fixedExpensesRes.error) throw fixedExpensesRes.error;
     if (casesRes.error) throw casesRes.error;
 
     resetCaseForm();
     resetSaleForm();
     resetExpenseForm();
+    resetFixedExpenseForm();
     await refreshAfterMutation("全データを削除しました。");
   }, "全件削除に失敗しました。");
 }
@@ -498,6 +610,7 @@ function renderAfterDataChanged() {
   renderCases();
   renderSales();
   renderExpenses();
+  renderFixedExpenses();
   renderDashboard();
 }
 
@@ -708,6 +821,27 @@ function renderExpenses() {
   expensesEmpty.hidden = sorted.length > 0;
 }
 
+function renderFixedExpenses() {
+  fixedExpensesList.innerHTML = "";
+  const sorted = state.fixedExpenses.slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+
+  sorted.forEach((entry) => {
+    const node = fixedExpenseItemTemplate.content.cloneNode(true);
+    const item = node.querySelector(".item");
+    const title = node.querySelector(".title");
+    const meta = node.querySelector(".meta");
+    const toggleBtn = node.querySelector(".toggle-btn");
+
+    item.dataset.id = entry.id;
+    title.textContent = `${entry.content}｜${formatCurrency(entry.amount)}`;
+    meta.textContent = `毎月${entry.dayOfMonth}日 / 開始日: ${formatDate(entry.startDate)} / 状態: ${entry.active ? "有効" : "無効"}`;
+    toggleBtn.textContent = entry.active ? "無効にする" : "有効にする";
+    fixedExpensesList.appendChild(node);
+  });
+
+  fixedExpensesEmpty.hidden = sorted.length > 0;
+}
+
 function resolveCaseName(caseId) {
   const found = state.cases.find((c) => c.id === caseId);
   return found ? `${found.customerName}｜${found.caseName}` : "（削除済み案件）";
@@ -732,10 +866,18 @@ function resetExpenseForm() {
   expenseSubmitBtn.textContent = "経費を登録";
 }
 
+function resetFixedExpenseForm() {
+  resetEditMode("fixedExpense");
+  fixedExpenseForm.reset();
+  fixedExpenseForm.elements.fixedExpenseActive.checked = true;
+  fixedExpenseSubmitBtn.textContent = "固定費を登録";
+}
+
 function resetEditMode(target) {
   if (target === "case") editState.caseId = null;
   if (target === "sale") editState.saleId = null;
   if (target === "expense") editState.expenseId = null;
+  if (target === "fixedExpense") editState.fixedExpenseId = null;
 }
 
 function sortCases(a, b) {
@@ -841,6 +983,12 @@ function normalizeStatus(status) {
   return STATUS_ORDER.includes(status) ? status : "未着手";
 }
 
+function normalizeDayOfMonth(raw) {
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > 31) return null;
+  return value;
+}
+
 function escapeHtml(text) {
   return String(text)
     .replaceAll("&", "&amp;")
@@ -886,9 +1034,72 @@ function mapExpenseFromDb(row) {
     content: row.content || "",
     amount: normalizeAmount(row.amount) ?? 0,
     caseId: row.case_id || null,
+    fixedExpenseId: row.fixed_expense_id || null,
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
   };
+}
+
+function mapFixedExpenseFromDb(row) {
+  return {
+    id: row.id,
+    content: row.content || "",
+    amount: normalizeAmount(row.amount) ?? 0,
+    dayOfMonth: normalizeDayOfMonth(row.day_of_month) ?? 1,
+    startDate: row.start_date || "",
+    active: Boolean(row.active),
+    createdAt: Date.parse(row.created_at) || Date.now(),
+    updatedAt: Date.parse(row.updated_at) || Date.now(),
+  };
+}
+
+async function ensureMonthlyFixedExpenses() {
+  if (!currentUser || !state.fixedExpenses.length) return 0;
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const monthIndex = now.getMonth();
+  const monthKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  const monthEnd = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
+
+  const existingByFixedId = new Set(
+    state.expenses.filter((expense) => isSameMonthKey(expense.date, monthKey) && expense.fixedExpenseId).map((expense) => expense.fixedExpenseId)
+  );
+  const toInsert = [];
+
+  state.fixedExpenses.forEach((fixedExpense) => {
+    if (!fixedExpense.active || !fixedExpense.startDate) return;
+    if (fixedExpense.startDate > monthEnd) return;
+    if (existingByFixedId.has(fixedExpense.id)) return;
+
+    const targetDay = Math.min(fixedExpense.dayOfMonth, lastDay);
+    const date = `${monthKey}-${String(targetDay).padStart(2, "0")}`;
+    if (date < fixedExpense.startDate) return;
+
+    toInsert.push({
+      user_id: currentUser.id,
+      date,
+      content: fixedExpense.content,
+      amount: fixedExpense.amount,
+      case_id: null,
+      fixed_expense_id: fixedExpense.id,
+    });
+  });
+
+  if (!toInsert.length) return 0;
+
+  const { error } = await sbClient.from("expenses").insert(toInsert);
+  if (error) {
+    if (String(error.message || "").includes("fixed_expense_id")) {
+      throw new Error(
+        "expenses.fixed_expense_id が未作成です。README記載の SQL を実行してください: alter table expenses add column if not exists fixed_expense_id uuid;"
+      );
+    }
+    throw error;
+  }
+
+  return toInsert.length;
 }
 
 async function withLoading(task, fallbackMessage, authArea = false) {
