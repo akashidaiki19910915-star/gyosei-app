@@ -111,9 +111,9 @@
           <button type="button" class="tab-btn" data-tab="daily-reports">日報</button>
         </nav>
 
-        <section class="dashboard panel">
+        <section id="cases-dashboard-panel" class="dashboard panel subtab-panel active" data-parent-tab="cases" data-subtab="dashboard">
           <h2>ダッシュボード</h2>
-          <section id="next-action-alert-card" class="next-action-alert-card" aria-live="polite">
+          <section id="next-action-alert-card" class="next-action-alert-card case-alert-block" aria-live="polite">
             <div class="next-action-alert-header">
               <h3>次回対応アラート</h3>
               <p id="next-action-alert-summary" class="next-action-alert-summary">対象 0件</p>
@@ -134,7 +134,7 @@
               </table>
             </div>
           </section>
-          <section id="deadline-alert-card" class="deadline-alert-card" aria-live="polite">
+          <section id="deadline-alert-card" class="deadline-alert-card case-alert-block" aria-live="polite">
             <div class="deadline-alert-header">
               <h3>期限アラート</h3>
             </div>
@@ -156,7 +156,7 @@
               </table>
             </div>
           </section>
-          <section class="status-summary-card" aria-labelledby="status-summary-heading">
+          <section class="status-summary-card case-dashboard-block" aria-labelledby="status-summary-heading">
             <div class="status-summary-header">
               <h3 id="status-summary-heading">ステータス別案件数</h3>
               <button id="status-filter-clear-btn" type="button" class="secondary-btn">全件表示</button>
@@ -164,7 +164,7 @@
             <div id="status-summary-list" class="status-summary-list"></div>
             <p id="status-summary-total" class="status-summary-total">全案件数：0件</p>
           </section>
-          <section id="unpaid-alert-card" class="unpaid-alert-card" aria-live="polite">
+          <section id="unpaid-alert-card" class="unpaid-alert-card case-alert-block" aria-live="polite">
             <div class="unpaid-alert-header">
               <h3>未入金アラート</h3>
               <p id="unpaid-alert-period" class="unpaid-alert-period"></p>
@@ -186,7 +186,7 @@
               </table>
             </div>
           </section>
-          <section id="billing-leak-alert-card" class="billing-leak-alert-card" aria-live="polite">
+          <section id="billing-leak-alert-card" class="billing-leak-alert-card case-alert-block" aria-live="polite">
             <div class="billing-leak-alert-header">
               <h3>請求漏れアラート</h3>
             </div>
@@ -207,11 +207,11 @@
               </table>
             </div>
           </section>
-          <section class="dashboard-worktime-card">
+          <section class="dashboard-worktime-card case-dashboard-block">
             <h3>日報作業時間</h3>
             <div class="summary-grid" id="worktime-summary-grid"></div>
           </section>
-          <div class="dashboard-filter-group">
+          <div class="dashboard-filter-group case-dashboard-block">
             <fieldset class="aggregation-switch" aria-label="集計単位の切替">
               <legend>集計単位</legend>
               <label><input type="radio" name="aggregation-unit" value="month" checked /> 月別</label>
@@ -230,8 +230,8 @@
               </label>
             </div>
           </div>
-          <div class="summary-grid" id="summary-grid"></div>
-          <section id="yearly-breakdown" class="yearly-breakdown" hidden>
+          <div class="summary-grid case-dashboard-block" id="summary-grid"></div>
+          <section id="yearly-breakdown" class="yearly-breakdown case-dashboard-block" hidden>
             <h3 class="subheading">月別内訳（1月〜12月）</h3>
             <div class="table-wrap">
               <table>
@@ -242,12 +242,12 @@
               </table>
             </div>
           </section>
-          <h3 class="subheading">案件別利益一覧</h3>
-          <div id="case-profit-empty" class="empty">案件データがありません。</div>
-          <ul id="case-profit-list" class="item-list compact-list"></ul>
-          <h3 class="subheading">未入金一覧（全期間）</h3>
-          <div id="unpaid-list-empty" class="empty">未入金はありません。</div>
-          <div id="unpaid-list-wrap" class="table-wrap" hidden>
+          <h3 class="subheading case-dashboard-block">案件別利益一覧</h3>
+          <div id="case-profit-empty" class="empty case-dashboard-block">案件データがありません。</div>
+          <ul id="case-profit-list" class="item-list compact-list case-dashboard-block"></ul>
+          <h3 class="subheading case-dashboard-block">未入金一覧（全期間）</h3>
+          <div id="unpaid-list-empty" class="empty case-dashboard-block">未入金はありません。</div>
+          <div id="unpaid-list-wrap" class="table-wrap case-dashboard-block" hidden>
             <table>
               <thead>
                 <tr>
@@ -266,8 +266,14 @@
         </section>
 
         <section id="tab-cases" class="tab-panel active">
+          <nav class="subtabs" aria-label="案件サブタブ">
+            <button type="button" class="subtab-btn active" data-parent-tab="cases" data-subtab="dashboard">ダッシュボード</button>
+            <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="entry">案件登録</button>
+            <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="list">案件一覧</button>
+            <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="alerts">アラート</button>
+          </nav>
           <div class="layout two-col">
-            <section class="panel">
+            <section class="panel subtab-panel" data-parent-tab="cases" data-subtab="entry" hidden>
               <h2>新規案件登録</h2>
               <form id="case-form" class="form">
                 <label>
@@ -318,7 +324,7 @@
               </form>
             </section>
 
-            <section class="panel">
+            <section class="panel subtab-panel" data-parent-tab="cases" data-subtab="list" hidden>
               <div class="panel-title-row">
                 <h2>案件一覧（期限順）</h2>
                 <button id="clear-btn" type="button" class="danger-btn">全件削除</button>
@@ -357,8 +363,13 @@
         </section>
 
         <section id="tab-estimates" class="tab-panel">
+          <nav class="subtabs" aria-label="見積サブタブ">
+            <button type="button" class="subtab-btn active" data-parent-tab="estimates" data-subtab="create">見積作成</button>
+            <button type="button" class="subtab-btn" data-parent-tab="estimates" data-subtab="list">見積一覧</button>
+            <button type="button" class="subtab-btn" data-parent-tab="estimates" data-subtab="export">請求データ出力</button>
+          </nav>
           <div class="layout two-col">
-            <section class="panel">
+            <section class="panel subtab-panel" data-parent-tab="estimates" data-subtab="create">
               <h2>見積作成</h2>
               <form id="estimate-form" class="form">
                 <label>顧客名 <span class="required">必須</span><input id="estimate-customer-name" name="customerName" type="text" required maxlength="80" /></label>
@@ -390,7 +401,7 @@
                 <button id="estimate-submit-btn" type="submit">見積を登録</button>
               </form>
             </section>
-            <section class="panel">
+            <section class="panel subtab-panel" data-parent-tab="estimates" data-subtab="list" hidden>
               <h2>見積一覧</h2>
               <div class="search-filter-bar">
                 <label class="inline-field">顧客名検索<input id="estimate-customer-search" type="text" /></label>
@@ -412,14 +423,23 @@
                 </label>
               </div>
               <div id="estimate-empty" class="empty">見積データはまだありません。</div>
-              <ul id="estimate-list" class="item-list"></ul>
+              <ul id="estimate-list" class="item-list estimate-list-grid"></ul>
+            </section>
+            <section class="panel subtab-panel" data-parent-tab="estimates" data-subtab="export" hidden>
+              <h2>請求データ出力</h2>
+              <p class="meta">見積一覧カードの「請求CSV」「請求Excel」ボタンから、見積単位で請求データを出力できます。</p>
             </section>
           </div>
         </section>
 
         <section id="tab-sales" class="tab-panel">
+          <nav class="subtabs" aria-label="売上サブタブ">
+            <button type="button" class="subtab-btn active" data-parent-tab="sales" data-subtab="entry">売上登録</button>
+            <button type="button" class="subtab-btn" data-parent-tab="sales" data-subtab="list">売上一覧</button>
+            <button type="button" class="subtab-btn" data-parent-tab="sales" data-subtab="unpaid">未入金</button>
+          </nav>
           <div class="layout two-col">
-            <section class="panel">
+            <section class="panel subtab-panel" data-parent-tab="sales" data-subtab="entry">
               <h2>売上登録</h2>
               <form id="sale-form" class="form">
                 <label>
@@ -446,7 +466,7 @@
               </form>
             </section>
 
-            <section class="panel">
+            <section class="panel subtab-panel" data-parent-tab="sales" data-subtab="list" hidden>
               <h2>売上一覧</h2>
               <div class="search-filter-bar">
                 <label class="inline-field">
@@ -459,12 +479,21 @@
               <div id="sales-empty" class="empty">売上データはまだありません。</div>
               <ul id="sales-list" class="item-list"></ul>
             </section>
+            <section class="panel subtab-panel" data-parent-tab="sales" data-subtab="unpaid" hidden>
+              <h2>未入金</h2>
+              <p class="meta">未入金アラート・一覧は「案件 ＞ ダッシュボード」から確認できます。</p>
+            </section>
           </div>
         </section>
 
         <section id="tab-expenses" class="tab-panel">
+          <nav class="subtabs" aria-label="経費サブタブ">
+            <button type="button" class="subtab-btn active" data-parent-tab="expenses" data-subtab="entry">経費登録</button>
+            <button type="button" class="subtab-btn" data-parent-tab="expenses" data-subtab="list">経費一覧</button>
+            <button type="button" class="subtab-btn" data-parent-tab="expenses" data-subtab="fixed">固定費</button>
+          </nav>
           <div class="layout two-col">
-            <section class="panel">
+            <section class="panel subtab-panel" data-parent-tab="expenses" data-subtab="entry">
               <h2>経費登録</h2>
               <form id="expense-form" class="form">
                 <div class="date-grid">
@@ -489,7 +518,7 @@
               </form>
             </section>
 
-            <section class="panel">
+            <section class="panel subtab-panel" data-parent-tab="expenses" data-subtab="list" hidden>
               <h2>経費一覧</h2>
               <div class="search-filter-bar">
                 <label class="inline-field">
@@ -503,7 +532,7 @@
               <ul id="expenses-list" class="item-list"></ul>
             </section>
 
-            <section class="panel">
+            <section class="panel subtab-panel" data-parent-tab="expenses" data-subtab="fixed" hidden>
               <h2>固定費登録</h2>
               <form id="fixed-expense-form" class="form">
                 <label>
@@ -532,7 +561,7 @@
               </form>
             </section>
 
-            <section class="panel">
+            <section class="panel subtab-panel" data-parent-tab="expenses" data-subtab="fixed" hidden>
               <h2>固定費一覧</h2>
               <div id="fixed-expenses-empty" class="empty">固定費データはまだありません。</div>
               <ul id="fixed-expenses-list" class="item-list"></ul>
@@ -541,8 +570,13 @@
         </section>
 
         <section id="tab-daily-reports" class="tab-panel">
+          <nav class="subtabs" aria-label="日報サブタブ">
+            <button type="button" class="subtab-btn active" data-parent-tab="daily-reports" data-subtab="entry">日報登録</button>
+            <button type="button" class="subtab-btn" data-parent-tab="daily-reports" data-subtab="list">日報一覧</button>
+            <button type="button" class="subtab-btn" data-parent-tab="daily-reports" data-subtab="summary">日報集計</button>
+          </nav>
           <div class="layout two-col">
-            <section class="panel">
+            <section class="panel subtab-panel" data-parent-tab="daily-reports" data-subtab="entry">
               <h2>日報登録フォーム</h2>
               <form id="daily-report-form" class="form">
                 <label>
@@ -573,12 +607,12 @@
               </form>
             </section>
 
-            <section class="panel">
+            <section class="panel subtab-panel" data-parent-tab="daily-reports" data-subtab="summary" hidden>
               <h2>日報集計</h2>
               <ul id="daily-report-summary-list" class="item-list compact-list"></ul>
             </section>
 
-            <section class="panel report-list-panel">
+            <section class="panel report-list-panel subtab-panel" data-parent-tab="daily-reports" data-subtab="list" hidden>
               <h2>日報一覧</h2>
               <div class="search-filter-bar daily-report-filter-bar">
                 <label class="inline-field" for="daily-report-search-input">

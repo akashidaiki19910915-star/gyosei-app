@@ -76,6 +76,27 @@ body {
 }
 
 .tabs { display: flex; gap: 0.55rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.subtabs {
+  display: flex;
+  gap: 0.45rem;
+  margin-bottom: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.subtab-btn {
+  background: #eef2f8;
+  color: #334155;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.86rem;
+}
+
+.subtab-btn.active {
+  background: #dbe7ff;
+  color: #1d3e89;
+  border-color: #9eb9ff;
+}
 
 .tab-btn {
   border: 1px solid var(--border);
@@ -184,6 +205,41 @@ button:hover { background: var(--primary-dark); }
   padding: 0;
   display: grid;
   gap: 0.7rem;
+}
+
+.estimate-list-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.estimate-card {
+  flex-direction: column;
+}
+
+.estimate-card-body {
+  width: 100%;
+}
+
+.estimate-card-title {
+  margin-bottom: 0.55rem;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.estimate-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem 0.75rem;
+}
+
+.estimate-card-grid .meta {
+  margin: 0;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.estimate-card-actions {
+  width: 100%;
+  flex-wrap: wrap;
 }
 
 .item {
@@ -574,6 +630,13 @@ tbody tr:last-child td {
 .dashboard-worktime-card h3 {
   margin: 0 0 0.5rem;
 }
+.dashboard.alerts-only .case-dashboard-block {
+  display: none;
+}
+
+.dashboard:not(.alerts-only) .case-alert-block {
+  display: none;
+}
 
 .report-list-panel {
   grid-column: 1 / -1;
@@ -739,6 +802,10 @@ tbody tr:last-child td {
 }
 
 @media (max-width: 640px) {
+  .estimate-list-grid,
+  .estimate-card-grid {
+    grid-template-columns: 1fr;
+  }
   .date-grid { grid-template-columns: 1fr; }
   .item { flex-direction: column; }
   .top-bar { flex-direction: column; align-items: flex-start; }
