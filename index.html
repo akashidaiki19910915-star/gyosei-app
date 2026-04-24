@@ -141,6 +141,27 @@
               </table>
             </div>
           </section>
+          <section id="billing-leak-alert-card" class="billing-leak-alert-card" aria-live="polite">
+            <div class="billing-leak-alert-header">
+              <h3>請求漏れアラート</h3>
+            </div>
+            <p id="billing-leak-alert-summary" class="billing-leak-alert-summary"></p>
+            <div id="billing-leak-alert-empty" class="empty">請求漏れ候補はありません。</div>
+            <div id="billing-leak-alert-list-wrap" class="table-wrap" hidden>
+              <table class="billing-leak-alert-table">
+                <thead>
+                  <tr>
+                    <th>顧客名</th>
+                    <th>案件名</th>
+                    <th>見積金額</th>
+                    <th>完了ステータス</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="billing-leak-alert-body"></tbody>
+              </table>
+            </div>
+          </section>
           <div class="dashboard-filter-group">
             <fieldset class="aggregation-switch" aria-label="集計単位の切替">
               <legend>集計単位</legend>
