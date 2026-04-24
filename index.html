@@ -111,6 +111,27 @@
 
         <section class="dashboard panel">
           <h2>ダッシュボード</h2>
+          <section id="next-action-alert-card" class="next-action-alert-card" aria-live="polite">
+            <div class="next-action-alert-header">
+              <h3>次回対応アラート</h3>
+              <p id="next-action-alert-summary" class="next-action-alert-summary">対象 0件</p>
+            </div>
+            <div id="next-action-alert-empty" class="empty">次回対応が必要な案件はありません。</div>
+            <div id="next-action-alert-list-wrap" class="table-wrap" hidden>
+              <table class="next-action-alert-table">
+                <thead>
+                  <tr>
+                    <th>顧客名</th>
+                    <th>案件名</th>
+                    <th>次回対応日</th>
+                    <th>次回対応内容</th>
+                    <th>編集</th>
+                  </tr>
+                </thead>
+                <tbody id="next-action-alert-body"></tbody>
+              </table>
+            </div>
+          </section>
           <section id="deadline-alert-card" class="deadline-alert-card" aria-live="polite">
             <div class="deadline-alert-header">
               <h3>期限アラート</h3>
@@ -263,6 +284,20 @@
                   <label>
                     期限日
                     <input id="due-date" name="dueDate" type="date" />
+                  </label>
+                </div>
+                <label>
+                  作業メモ
+                  <textarea id="work-memo" name="workMemo" rows="4" maxlength="2000" placeholder="対応履歴・注意点などを記録"></textarea>
+                </label>
+                <div class="date-grid">
+                  <label>
+                    次回対応日
+                    <input id="next-action-date" name="nextActionDate" type="date" />
+                  </label>
+                  <label>
+                    次回対応内容
+                    <input id="next-action" name="nextAction" type="text" maxlength="200" placeholder="次回やること" />
                   </label>
                 </div>
                 <label>
@@ -445,6 +480,7 @@
         <div>
           <p class="title"></p>
           <p class="meta"></p>
+          <p class="meta case-work-meta"></p>
           <p class="meta profit-meta"></p>
         </div>
         <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
