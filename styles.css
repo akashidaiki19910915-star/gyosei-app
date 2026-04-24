@@ -68,6 +68,12 @@ body {
 }
 
 .container { max-width: 1160px; margin: 1rem auto; padding: 0 1rem 1.2rem; }
+.csv-panel { margin-bottom: 1rem; }
+.csv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
 
 .tabs { display: flex; gap: 0.55rem; margin-bottom: 1rem; flex-wrap: wrap; }
 
