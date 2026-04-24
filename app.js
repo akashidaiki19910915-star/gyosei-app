@@ -773,54 +773,78 @@ async function handleCsvImportSubmit(event) {
 }
 
 function handleExportExcel() {
+  exportExcel();
+}
+
+function exportExcel() {
   if (!window.XLSX) {
-    showAppMessage("Excel出力ライブラリ（SheetJS）の読み込みに失敗しました。", true);
+    showAppMessage("Excel出力ライブラリの読み込みに失敗しました", true);
     return;
   }
-  const workbook = XLSX.utils.book_new();
-  const caseHeaders = ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status"];
-  const saleHeaders = ["case_name", "invoice_amount", "paid_amount", "paid_date", "is_unpaid"];
-  const expenseHeaders = ["case_name", "date", "content", "amount"];
-  const fixedExpenseHeaders = ["content", "amount", "day_of_month", "start_date", "active"];
-  const caseRows = state.cases.map((entry) => ({
-    customer_name: entry.customerName,
-    case_name: entry.caseName,
-    estimate_amount: entry.estimateAmount ?? "",
-    received_date: entry.receivedDate || "",
-    due_date: entry.dueDate || "",
-    status: normalizeStatus(entry.status),
-  }));
-  const saleRows = state.sales.map((entry) => {
-    const foundCase = state.cases.find((c) => c.id === entry.caseId);
-    return {
-      case_name: foundCase?.caseName || "",
-      invoice_amount: entry.invoiceAmount ?? "",
-      paid_amount: entry.paidAmount ?? "",
-      paid_date: entry.paidDate || "",
-      is_unpaid: entry.isUnpaid ? "true" : "false",
-    };
-  });
-  const expenseRows = state.expenses.map((entry) => {
-    const foundCase = state.cases.find((c) => c.id === entry.caseId);
-    return {
-      case_name: foundCase?.caseName || "",
-      date: entry.date || "",
-      content: entry.content || "",
+
+  try {
+    const workbook = XLSX.utils.book_new();
+    const caseHeaders = ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status"];
+    const saleHeaders = ["case_name", "invoice_amount", "paid_amount", "paid_date", "is_unpaid"];
+    const expenseHeaders = ["case_name", "date", "content", "amount"];
+    const fixedExpenseHeaders = ["content", "amount", "day_of_month", "start_date", "active"];
+    const caseRows = state.cases.map((entry) => ({
+      customer_name: entry.customerName,
+      case_name: entry.caseName,
+      estimate_amount: entry.estimateAmount ?? "",
+      received_date: entry.receivedDate || "",
+      due_date: entry.dueDate || "",
+      status: normalizeStatus(entry.status),
+    }));
+    const saleRows = state.sales.map((entry) => {
+      const foundCase = state.cases.find((c) => c.id === entry.caseId);
+      return {
+        case_name: foundCase?.caseName || "",
+        invoice_amount: entry.invoiceAmount ?? "",
+        paid_amount: entry.paidAmount ?? "",
+        paid_date: entry.paidDate || "",
+        is_unpaid: entry.isUnpaid ? "true" : "false",
+      };
+    });
+    const expenseRows = state.expenses.map((entry) => {
+      const foundCase = state.cases.find((c) => c.id === entry.caseId);
+      return {
+        case_name: foundCase?.caseName || "",
+        date: entry.date || "",
+        content: entry.content || "",
+        amount: entry.amount ?? "",
+      };
+    });
+    const fixedExpenseRows = state.fixedExpenses.map((entry) => ({
+      content: entry.content,
       amount: entry.amount ?? "",
-    };
-  });
-  const fixedExpenseRows = state.fixedExpenses.map((entry) => ({
-    content: entry.content,
-    amount: entry.amount ?? "",
-    day_of_month: entry.dayOfMonth ?? "",
-    start_date: entry.startDate || "",
-    active: entry.active ? "true" : "false",
-  }));
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(caseRows, { header: caseHeaders }), "案件");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(saleRows, { header: saleHeaders }), "売上");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(expenseRows, { header: expenseHeaders }), "経費");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(fixedExpenseRows, { header: fixedExpenseHeaders }), "固定費");
-  XLSX.writeFile(workbook, "gyosei-app-export.xlsx");
+      day_of_month: entry.dayOfMonth ?? "",
+      start_date: entry.startDate || "",
+      active: entry.active ? "true" : "false",
+    }));
+
+    XLSX.utils.book_append_sheet(workbook, createExcelSheet(caseRows, caseHeaders), "案件");
+    XLSX.utils.book_append_sheet(workbook, createExcelSheet(saleRows, saleHeaders), "売上");
+    XLSX.utils.book_append_sheet(workbook, createExcelSheet(expenseRows, expenseHeaders), "経費");
+    XLSX.utils.book_append_sheet(workbook, createExcelSheet(fixedExpenseRows, fixedExpenseHeaders), "固定費");
+    XLSX.writeFile(workbook, "gyosei-app-export.xlsx");
+    showAppMessage("Excelファイルを出力しました。", false);
+  } catch (error) {
+    console.error("Excel出力に失敗しました。", error);
+    showAppMessage("Excel出力に失敗しました。", true);
+  }
+}
+
+function createExcelSheet(rows, headers) {
+  const sheet = XLSX.utils.aoa_to_sheet([headers]);
+  if (rows.length > 0) {
+    XLSX.utils.sheet_add_json(sheet, rows, {
+      header: headers,
+      origin: "A2",
+      skipHeader: true,
+    });
+  }
+  return sheet;
 }
 
 async function handleExcelImportSubmit(event) {
