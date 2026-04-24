@@ -25,6 +25,8 @@ const panels = {
 };
 
 const summaryGrid = document.getElementById("summary-grid");
+const caseProfitList = document.getElementById("case-profit-list");
+const caseProfitEmpty = document.getElementById("case-profit-empty");
 
 const caseForm = document.getElementById("case-form");
 const caseList = document.getElementById("case-list");
@@ -464,13 +466,15 @@ function renderDashboard() {
     { label: "対象月", value: monthLabel(currentMonth), cls: "" },
     { label: "月別売上合計", value: formatCurrency(sales), cls: "" },
     { label: "月別経費合計", value: formatCurrency(expenses), cls: "" },
-    { label: "利益（売上−経費）", value: formatCurrency(profit), cls: "profit" },
+    { label: "利益（売上−経費）", value: formatCurrency(profit), cls: `profit ${profit < 0 ? "loss" : ""}`.trim() },
   ].forEach((card) => {
     const div = document.createElement("div");
     div.className = `summary-card ${card.cls}`.trim();
     div.innerHTML = `<p class="label">${card.label}</p><p class="value">${card.value}</p>`;
     summaryGrid.appendChild(div);
   });
+
+  renderCaseProfitList();
 }
 
 function renderCaseOptions() {
@@ -488,20 +492,70 @@ function renderCaseOptions() {
 function renderCases() {
   caseList.innerHTML = "";
   const sorted = state.cases.slice().sort(sortCases);
+  const profitsByCaseId = buildCaseProfitMap();
 
   sorted.forEach((entry) => {
     const node = caseItemTemplate.content.cloneNode(true);
     const item = node.querySelector(".item");
     const title = node.querySelector(".title");
     const meta = node.querySelector(".meta");
+    const profitMeta = node.querySelector(".profit-meta");
+    const totals = profitsByCaseId[entry.id] || { sales: 0, expenses: 0, profit: 0 };
 
     item.dataset.id = entry.id;
     title.textContent = `${entry.customerName}｜${entry.caseName}`;
-    meta.textContent = `見積: ${formatCurrency(entry.estimateAmount)} / 受付日: ${formatDate(entry.receivedDate)} / 期限日: ${formatDate(entry.dueDate)} / ${entry.status}`;
+    meta.textContent = `見積: ${formatCurrency(entry.estimateAmount)} / ステータス: ${entry.status} / 受付日: ${formatDate(entry.receivedDate)} / 期限日: ${formatDate(entry.dueDate)}`;
+    profitMeta.textContent = `売上合計: ${formatCurrency(totals.sales)} / 経費合計: ${formatCurrency(totals.expenses)} / 利益: ${formatCurrency(totals.profit)}`;
+    profitMeta.classList.toggle("loss-text", totals.profit < 0);
     caseList.appendChild(node);
   });
 
   caseEmpty.hidden = sorted.length > 0;
+}
+
+function renderCaseProfitList() {
+  if (!caseProfitList || !caseProfitEmpty) return;
+  const profitsByCaseId = buildCaseProfitMap();
+  const sortedCases = state.cases.slice().sort(sortCases);
+  caseProfitList.innerHTML = "";
+
+  sortedCases.forEach((entry) => {
+    const totals = profitsByCaseId[entry.id] || { sales: 0, expenses: 0, profit: 0 };
+    const li = document.createElement("li");
+    li.className = "item";
+    li.innerHTML = `
+      <div>
+        <p class="title">${escapeHtml(entry.customerName)}｜${escapeHtml(entry.caseName)}</p>
+        <p class="meta">売上合計: ${formatCurrency(totals.sales)} / 経費合計: ${formatCurrency(totals.expenses)} / <span class="${totals.profit < 0 ? "loss-text" : ""}">利益: ${formatCurrency(totals.profit)}</span></p>
+      </div>
+    `;
+    caseProfitList.appendChild(li);
+  });
+
+  caseProfitEmpty.hidden = sortedCases.length > 0;
+}
+
+function buildCaseProfitMap() {
+  const map = {};
+  state.cases.forEach((entry) => {
+    map[entry.id] = { sales: 0, expenses: 0, profit: 0 };
+  });
+
+  state.sales.forEach((sale) => {
+    if (!sale.caseId || !map[sale.caseId]) return;
+    map[sale.caseId].sales += sale.invoiceAmount || 0;
+  });
+
+  state.expenses.forEach((expense) => {
+    if (!expense.caseId || !map[expense.caseId]) return;
+    map[expense.caseId].expenses += expense.amount || 0;
+  });
+
+  Object.values(map).forEach((item) => {
+    item.profit = item.sales - item.expenses;
+  });
+
+  return map;
 }
 
 function renderSales() {

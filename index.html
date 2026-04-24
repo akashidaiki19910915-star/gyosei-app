@@ -59,6 +59,9 @@
         <section class="dashboard panel">
           <h2>月次ダッシュボード</h2>
           <div class="summary-grid" id="summary-grid"></div>
+          <h3 class="subheading">案件別利益一覧</h3>
+          <div id="case-profit-empty" class="empty">案件データがありません。</div>
+          <ul id="case-profit-list" class="item-list compact-list"></ul>
         </section>
 
         <section id="tab-cases" class="tab-panel active">
@@ -190,6 +193,7 @@
         <div>
           <p class="title"></p>
           <p class="meta"></p>
+          <p class="meta profit-meta"></p>
         </div>
         <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
       </li>

@@ -191,6 +191,25 @@ button:hover { background: var(--primary-dark); }
 .summary-card .label { margin: 0 0 0.3rem; color: var(--muted); }
 .summary-card .value { margin: 0; font-size: 1.15rem; font-weight: 700; }
 .summary-card.profit .value { color: var(--ok); }
+.summary-card.loss .value { color: var(--danger); }
+
+.subheading {
+  margin-top: 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.compact-list {
+  margin-top: 0.2rem;
+}
+
+.profit-meta {
+  margin-top: 0.32rem;
+}
+
+.loss-text {
+  color: var(--danger);
+  font-weight: 700;
+}
 
 .panel-title-row { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; }
 
