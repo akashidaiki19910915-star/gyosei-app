@@ -260,6 +260,33 @@
                 <h2>案件一覧（期限順）</h2>
                 <button id="clear-btn" type="button" class="danger-btn">全件削除</button>
               </div>
+              <div class="search-filter-bar">
+                <label class="inline-field">
+                  検索
+                  <input id="case-search-input" type="text" placeholder="顧客名・案件名・ステータスで検索" />
+                </label>
+                <label class="inline-field">
+                  ステータス
+                  <select id="case-status-filter">
+                    <option value="all">全件</option>
+                    <option value="未着手">未着手</option>
+                    <option value="進行中">進行中</option>
+                    <option value="完了">完了</option>
+                    <option value="その他">その他</option>
+                  </select>
+                </label>
+                <label class="inline-field">
+                  期限
+                  <select id="case-deadline-filter">
+                    <option value="all">全件</option>
+                    <option value="overdue">期限切れ</option>
+                    <option value="within7">7日以内</option>
+                    <option value="within30">30日以内</option>
+                  </select>
+                </label>
+                <button id="case-filter-clear-btn" type="button" class="secondary-btn">条件クリア</button>
+              </div>
+              <p id="case-filter-count" class="filter-count">表示中 0件 / 全0件</p>
               <div id="case-empty" class="empty">案件はまだ登録されていません。</div>
               <ul id="case-list" class="item-list"></ul>
             </section>
@@ -297,6 +324,14 @@
 
             <section class="panel">
               <h2>売上一覧</h2>
+              <div class="search-filter-bar">
+                <label class="inline-field">
+                  検索
+                  <input id="sales-search-input" type="text" placeholder="顧客名・案件名・請求額・入金状況で検索" />
+                </label>
+                <button id="sales-filter-clear-btn" type="button" class="secondary-btn">条件クリア</button>
+              </div>
+              <p id="sales-filter-count" class="filter-count">表示中 0件 / 全0件</p>
               <div id="sales-empty" class="empty">売上データはまだありません。</div>
               <ul id="sales-list" class="item-list"></ul>
             </section>
@@ -332,6 +367,14 @@
 
             <section class="panel">
               <h2>経費一覧</h2>
+              <div class="search-filter-bar">
+                <label class="inline-field">
+                  検索
+                  <input id="expenses-search-input" type="text" placeholder="内容・案件名・金額で検索" />
+                </label>
+                <button id="expenses-filter-clear-btn" type="button" class="secondary-btn">条件クリア</button>
+              </div>
+              <p id="expenses-filter-count" class="filter-count">表示中 0件 / 全0件</p>
               <div id="expenses-empty" class="empty">経費データはまだありません。</div>
               <ul id="expenses-list" class="item-list"></ul>
             </section>

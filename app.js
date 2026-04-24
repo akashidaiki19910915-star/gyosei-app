@@ -21,6 +21,10 @@ const state = {
   selectedMonth: toMonthKey(new Date()),
   selectedYear: new Date().getFullYear(),
   caseStatusFilter: "all",
+  caseSearchQuery: "",
+  caseDeadlineFilter: "all",
+  salesSearchQuery: "",
+  expensesSearchQuery: "",
 };
 const editState = { caseId: null, saleId: null, expenseId: null, fixedExpenseId: null };
 
@@ -82,18 +86,29 @@ const caseList = document.getElementById("case-list");
 const caseEmpty = document.getElementById("case-empty");
 const clearBtn = document.getElementById("clear-btn");
 const caseSubmitBtn = caseForm.querySelector('button[type="submit"]');
+const caseSearchInput = document.getElementById("case-search-input");
+const caseStatusFilterSelect = document.getElementById("case-status-filter");
+const caseDeadlineFilterSelect = document.getElementById("case-deadline-filter");
+const caseFilterClearBtn = document.getElementById("case-filter-clear-btn");
+const caseFilterCount = document.getElementById("case-filter-count");
 
 const saleForm = document.getElementById("sale-form");
 const saleCaseSelect = document.getElementById("sale-case-id");
 const salesList = document.getElementById("sales-list");
 const salesEmpty = document.getElementById("sales-empty");
 const saleSubmitBtn = saleForm.querySelector('button[type="submit"]');
+const salesSearchInput = document.getElementById("sales-search-input");
+const salesFilterClearBtn = document.getElementById("sales-filter-clear-btn");
+const salesFilterCount = document.getElementById("sales-filter-count");
 
 const expenseForm = document.getElementById("expense-form");
 const expenseCaseSelect = document.getElementById("expense-case-id");
 const expensesList = document.getElementById("expenses-list");
 const expensesEmpty = document.getElementById("expenses-empty");
 const expenseSubmitBtn = expenseForm.querySelector('button[type="submit"]');
+const expensesSearchInput = document.getElementById("expenses-search-input");
+const expensesFilterClearBtn = document.getElementById("expenses-filter-clear-btn");
+const expensesFilterCount = document.getElementById("expenses-filter-count");
 const fixedExpenseForm = document.getElementById("fixed-expense-form");
 const fixedExpensesList = document.getElementById("fixed-expenses-list");
 const fixedExpensesEmpty = document.getElementById("fixed-expenses-empty");
@@ -181,6 +196,14 @@ function bindEvents() {
   aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
   statusSummaryList?.addEventListener("click", handleStatusSummaryClick);
   statusFilterClearBtn?.addEventListener("click", () => applyCaseStatusFilter("all"));
+  caseSearchInput?.addEventListener("input", handleCaseSearchInput);
+  caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
+  caseDeadlineFilterSelect?.addEventListener("change", handleCaseDeadlineFilterChange);
+  caseFilterClearBtn?.addEventListener("click", clearCaseFilters);
+  salesSearchInput?.addEventListener("input", handleSalesSearchInput);
+  salesFilterClearBtn?.addEventListener("click", clearSalesSearch);
+  expensesSearchInput?.addEventListener("input", handleExpensesSearchInput);
+  expensesFilterClearBtn?.addEventListener("click", clearExpensesSearch);
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("focus", handleWindowFocus);
   window.addEventListener("pageshow", handlePageShow);
@@ -221,9 +244,56 @@ function handleStatusSummaryClick(event) {
 function applyCaseStatusFilter(nextFilter) {
   if (nextFilter !== "all" && !STATUS_FILTER_KEYS.includes(nextFilter)) return;
   state.caseStatusFilter = nextFilter;
+  if (caseStatusFilterSelect) caseStatusFilterSelect.value = nextFilter;
   activateTab("cases");
   renderDashboard();
   renderCases();
+}
+
+function handleCaseSearchInput(event) {
+  state.caseSearchQuery = String(event?.target?.value ?? "").trim().toLowerCase();
+  renderCases();
+}
+
+function handleCaseStatusFilterChange(event) {
+  applyCaseStatusFilter(event?.target?.value || "all");
+}
+
+function handleCaseDeadlineFilterChange(event) {
+  const next = event?.target?.value;
+  state.caseDeadlineFilter = ["all", "overdue", "within7", "within30"].includes(next) ? next : "all";
+  renderCases();
+}
+
+function clearCaseFilters() {
+  state.caseSearchQuery = "";
+  state.caseDeadlineFilter = "all";
+  applyCaseStatusFilter("all");
+  if (caseSearchInput) caseSearchInput.value = "";
+  if (caseDeadlineFilterSelect) caseDeadlineFilterSelect.value = "all";
+  renderCases();
+}
+
+function handleSalesSearchInput(event) {
+  state.salesSearchQuery = String(event?.target?.value ?? "").trim().toLowerCase();
+  renderSales();
+}
+
+function clearSalesSearch() {
+  state.salesSearchQuery = "";
+  if (salesSearchInput) salesSearchInput.value = "";
+  renderSales();
+}
+
+function handleExpensesSearchInput(event) {
+  state.expensesSearchQuery = String(event?.target?.value ?? "").trim().toLowerCase();
+  renderExpenses();
+}
+
+function clearExpensesSearch() {
+  state.expensesSearchQuery = "";
+  if (expensesSearchInput) expensesSearchInput.value = "";
+  renderExpenses();
 }
 
 
@@ -1158,9 +1228,14 @@ function renderCaseOptions() {
 function renderCases() {
   caseList.innerHTML = "";
   const sorted = state.cases.slice().sort(sortCases);
-  const filteredCases = state.caseStatusFilter === "all"
+  const statusFilteredCases = state.caseStatusFilter === "all"
     ? sorted
     : sorted.filter((entry) => getStatusCategory(entry.status) === state.caseStatusFilter);
+  const filteredCases = statusFilteredCases.filter((entry) => {
+    if (state.caseSearchQuery && !matchesCaseSearch(entry, state.caseSearchQuery)) return false;
+    if (!matchesDeadlineFilter(entry, state.caseDeadlineFilter)) return false;
+    return true;
+  });
   const profitsByCaseId = buildCaseProfitMap();
 
   filteredCases.forEach((entry) => {
@@ -1179,9 +1254,12 @@ function renderCases() {
     caseList.appendChild(node);
   });
 
+  if (caseFilterCount) {
+    caseFilterCount.textContent = `表示中 ${filteredCases.length}件 / 全${sorted.length}件`;
+  }
   caseEmpty.hidden = filteredCases.length > 0;
-  if (!filteredCases.length && state.caseStatusFilter !== "all") {
-    caseEmpty.textContent = `「${state.caseStatusFilter}」の案件はありません。`;
+  if (!filteredCases.length && (state.caseStatusFilter !== "all" || state.caseSearchQuery || state.caseDeadlineFilter !== "all")) {
+    caseEmpty.textContent = "条件に一致する案件はありません。";
   } else {
     caseEmpty.textContent = "案件はまだ登録されていません。";
   }
@@ -1274,8 +1352,12 @@ function renderYearlyBreakdown(salesByMonth, expenseByMonth) {
 function renderSales() {
   salesList.innerHTML = "";
   const sorted = state.sales.slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+  const filteredSales = sorted.filter((sale) => {
+    if (!state.salesSearchQuery) return true;
+    return matchesSalesSearch(sale, state.salesSearchQuery);
+  });
 
-  sorted.forEach((sale) => {
+  filteredSales.forEach((sale) => {
     const node = saleItemTemplate.content.cloneNode(true);
     const item = node.querySelector(".item");
     const title = node.querySelector(".title");
@@ -1287,14 +1369,24 @@ function renderSales() {
     salesList.appendChild(node);
   });
 
-  salesEmpty.hidden = sorted.length > 0;
+  if (salesFilterCount) {
+    salesFilterCount.textContent = `表示中 ${filteredSales.length}件 / 全${sorted.length}件`;
+  }
+  salesEmpty.hidden = filteredSales.length > 0;
+  salesEmpty.textContent = filteredSales.length || !state.salesSearchQuery
+    ? "売上データはまだありません。"
+    : "条件に一致する売上データはありません。";
 }
 
 function renderExpenses() {
   expensesList.innerHTML = "";
   const sorted = state.expenses.slice().sort((a, b) => toSortTimestamp(b.date) - toSortTimestamp(a.date));
+  const filteredExpenses = sorted.filter((expense) => {
+    if (!state.expensesSearchQuery) return true;
+    return matchesExpensesSearch(expense, state.expensesSearchQuery);
+  });
 
-  sorted.forEach((expense) => {
+  filteredExpenses.forEach((expense) => {
     const node = expenseItemTemplate.content.cloneNode(true);
     const item = node.querySelector(".item");
     const title = node.querySelector(".title");
@@ -1306,7 +1398,13 @@ function renderExpenses() {
     expensesList.appendChild(node);
   });
 
-  expensesEmpty.hidden = sorted.length > 0;
+  if (expensesFilterCount) {
+    expensesFilterCount.textContent = `表示中 ${filteredExpenses.length}件 / 全${sorted.length}件`;
+  }
+  expensesEmpty.hidden = filteredExpenses.length > 0;
+  expensesEmpty.textContent = filteredExpenses.length || !state.expensesSearchQuery
+    ? "経費データはまだありません。"
+    : "条件に一致する経費データはありません。";
 }
 
 function renderFixedExpenses() {
@@ -1495,6 +1593,71 @@ function normalizeStoredStatus(status) {
 function getStatusCategory(status) {
   const normalized = normalizeStoredStatus(status);
   return STATUS_ORDER.includes(normalized) ? normalized : "その他";
+}
+
+function matchesCaseSearch(entry, query) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  const haystack = [
+    entry.customerName,
+    entry.caseName,
+    entry.status,
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .join(" ");
+  return haystack.includes(needle);
+}
+
+function matchesDeadlineFilter(entry, filterKey) {
+  if (filterKey === "all") return true;
+  const dueTimestamp = toSortTimestamp(entry.dueDate);
+  if (!Number.isFinite(dueTimestamp) || dueTimestamp === Number.MAX_SAFE_INTEGER) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayTimestamp = today.getTime();
+  const diffDays = Math.floor((dueTimestamp - todayTimestamp) / (1000 * 60 * 60 * 24));
+  if (filterKey === "overdue") return diffDays < 0;
+  if (filterKey === "within7") return diffDays >= 0 && diffDays <= 7;
+  if (filterKey === "within30") return diffDays >= 0 && diffDays <= 30;
+  return true;
+}
+
+function getSalesPaymentLabel(sale) {
+  if (sale.isUnpaid) return "未入金";
+  const invoiceAmount = sale.invoiceAmount ?? 0;
+  const paidAmount = sale.paidAmount ?? 0;
+  if (paidAmount >= invoiceAmount && invoiceAmount > 0) return "入金済み";
+  if (paidAmount > 0) return "一部入金";
+  return "未入金";
+}
+
+function matchesSalesSearch(sale, query) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  const relatedCase = state.cases.find((entry) => entry.id === sale.caseId);
+  const haystack = [
+    relatedCase?.customerName,
+    relatedCase?.caseName,
+    sale.invoiceAmount,
+    getSalesPaymentLabel(sale),
+  ]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+  return haystack.includes(needle);
+}
+
+function matchesExpensesSearch(expense, query) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  const relatedCase = state.cases.find((entry) => entry.id === expense.caseId);
+  const haystack = [
+    expense.content,
+    relatedCase?.caseName,
+    expense.amount,
+  ]
+    .map((value) => String(value ?? "").toLowerCase())
+    .join(" ");
+  return haystack.includes(needle);
 }
 
 function toStatusClassKey(status) {
