@@ -27,6 +27,8 @@ const state = {
   caseDeadlineFilter: "all",
   salesSearchQuery: "",
   expensesSearchQuery: "",
+  dailyReportSearchQuery: "",
+  dailyReportDateFilter: "all",
 };
 const editState = { caseId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null };
 
@@ -135,6 +137,10 @@ const dailyReportsBody = document.getElementById("daily-reports-body");
 const dailyReportsEmpty = document.getElementById("daily-reports-empty");
 const dailyReportsListWrap = document.getElementById("daily-reports-list-wrap");
 const dailyReportSummaryList = document.getElementById("daily-report-summary-list");
+const dailyReportSearchInput = document.getElementById("daily-report-search-input");
+const dailyReportDateFilterSelect = document.getElementById("daily-report-date-filter");
+const dailyReportFilterClearBtn = document.getElementById("daily-report-filter-clear-btn");
+const dailyReportFilterCount = document.getElementById("daily-report-filter-count");
 
 const caseItemTemplate = document.getElementById("case-item-template");
 const saleItemTemplate = document.getElementById("sale-item-template");
@@ -231,6 +237,9 @@ function bindEvents() {
   salesFilterClearBtn?.addEventListener("click", clearSalesSearch);
   expensesSearchInput?.addEventListener("input", handleExpensesSearchInput);
   expensesFilterClearBtn?.addEventListener("click", clearExpensesSearch);
+  dailyReportSearchInput?.addEventListener("input", handleDailyReportSearchInput);
+  dailyReportDateFilterSelect?.addEventListener("change", handleDailyReportDateFilterChange);
+  dailyReportFilterClearBtn?.addEventListener("click", clearDailyReportFilters);
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("focus", handleWindowFocus);
   window.addEventListener("pageshow", handlePageShow);
@@ -346,6 +355,28 @@ function clearExpensesSearch() {
   state.expensesSearchQuery = "";
   if (expensesSearchInput) expensesSearchInput.value = "";
   renderExpenses();
+}
+
+function handleDailyReportSearchInput(event) {
+  state.dailyReportSearchQuery = String(event?.target?.value ?? "").trim().toLowerCase();
+  renderDailyReports();
+}
+
+function handleDailyReportDateFilterChange(event) {
+  applyDailyReportDateFilter(event?.target?.value || "all");
+}
+
+function applyDailyReportDateFilter(nextFilter) {
+  const normalized = ["all", "today", "month"].includes(nextFilter) ? nextFilter : "all";
+  state.dailyReportDateFilter = normalized;
+  if (dailyReportDateFilterSelect) dailyReportDateFilterSelect.value = normalized;
+  renderDailyReports();
+}
+
+function clearDailyReportFilters() {
+  state.dailyReportSearchQuery = "";
+  applyDailyReportDateFilter("all");
+  if (dailyReportSearchInput) dailyReportSearchInput.value = "";
 }
 
 
@@ -1532,25 +1563,59 @@ function renderCaseOptions() {
 function renderDailyReports() {
   if (!dailyReportsBody || !dailyReportsEmpty || !dailyReportsListWrap || !dailyReportSummaryList) return;
   const sorted = state.dailyReports.slice().sort((a, b) => toSortTimestamp(b.reportDate) - toSortTimestamp(a.reportDate));
-  dailyReportsBody.innerHTML = "";
-
-  sorted.forEach((entry) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${formatDate(entry.reportDate)}</td>
-      <td>${escapeHtml(resolveDailyReportCaseName(entry.caseId))}</td>
-      <td>${escapeHtml(truncateText(entry.workContent || "", 120))}</td>
-      <td>${formatMinutes(entry.workMinutes)}</td>
-      <td>${escapeHtml(truncateText(entry.nextAction || "未設定", 80))}</td>
-      <td>${escapeHtml(truncateText(entry.memo || "未設定", 80))}</td>
-      <td><button type="button" class="secondary-btn edit-daily-report-btn" data-daily-report-id="${entry.id}">編集</button></td>
-      <td><button type="button" class="danger-btn delete-daily-report-btn" data-daily-report-id="${entry.id}">削除</button></td>
-    `;
-    dailyReportsBody.appendChild(tr);
+  const filtered = sorted.filter((entry) => {
+    if (!matchesDailyReportDateFilter(entry, state.dailyReportDateFilter)) return false;
+    if (!state.dailyReportSearchQuery) return true;
+    return matchesDailyReportSearch(entry, state.dailyReportSearchQuery);
   });
 
-  dailyReportsEmpty.hidden = sorted.length > 0;
-  dailyReportsListWrap.hidden = sorted.length === 0;
+  dailyReportsBody.innerHTML = "";
+
+  filtered.forEach((entry) => {
+    const card = document.createElement("article");
+    card.className = "daily-report-card";
+    card.innerHTML = `
+      <header class="daily-report-card-header">
+        <div>
+          <p class="daily-report-card-date">${formatDate(entry.reportDate)}</p>
+          <p class="daily-report-card-case">${escapeHtml(resolveDailyReportCaseName(entry.caseId))}</p>
+        </div>
+        <div class="daily-report-card-actions">
+          <button type="button" class="secondary-btn edit-daily-report-btn" data-daily-report-id="${entry.id}">編集</button>
+          <button type="button" class="danger-btn delete-daily-report-btn" data-daily-report-id="${entry.id}">削除</button>
+        </div>
+      </header>
+      <dl class="daily-report-card-meta">
+        <div class="daily-report-field-inline">
+          <dt>作業時間</dt>
+          <dd>${formatMinutes(entry.workMinutes)}</dd>
+        </div>
+        <div class="daily-report-field">
+          <dt>作業内容</dt>
+          <dd>${escapeHtml(entry.workContent || "未設定")}</dd>
+        </div>
+        <div class="daily-report-field">
+          <dt>次回対応</dt>
+          <dd>${escapeHtml(entry.nextAction || "未設定")}</dd>
+        </div>
+        <div class="daily-report-field">
+          <dt>メモ</dt>
+          <dd>${escapeHtml(entry.memo || "未設定")}</dd>
+        </div>
+      </dl>
+    `;
+    dailyReportsBody.appendChild(card);
+  });
+
+  dailyReportsEmpty.hidden = filtered.length > 0;
+  dailyReportsListWrap.hidden = filtered.length === 0;
+  dailyReportsEmpty.textContent = filtered.length || (!state.dailyReportSearchQuery && state.dailyReportDateFilter === "all")
+    ? "日報データはまだありません。"
+    : "条件に一致する日報はありません。";
+
+  if (dailyReportFilterCount) {
+    dailyReportFilterCount.textContent = `表示中 ${filtered.length}件 / 全${sorted.length}件`;
+  }
 
   const summary = buildDailyReportSummary();
   dailyReportSummaryList.innerHTML = "";
@@ -1565,6 +1630,28 @@ function renderDailyReports() {
     dailyReportSummaryList.appendChild(li);
   });
 }
+
+function matchesDailyReportSearch(entry, query) {
+  const haystacks = [
+    resolveDailyReportCaseName(entry.caseId),
+    entry.workContent,
+    entry.nextAction,
+    entry.memo,
+  ]
+    .map((value) => String(value || "").toLowerCase());
+  return haystacks.some((value) => value.includes(query));
+}
+
+function matchesDailyReportDateFilter(entry, filter) {
+  if (filter === "all") return true;
+  const reportDate = entry.reportDate;
+  if (!reportDate) return false;
+  const today = toDateString(new Date());
+  if (filter === "today") return reportDate === today;
+  if (filter === "month") return toMonthKey(reportDate) === toMonthKey(today);
+  return true;
+}
+
 
 function renderCases() {
   caseList.innerHTML = "";

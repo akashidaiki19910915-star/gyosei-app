@@ -518,23 +518,25 @@
 
             <section class="panel report-list-panel">
               <h2>日報一覧</h2>
+              <div class="search-filter-bar daily-report-filter-bar">
+                <label class="inline-field" for="daily-report-search-input">
+                  キーワード検索
+                  <input id="daily-report-search-input" type="search" placeholder="案件名・作業内容・次回対応・メモで検索" />
+                </label>
+                <label class="inline-field" for="daily-report-date-filter">
+                  日付フィルター
+                  <select id="daily-report-date-filter">
+                    <option value="all">全期間</option>
+                    <option value="today">今日</option>
+                    <option value="month">今月</option>
+                  </select>
+                </label>
+                <button id="daily-report-filter-clear-btn" type="button" class="secondary-btn">条件クリア</button>
+              </div>
+              <p id="daily-report-filter-count" class="filter-count">表示中 0件 / 全0件</p>
               <div id="daily-reports-empty" class="empty">日報データはまだありません。</div>
-              <div id="daily-reports-list-wrap" class="table-wrap" hidden>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>日付</th>
-                      <th>案件名</th>
-                      <th>作業内容</th>
-                      <th>作業時間</th>
-                      <th>次回対応</th>
-                      <th>メモ</th>
-                      <th>編集</th>
-                      <th>削除</th>
-                    </tr>
-                  </thead>
-                  <tbody id="daily-reports-body"></tbody>
-                </table>
+              <div id="daily-reports-list-wrap" class="daily-reports-cards" hidden>
+                <div id="daily-reports-body" class="daily-reports-grid"></div>
               </div>
             </section>
           </div>
