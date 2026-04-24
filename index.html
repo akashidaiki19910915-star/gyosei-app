@@ -213,6 +213,41 @@
               <div id="expenses-empty" class="empty">経費データはまだありません。</div>
               <ul id="expenses-list" class="item-list"></ul>
             </section>
+
+            <section class="panel">
+              <h2>固定費登録</h2>
+              <form id="fixed-expense-form" class="form">
+                <label>
+                  内容 <span class="required">必須</span>
+                  <input id="fixed-expense-content" name="fixedExpenseContent" type="text" maxlength="120" required />
+                </label>
+                <label>
+                  金額（円） <span class="required">必須</span>
+                  <input id="fixed-expense-amount" name="fixedExpenseAmount" type="number" min="0" step="1" required />
+                </label>
+                <div class="date-grid">
+                  <label>
+                    毎月の計上日 <span class="required">必須</span>
+                    <input id="fixed-expense-day" name="fixedExpenseDayOfMonth" type="number" min="1" max="31" step="1" required />
+                  </label>
+                  <label>
+                    開始日 <span class="required">必須</span>
+                    <input id="fixed-expense-start-date" name="fixedExpenseStartDate" type="date" required />
+                  </label>
+                </div>
+                <label class="checkbox">
+                  <input id="fixed-expense-active" name="fixedExpenseActive" type="checkbox" checked />
+                  有効にする
+                </label>
+                <button type="submit">固定費を登録</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <h2>固定費一覧</h2>
+              <div id="fixed-expenses-empty" class="empty">固定費データはまだありません。</div>
+              <ul id="fixed-expenses-list" class="item-list"></ul>
+            </section>
           </div>
         </section>
       </main>
@@ -246,6 +281,20 @@
           <p class="meta"></p>
         </div>
         <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
+      </li>
+    </template>
+
+    <template id="fixed-expense-item-template">
+      <li class="item">
+        <div>
+          <p class="title"></p>
+          <p class="meta"></p>
+        </div>
+        <div class="row-actions">
+          <button type="button" class="toggle-btn secondary-btn">有効/無効</button>
+          <button type="button" class="edit-btn secondary-btn">編集</button>
+          <button type="button" class="danger-btn delete-btn">削除</button>
+        </div>
       </li>
     </template>
   </body>
