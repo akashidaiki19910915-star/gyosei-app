@@ -86,6 +86,11 @@ const deadlineAlertSummary = document.getElementById("deadline-alert-summary");
 const deadlineAlertBody = document.getElementById("deadline-alert-body");
 const deadlineAlertEmpty = document.getElementById("deadline-alert-empty");
 const deadlineAlertListWrap = document.getElementById("deadline-alert-list-wrap");
+const nextActionAlertCard = document.getElementById("next-action-alert-card");
+const nextActionAlertSummary = document.getElementById("next-action-alert-summary");
+const nextActionAlertBody = document.getElementById("next-action-alert-body");
+const nextActionAlertEmpty = document.getElementById("next-action-alert-empty");
+const nextActionAlertListWrap = document.getElementById("next-action-alert-list-wrap");
 
 const caseForm = document.getElementById("case-form");
 const caseList = document.getElementById("case-list");
@@ -204,6 +209,7 @@ function bindEvents() {
   statusFilterClearBtn?.addEventListener("click", () => applyCaseStatusFilter("all"));
   deadlineAlertSummary?.addEventListener("click", handleDeadlineAlertClick);
   deadlineAlertBody?.addEventListener("click", handleDeadlineAlertClick);
+  nextActionAlertBody?.addEventListener("click", handleNextActionAlertClick);
   caseSearchInput?.addEventListener("input", handleCaseSearchInput);
   caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
   caseDeadlineFilterSelect?.addEventListener("change", handleCaseDeadlineFilterChange);
@@ -288,6 +294,13 @@ function handleDeadlineAlertClick(event) {
     applyCaseDeadlineFilter(filter, { activateCases: true });
     return;
   }
+  const caseId = button.dataset.caseId;
+  if (caseId) startCaseEdit(caseId);
+}
+
+function handleNextActionAlertClick(event) {
+  const button = event.target.closest("button");
+  if (!(button instanceof HTMLButtonElement)) return;
   const caseId = button.dataset.caseId;
   if (caseId) startCaseEdit(caseId);
 }
@@ -466,6 +479,9 @@ async function handleCaseSubmit(event) {
     estimate_amount: normalizeAmount(caseForm.elements.amount.value),
     received_date: caseForm.elements.receivedDate.value || null,
     due_date: caseForm.elements.dueDate.value || null,
+    work_memo: asTrimmedText(caseForm.elements.workMemo.value) || null,
+    next_action_date: caseForm.elements.nextActionDate.value || null,
+    next_action: asTrimmedText(caseForm.elements.nextAction.value) || null,
     status: normalizeStatus(caseForm.elements.status.value),
   };
 
@@ -649,6 +665,9 @@ function startCaseEdit(caseId) {
   caseForm.elements.amount.value = target.estimateAmount ?? "";
   caseForm.elements.receivedDate.value = target.receivedDate || "";
   caseForm.elements.dueDate.value = target.dueDate || "";
+  caseForm.elements.workMemo.value = target.workMemo || "";
+  caseForm.elements.nextActionDate.value = target.nextActionDate || "";
+  caseForm.elements.nextAction.value = target.nextAction || "";
   caseForm.elements.status.value = normalizeStatus(target.status);
   caseSubmitBtn.textContent = "案件を更新";
   caseForm.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -834,8 +853,11 @@ function handleExportCasesCsv() {
     received_date: entry.receivedDate || "",
     due_date: entry.dueDate || "",
     status: normalizeStoredStatus(entry.status),
+    work_memo: entry.workMemo || "",
+    next_action_date: entry.nextActionDate || "",
+    next_action: entry.nextAction || "",
   }));
-  downloadCsvFile("cases.csv", ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status"], rows);
+  downloadCsvFile("cases.csv", ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action"], rows);
 }
 
 function handleExportSalesCsv() {
@@ -879,7 +901,7 @@ function handleExportFixedExpensesCsv() {
 function handleExportAllCsv() {
   const headers = [
     "data_type",
-    "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status",
+    "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action",
     "invoice_amount", "paid_amount", "paid_date", "is_unpaid",
     "date", "content", "amount",
     "day_of_month", "start_date", "active",
@@ -895,6 +917,9 @@ function handleExportAllCsv() {
       received_date: entry.receivedDate || "",
       due_date: entry.dueDate || "",
       status: normalizeStoredStatus(entry.status),
+      work_memo: entry.workMemo || "",
+      next_action_date: entry.nextActionDate || "",
+      next_action: entry.nextAction || "",
     });
   });
   state.sales.forEach((entry) => {
@@ -962,7 +987,7 @@ function exportExcel() {
 
   try {
     const workbook = XLSX.utils.book_new();
-    const caseHeaders = ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status"];
+    const caseHeaders = ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action"];
     const saleHeaders = ["case_name", "invoice_amount", "paid_amount", "paid_date", "is_unpaid"];
     const expenseHeaders = ["case_name", "date", "content", "amount"];
     const fixedExpenseHeaders = ["content", "amount", "day_of_month", "start_date", "active"];
@@ -973,6 +998,9 @@ function exportExcel() {
       received_date: entry.receivedDate || "",
       due_date: entry.dueDate || "",
       status: normalizeStoredStatus(entry.status),
+      work_memo: entry.workMemo || "",
+      next_action_date: entry.nextActionDate || "",
+      next_action: entry.nextAction || "",
     }));
     const saleRows = state.sales.map((entry) => {
       const foundCase = state.cases.find((c) => c.id === entry.caseId);
@@ -1096,6 +1124,7 @@ function renderDashboard() {
     div.innerHTML = `<p class="label">${card.label}</p><p class="value">${card.value}</p>`;
     summaryGrid.appendChild(div);
   });
+  renderNextActionAlertCard();
   renderDeadlineAlertCard();
   renderStatusSummaryCard();
 
@@ -1189,6 +1218,63 @@ function getCaseDeadlineInfo(entry) {
   if (remainingDays <= 7) return { deadlineStatus: "within7", remainingDays };
   if (remainingDays <= 30) return { deadlineStatus: "within30", remainingDays };
   return null;
+}
+
+
+function renderNextActionAlertCard() {
+  if (!nextActionAlertCard || !nextActionAlertSummary || !nextActionAlertBody || !nextActionAlertEmpty || !nextActionAlertListWrap) return;
+  const targets = getNextActionAlertTargets();
+  nextActionAlertCard.classList.toggle("has-alert", targets.length > 0);
+  nextActionAlertSummary.textContent = `対象 ${targets.length}件`;
+  nextActionAlertBody.innerHTML = "";
+  nextActionAlertEmpty.hidden = targets.length > 0;
+  nextActionAlertListWrap.hidden = targets.length === 0;
+  if (!targets.length) return;
+
+  targets
+    .slice()
+    .sort((a, b) => {
+      if (a.remainingDays !== b.remainingDays) return a.remainingDays - b.remainingDays;
+      return sortCases(a, b);
+    })
+    .forEach((entry) => {
+      const tr = document.createElement("tr");
+      tr.className = entry.urgencyClass;
+      tr.innerHTML = `
+        <td>${escapeHtml(entry.customerName)}</td>
+        <td>${escapeHtml(entry.caseName)}</td>
+        <td>${formatDate(entry.nextActionDate)}</td>
+        <td>${escapeHtml(entry.nextAction || "未設定")}</td>
+        <td><button type="button" class="secondary-btn" data-case-id="${entry.id}">編集</button></td>
+      `;
+      nextActionAlertBody.appendChild(tr);
+    });
+}
+
+function getNextActionAlertTargets() {
+  return state.cases
+    .map((entry) => {
+      const info = getNextActionInfo(entry);
+      if (!info) return null;
+      return { ...entry, ...info };
+    })
+    .filter((entry) => entry && entry.remainingDays <= 0 && getStatusCategory(entry.status) !== "完了");
+}
+
+function getNextActionInfo(entry) {
+  if (!entry?.nextActionDate) return null;
+  const nextActionTimestamp = toDateOnlyTimestamp(entry.nextActionDate);
+  const todayTimestamp = getTodayTimestamp();
+  if (!Number.isFinite(nextActionTimestamp) || !Number.isFinite(todayTimestamp)) return null;
+  const remainingDays = Math.floor((nextActionTimestamp - todayTimestamp) / 86400000);
+  const urgencyClass = remainingDays <= 0 ? "next-action-overdue" : remainingDays <= 3 ? "next-action-within3" : remainingDays <= 7 ? "next-action-within7" : "";
+  return { remainingDays, urgencyClass };
+}
+
+function truncateText(value, maxLength = 80) {
+  const text = String(value || "").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}…`;
 }
 
 function renderStatusSummaryCard() {
@@ -1353,12 +1439,19 @@ function renderCases() {
     const item = node.querySelector(".item");
     const title = node.querySelector(".title");
     const meta = node.querySelector(".meta");
+    const caseWorkMeta = node.querySelector(".case-work-meta");
     const profitMeta = node.querySelector(".profit-meta");
     const totals = profitsByCaseId[entry.id] || { sales: 0, expenses: 0, profit: 0 };
+    const nextActionInfo = getNextActionInfo(entry);
 
     item.dataset.id = entry.id;
     title.textContent = `${entry.customerName}｜${entry.caseName}`;
-    meta.textContent = `見積: ${formatCurrency(entry.estimateAmount)} / ステータス: ${entry.status} / 受付日: ${formatDate(entry.receivedDate)} / 期限日: ${formatDate(entry.dueDate)}`;
+    meta.textContent = `見積: ${formatCurrency(entry.estimateAmount)} / ステータス: ${entry.status} / 受付日: ${formatDate(entry.receivedDate)} / 期限日: ${formatDate(entry.dueDate)} / 次回対応日: ${formatDate(entry.nextActionDate)} / 次回対応内容: ${entry.nextAction || "未設定"}`;
+    if (caseWorkMeta) {
+      caseWorkMeta.textContent = `作業メモ: ${truncateText(entry.workMemo || "未設定", 60)}`;
+      caseWorkMeta.classList.remove("next-action-overdue", "next-action-within3", "next-action-within7");
+      if (nextActionInfo) caseWorkMeta.classList.add(nextActionInfo.urgencyClass);
+    }
     profitMeta.textContent = `売上合計: ${formatCurrency(totals.sales)} / 経費合計: ${formatCurrency(totals.expenses)} / 利益: ${formatCurrency(totals.profit)}`;
     profitMeta.classList.toggle("loss-text", totals.profit < 0);
     caseList.appendChild(node);
@@ -1712,6 +1805,9 @@ function matchesCaseSearch(entry, query) {
     entry.customerName,
     entry.caseName,
     entry.status,
+    entry.nextAction,
+    entry.nextActionDate,
+    entry.workMemo,
   ]
     .map((value) => String(value || "").toLowerCase())
     .join(" ");
@@ -2078,6 +2174,9 @@ async function importRowsByType(importType, tableData) {
           received_date: parseFlexibleDate(row.received_date),
           due_date: parseFlexibleDate(row.due_date),
           status: normalizeStoredStatus(row.status),
+          work_memo: asTrimmedText(row.work_memo) || null,
+          next_action_date: parseFlexibleDate(row.next_action_date),
+          next_action: asTrimmedText(row.next_action) || null,
         });
       } catch (_error) {
         result.errorCount += 1;
@@ -2226,6 +2325,9 @@ function mapCaseFromDb(row) {
     receivedDate: row.received_date || "",
     dueDate: row.due_date || "",
     status: normalizeStoredStatus(row.status),
+    workMemo: row.work_memo || "",
+    nextActionDate: row.next_action_date || "",
+    nextAction: row.next_action || "",
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
   };

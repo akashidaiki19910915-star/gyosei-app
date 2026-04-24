@@ -86,3 +86,14 @@ python -m http.server 8000
 ```
 
 その後 `http://localhost:8000` を開いて動作確認します。
+
+
+## 案件メモ・次回対応管理のための追加SQL
+
+`cases` テーブルに以下カラムが未追加の場合は実行してください。
+
+```sql
+alter table cases add column if not exists work_memo text;
+alter table cases add column if not exists next_action_date date;
+alter table cases add column if not exists next_action text;
+```
