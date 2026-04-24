@@ -231,6 +231,10 @@ button:hover { background: var(--primary-dark); }
   z-index: 1000;
 }
 
+.loading-overlay[hidden] {
+  display: none !important;
+}
+
 .loading-box {
   background: #fff;
   border: 1px solid var(--border);

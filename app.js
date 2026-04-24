@@ -53,7 +53,7 @@ let currentUser = null;
 initialize();
 
 async function initialize() {
-  setLoading(true);
+  showLoading();
   setAuthControlsDisabled(true);
   try {
     bindEvents();
@@ -75,7 +75,7 @@ async function initialize() {
     authView.hidden = false;
     appView.hidden = true;
   } finally {
-    setLoading(false);
+    hideLoading();
     setAuthControlsDisabled(false);
   }
 }
@@ -646,7 +646,7 @@ function mapExpenseFromDb(row) {
 }
 
 async function withLoading(task, fallbackMessage, authArea = false) {
-  setLoading(true);
+  showLoading();
   try {
     clearAppMessage();
     if (authArea) showAuthMessage("", false);
@@ -660,12 +660,26 @@ async function withLoading(task, fallbackMessage, authArea = false) {
       showAppMessage(`${fallbackMessage}\n詳細: ${message}`, true);
     }
   } finally {
-    setLoading(false);
+    hideLoading();
   }
 }
 
 function setLoading(isLoading) {
-  loadingOverlay.hidden = !isLoading;
+  if (isLoading) {
+    showLoading();
+    return;
+  }
+  hideLoading();
+}
+
+function showLoading() {
+  if (!loadingOverlay) return;
+  loadingOverlay.hidden = false;
+}
+
+function hideLoading() {
+  if (!loadingOverlay) return;
+  loadingOverlay.hidden = true;
 }
 
 function setAuthControlsDisabled(disabled) {
