@@ -238,6 +238,79 @@ button:hover { background: var(--primary-dark); }
   margin-bottom: 0.75rem;
 }
 
+.status-summary-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.8rem;
+  margin-bottom: 0.75rem;
+  background: #f9fbff;
+}
+
+.status-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.status-summary-header h3 {
+  margin: 0;
+}
+
+.status-summary-list {
+  margin-top: 0.65rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.55rem;
+}
+
+.status-filter-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 8px;
+  padding: 0.55rem 0.6rem;
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.status-filter-btn:hover {
+  background: #fff;
+}
+
+.status-filter-btn[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px rgba(33, 89, 214, 0.2);
+}
+
+.status-filter-btn.status-not-started {
+  border-left-color: #6b7280;
+  background: #f3f4f6;
+}
+
+.status-filter-btn.status-in-progress {
+  border-left-color: #2563eb;
+  background: #eff6ff;
+}
+
+.status-filter-btn.status-completed {
+  border-left-color: #16a34a;
+  background: #ecfdf3;
+}
+
+.status-filter-btn.status-other {
+  border-left-color: #ca8a04;
+  background: #fefce8;
+}
+
+.status-summary-total {
+  margin: 0.6rem 0 0;
+  font-weight: 700;
+}
+
 .unpaid-alert-card.has-unpaid {
   border-color: #c51616;
   background: #fff0f0;

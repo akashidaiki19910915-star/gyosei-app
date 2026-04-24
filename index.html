@@ -111,6 +111,14 @@
 
         <section class="dashboard panel">
           <h2>ダッシュボード</h2>
+          <section class="status-summary-card" aria-labelledby="status-summary-heading">
+            <div class="status-summary-header">
+              <h3 id="status-summary-heading">ステータス別案件数</h3>
+              <button id="status-filter-clear-btn" type="button" class="secondary-btn">全件表示</button>
+            </div>
+            <div id="status-summary-list" class="status-summary-list"></div>
+            <p id="status-summary-total" class="status-summary-total">全案件数：0件</p>
+          </section>
           <section id="unpaid-alert-card" class="unpaid-alert-card" aria-live="polite">
             <div class="unpaid-alert-header">
               <h3>未入金アラート</h3>
