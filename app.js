@@ -1897,6 +1897,7 @@ function renderEstimates() {
         <button type="button" class="secondary-btn estimate-edit-btn">編集</button>
         <button type="button" class="danger-btn estimate-delete-btn">削除</button>
         <button type="button" class="secondary-btn estimate-case-btn" ${entry.caseId ? "disabled" : ""}>案件化</button>
+        <button type="button" class="secondary-btn estimate-estimate-xlsx-btn">見積Excel</button>
         <button type="button" class="secondary-btn estimate-xlsx-btn">請求Excel</button>
         <button type="button" class="secondary-btn estimate-sale-btn">売上登録</button>
       </div>
@@ -1938,6 +1939,7 @@ async function handleEstimateListAction(event) {
     await ensureCaseFromEstimate(estimateId, true);
     await refreshAfterMutation("案件化しました。");
   }, "案件化に失敗しました。");
+  if (btn.classList.contains("estimate-estimate-xlsx-btn")) return exportEstimateDataForEstimate(estimateId);
   if (btn.classList.contains("estimate-xlsx-btn")) return exportInvoiceDataForEstimate(estimateId);
   if (btn.classList.contains("estimate-sale-btn")) return withLoading(async () => {
     await registerSaleFromEstimate(estimateId);
@@ -2325,7 +2327,9 @@ function buildInvoiceDocumentFromEstimate(estimate) {
     invoiceNumber: `INV-${toDateString(new Date()).replaceAll("-", "")}-${String(estimate.id || "0000").slice(0, 6)}`,
     companyName: "行政書士事務所 サンプル",
     companyAddress: "東京都千代田区サンプル1-2-3",
+    companyPhone: "03-1234-5678",
     companyEmail: "info@example-office.jp",
+    registrationNumber: "T1234567890123",
     details: rows.map((row, index) => ({
       no: index + 1,
       itemName: row.item_name,
@@ -2336,7 +2340,8 @@ function buildInvoiceDocumentFromEstimate(estimate) {
     subtotal: estimate.subtotal ?? 0,
     tax: estimate.tax ?? 0,
     total: estimate.total ?? 0,
-    note: "振込先：〇〇銀行 本店 普通 1234567 サンプルジムショ",
+    transferInfo: "〇〇銀行 本店 / 普通 1234567 / サンプルジムショ",
+    note: "備考：お振込手数料は貴社にてご負担をお願いいたします。",
   };
 }
 
@@ -2358,7 +2363,9 @@ function buildInvoiceDocumentFromCase(foundCase) {
     invoiceNumber: `INV-${toDateString(new Date()).replaceAll("-", "")}-${String(foundCase.id || "0000").slice(0, 6)}`,
     companyName: "行政書士事務所 サンプル",
     companyAddress: "東京都千代田区サンプル1-2-3",
+    companyPhone: "03-1234-5678",
     companyEmail: "info@example-office.jp",
+    registrationNumber: "T1234567890123",
     details: [{
       no: 1,
       itemName: foundCase.caseName,
@@ -2369,7 +2376,8 @@ function buildInvoiceDocumentFromCase(foundCase) {
     subtotal,
     tax,
     total,
-    note: "振込先：〇〇銀行 本店 普通 1234567 サンプルジムショ",
+    transferInfo: "〇〇銀行 本店 / 普通 1234567 / サンプルジムショ",
+    note: "備考：お振込手数料は貴社にてご負担をお願いいたします。",
   };
 }
 
@@ -2382,88 +2390,185 @@ function exportInvoiceDataForCase(caseId) {
 
 function downloadInvoiceWorkbook(invoiceData) {
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, createInvoiceSheet(invoiceData), "請求書");
-  const invoiceDate = String(invoiceData.invoiceDate || toDateString(new Date())).replaceAll("-", "");
+  XLSX.utils.book_append_sheet(wb, createBusinessDocumentSheet(invoiceData, { type: "invoice" }), "請求書");
+  const invoiceDate = String(invoiceData.invoiceDate || toDateString(new Date()));
   const safeCustomerName = sanitizeFileNamePart(invoiceData.customerName || "customer");
   XLSX.writeFile(wb, `invoice_${safeCustomerName}_${invoiceDate}.xlsx`);
 }
 
-function createInvoiceSheet(invoiceData) {
-  const data = [];
-  const detailRows = (invoiceData.details || []).length ? invoiceData.details : [{
-    no: 1, itemName: invoiceData.subject || "請求内容", quantity: 1, unitPrice: 0, amount: 0,
-  }];
+function buildEstimateDocumentFromEstimate(estimate) {
+  const rows = state.estimateItems
+    .filter((row) => row.estimateId === estimate.id)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((row, index) => ({
+      no: index + 1,
+      itemName: row.itemName,
+      quantity: row.quantity,
+      unitPrice: row.unitPrice,
+      amount: row.amount,
+    }));
+  if (!rows.length) {
+    rows.push({
+      no: 1,
+      itemName: estimate.estimateTitle || "見積内容",
+      quantity: 1,
+      unitPrice: estimate.subtotal ?? 0,
+      amount: estimate.subtotal ?? 0,
+    });
+  }
 
-  data[0] = ["", "", "", "請求書", "", "", "", ""];
-  data[2] = ["請求先", "", "", "", "", "発行日", "", invoiceData.invoiceDate || ""];
-  data[3] = [`${invoiceData.customerName || "顧客名未設定"} 御中`, "", "", "", "", "請求書番号", "", invoiceData.invoiceNumber || ""];
-  data[5] = ["", "", "", "", "", invoiceData.companyName || "", "", ""];
-  data[6] = ["", "", "", "", "", invoiceData.companyAddress || "", "", ""];
-  data[7] = ["", "", "", "", "", `メール: ${invoiceData.companyEmail || ""}`, "", ""];
-  data[9] = ["ご請求金額（税込）", "", "", "", "", "", "", invoiceData.total ?? 0];
-  data[11] = ["No", "内容", "", "", "数量", "単価", "金額", ""];
+  return {
+    customerName: estimate.customerName || "顧客名未設定",
+    subject: estimate.estimateTitle || "見積内容",
+    estimateDate: estimate.estimateDate || toDateString(new Date()),
+    estimateNumber: `EST-${toDateString(new Date()).replaceAll("-", "")}-${String(estimate.id || "0000").slice(0, 6)}`,
+    validUntil: estimate.validUntil || "",
+    companyName: "行政書士事務所 サンプル",
+    companyAddress: "東京都千代田区サンプル1-2-3",
+    companyPhone: "03-1234-5678",
+    companyEmail: "info@example-office.jp",
+    details: rows,
+    subtotal: estimate.subtotal ?? 0,
+    tax: estimate.tax ?? 0,
+    total: estimate.total ?? 0,
+    paymentTerms: "お支払い条件：請求書受領後7日以内に銀行振込",
+    note: estimate.memo || "備考：本見積の有効期限内にご発注をお願いいたします。",
+  };
+}
+
+function downloadEstimateWorkbook(estimateData) {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, createBusinessDocumentSheet(estimateData, { type: "estimate" }), "見積書");
+  const estimateDate = String(estimateData.estimateDate || toDateString(new Date()));
+  const safeCustomerName = sanitizeFileNamePart(estimateData.customerName || "customer");
+  XLSX.writeFile(wb, `estimate_${safeCustomerName}_${estimateDate}.xlsx`);
+}
+
+function exportEstimateDataForEstimate(estimateId) {
+  const estimate = state.estimates.find((entry) => entry.id === estimateId);
+  if (!estimate) return;
+  const estimateData = buildEstimateDocumentFromEstimate(estimate);
+  downloadEstimateWorkbook(estimateData);
+}
+
+function createBusinessDocumentSheet(documentData, options = { type: "invoice" }) {
+  const isInvoice = options.type === "invoice";
+  const title = isInvoice ? "請求書" : "見積書";
+  const amountLabel = isInvoice ? "ご請求金額（税込）" : "お見積金額（税込）";
+  const sentence = isInvoice ? "下記の通りご請求申し上げます。" : "下記の通りお見積り申し上げます。";
+  const leftLabel = isInvoice ? "請求先" : "宛先";
+  const dateLabel = isInvoice ? "発行日" : "見積日";
+  const numberLabel = isInvoice ? "請求書番号" : "見積番号";
+  const numberValue = isInvoice ? documentData.invoiceNumber : documentData.estimateNumber;
+  const dateValue = isInvoice ? documentData.invoiceDate : documentData.estimateDate;
+
+  const detailRows = (documentData.details || []).slice(0, 10);
+  while (detailRows.length < 10) detailRows.push({ no: "", itemName: "", quantity: "", unitPrice: "", amount: "" });
+  const rows = [];
+  for (let i = 0; i < 35; i += 1) rows.push(["", "", "", "", "", "", "", ""]);
+  rows[0][0] = title;
+  rows[2][0] = leftLabel;
+  rows[3][0] = `${documentData.customerName || "顧客名未設定"} 御中`;
+  rows[2][5] = dateLabel;
+  rows[2][6] = dateValue || "";
+  rows[3][5] = numberLabel;
+  rows[3][6] = numberValue || "";
+  rows[4][5] = "事務所名";
+  rows[4][6] = documentData.companyName || "";
+  rows[5][5] = "住所";
+  rows[5][6] = documentData.companyAddress || "";
+  rows[6][5] = "電話";
+  rows[6][6] = documentData.companyPhone || "";
+  rows[7][5] = "メール";
+  rows[7][6] = documentData.companyEmail || "";
+  rows[8][5] = isInvoice ? "登録番号" : "有効期限";
+  rows[8][6] = isInvoice ? (documentData.registrationNumber || "") : (documentData.validUntil || "");
+
+  rows[10][0] = sentence;
+  rows[11][0] = amountLabel;
+  rows[11][5] = documentData.total ?? 0;
+  rows[13] = ["No", "品目", "", "", "数量", "単価", "金額", ""];
 
   detailRows.forEach((row, index) => {
-    const line = 12 + index;
-    data[line] = [row.no ?? index + 1, row.itemName || "", "", "", row.quantity ?? 0, row.unitPrice ?? 0, row.amount ?? 0, ""];
+    const r = 14 + index;
+    rows[r] = [row.no, row.itemName, "", "", row.quantity, row.unitPrice, row.amount, ""];
   });
 
-  const summaryStart = 13 + detailRows.length;
-  data[summaryStart] = ["", "", "", "", "", "小計", "", invoiceData.subtotal ?? 0];
-  data[summaryStart + 1] = ["", "", "", "", "", "消費税（10%）", "", invoiceData.tax ?? 0];
-  data[summaryStart + 2] = ["", "", "", "", "", "合計", "", invoiceData.total ?? 0];
-  data[summaryStart + 4] = ["備考", "", "", "", "", "", "", ""];
-  data[summaryStart + 5] = [invoiceData.note || "", "", "", "", "", "", "", ""];
+  rows[26][5] = "小計";
+  rows[26][6] = documentData.subtotal ?? 0;
+  rows[27][5] = "消費税10%";
+  rows[27][6] = documentData.tax ?? 0;
+  rows[28][5] = "合計";
+  rows[28][6] = documentData.total ?? 0;
+  rows[30][0] = "振込先";
+  rows[31][0] = documentData.transferInfo || "";
+  rows[32][0] = "備考";
+  rows[33][0] = documentData.note || "";
+  if (!isInvoice) {
+    rows[30][5] = "有効期限";
+    rows[30][6] = documentData.validUntil || "";
+    rows[31][5] = "支払条件";
+    rows[31][6] = documentData.paymentTerms || "";
+  }
 
-  const ws = XLSX.utils.aoa_to_sheet(data);
-  ws["!cols"] = [{ wch: 6 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 18 }];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws["!ref"] = "A1:H35";
+  ws["!cols"] = [{ wch: 5 }, { wch: 18 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 14 }, { wch: 4 }];
+  ws["!rows"] = Array.from({ length: 35 }, (_, i) => ({ hpt: i === 0 ? 30 : 20 }));
+  ws["!margins"] = { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 };
+  ws["!pageSetup"] = { paperSize: 9, orientation: "portrait", fitToWidth: 1, fitToHeight: 1, horizontalDpi: 300, verticalDpi: 300 };
+  ws["!printArea"] = "A1:H35";
   ws["!merges"] = [
-    { s: { r: 0, c: 3 }, e: { r: 0, c: 5 } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: 3 } },
     { s: { r: 3, c: 0 }, e: { r: 3, c: 3 } },
-    { s: { r: 5, c: 5 }, e: { r: 5, c: 7 } },
-    { s: { r: 6, c: 5 }, e: { r: 6, c: 7 } },
-    { s: { r: 7, c: 5 }, e: { r: 7, c: 7 } },
-    { s: { r: 9, c: 0 }, e: { r: 9, c: 6 } },
-    { s: { r: 11, c: 1 }, e: { r: 11, c: 3 } },
-    { s: { r: 11, c: 6 }, e: { r: 11, c: 7 } },
-    { s: { r: summaryStart + 4, c: 0 }, e: { r: summaryStart + 4, c: 7 } },
-    { s: { r: summaryStart + 5, c: 0 }, e: { r: summaryStart + 5, c: 7 } },
+    { s: { r: 10, c: 0 }, e: { r: 10, c: 7 } },
+    { s: { r: 11, c: 0 }, e: { r: 11, c: 4 } },
+    { s: { r: 13, c: 1 }, e: { r: 13, c: 3 } },
+    ...Array.from({ length: 10 }, (_, i) => ({ s: { r: 14 + i, c: 1 }, e: { r: 14 + i, c: 3 } })),
+    { s: { r: 30, c: 0 }, e: { r: 30, c: 4 } },
+    { s: { r: 31, c: 0 }, e: { r: 31, c: 4 } },
+    { s: { r: 32, c: 0 }, e: { r: 32, c: 4 } },
+    { s: { r: 33, c: 0 }, e: { r: 33, c: 4 } },
   ];
 
-  const tableStart = 11;
-  const tableEnd = 12 + detailRows.length - 1;
-  applyInvoiceCellStyle(ws, 0, 3, { bold: true, fontSize: 24, align: "center" });
-  applyInvoiceCellStyle(ws, 3, 0, { fontSize: 14 });
-  applyInvoiceCellStyle(ws, 9, 0, { bold: true, fontSize: 16 });
-  applyInvoiceCellStyle(ws, 9, 7, { bold: true, fontSize: 16, numFmt: "¥#,##0" });
+  applyBusinessCellStyle(ws, 0, 0, { bold: true, fontSize: 24, align: "center" });
+  applyBusinessCellStyle(ws, 3, 0, { bold: true, fontSize: 14 });
+  applyBusinessCellStyle(ws, 11, 0, { bold: true, fontSize: 14 });
+  applyBusinessCellStyle(ws, 11, 5, { bold: true, fontSize: 16, align: "right", numFmt: "¥#,##0" });
 
-  for (let col = 0; col <= 7; col += 1) {
-    applyInvoiceCellStyle(ws, tableStart, col, { bold: true, align: "center", border: true, fillGray: true });
+  for (let c = 0; c <= 7; c += 1) {
+    applyBusinessCellStyle(ws, 13, c, { bold: true, align: "center", border: true, fillGray: true });
   }
-  for (let row = tableEnd >= 12 ? 12 : 12; row <= tableEnd; row += 1) {
-    for (let col = 0; col <= 7; col += 1) {
-      const options = { border: true };
-      if (col === 4) options.align = "center";
-      if (col === 5 || col === 6) options.numFmt = "¥#,##0";
-      applyInvoiceCellStyle(ws, row, col, options);
+  for (let r = 14; r <= 23; r += 1) {
+    for (let c = 0; c <= 7; c += 1) {
+      const style = { border: true };
+      if (c === 4) style.align = "center";
+      if (c === 5 || c === 6) style.numFmt = "¥#,##0";
+      applyBusinessCellStyle(ws, r, c, style);
     }
   }
-
-  [summaryStart, summaryStart + 1, summaryStart + 2].forEach((row) => {
-    applyInvoiceCellStyle(ws, row, 5, { border: true, align: "center", bold: row === summaryStart + 2 });
-    applyInvoiceCellStyle(ws, row, 7, { border: true, numFmt: "¥#,##0", bold: row === summaryStart + 2 });
+  [26, 27, 28].forEach((r) => {
+    applyBusinessCellStyle(ws, r, 5, { border: true, bold: r === 28, align: "center" });
+    applyBusinessCellStyle(ws, r, 6, { border: true, bold: r === 28, numFmt: "¥#,##0", align: "right" });
   });
-  ws["!ref"] = `A1:H${summaryStart + 6}`;
+  for (let c = 5; c <= 6; c += 1) {
+    applyBusinessCellStyle(ws, 28, c, { border: true, bold: true, numFmt: c === 6 ? "¥#,##0" : undefined, align: c === 6 ? "right" : "center", fillGray: true });
+  }
+  for (let r = 2; r <= 8; r += 1) {
+    applyBusinessCellStyle(ws, r, 5, { bold: true });
+    applyBusinessCellStyle(ws, r, 6, {});
+  }
   return ws;
 }
 
-function applyInvoiceCellStyle(ws, row, col, options = {}) {
+function applyBusinessCellStyle(ws, row, col, options = {}) {
   const address = XLSX.utils.encode_cell({ r: row, c: col });
   if (!ws[address]) ws[address] = { t: "s", v: "" };
   if (options.numFmt) ws[address].z = options.numFmt;
   ws[address].s = {
-    font: { name: "Meiryo", sz: options.fontSize || 11, bold: Boolean(options.bold) },
-    alignment: { horizontal: options.align || "left", vertical: "center" },
+    font: { name: "Meiryo UI", sz: options.fontSize || 11, bold: Boolean(options.bold) },
+    alignment: { horizontal: options.align || "left", vertical: "center", wrapText: Boolean(options.wrapText) },
     border: options.border
       ? {
         top: { style: "thin", color: { rgb: "000000" } },
@@ -2472,7 +2577,7 @@ function applyInvoiceCellStyle(ws, row, col, options = {}) {
         right: { style: "thin", color: { rgb: "000000" } },
       }
       : undefined,
-    fill: options.fillGray ? { fgColor: { rgb: "EFEFEF" } } : undefined,
+    fill: options.fillGray ? { patternType: "solid", fgColor: { rgb: "EDEDED" } } : undefined,
   };
 }
 
