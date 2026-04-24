@@ -104,6 +104,7 @@
         </section>
 
         <nav class="tabs" aria-label="メイン機能">
+          <button type="button" class="tab-btn" data-tab="estimates">見積</button>
           <button type="button" class="tab-btn active" data-tab="cases">案件</button>
           <button type="button" class="tab-btn" data-tab="sales">売上</button>
           <button type="button" class="tab-btn" data-tab="expenses">経費</button>
@@ -351,6 +352,67 @@
               <p id="case-filter-count" class="filter-count">表示中 0件 / 全0件</p>
               <div id="case-empty" class="empty">案件はまだ登録されていません。</div>
               <ul id="case-list" class="item-list"></ul>
+            </section>
+          </div>
+        </section>
+
+        <section id="tab-estimates" class="tab-panel">
+          <div class="layout two-col">
+            <section class="panel">
+              <h2>見積作成</h2>
+              <form id="estimate-form" class="form">
+                <label>顧客名 <span class="required">必須</span><input id="estimate-customer-name" name="customerName" type="text" required maxlength="80" /></label>
+                <label>見積件名 <span class="required">必須</span><input id="estimate-title" name="estimateTitle" type="text" required maxlength="120" /></label>
+                <div class="date-grid">
+                  <label>見積日 <span class="required">必須</span><input id="estimate-date" name="estimateDate" type="date" required /></label>
+                  <label>有効期限<input id="estimate-valid-until" name="validUntil" type="date" /></label>
+                </div>
+                <label>
+                  ステータス
+                  <select id="estimate-status" name="status">
+                    <option value="作成中">作成中</option>
+                    <option value="提出済">提出済</option>
+                    <option value="受注">受注</option>
+                    <option value="失注">失注</option>
+                  </select>
+                </label>
+                <label>メモ<textarea id="estimate-memo" name="memo" rows="3" maxlength="2000"></textarea></label>
+                <div class="panel">
+                  <h3>明細</h3>
+                  <div id="estimate-items"></div>
+                  <button id="estimate-add-item-btn" type="button" class="secondary-btn">明細行を追加</button>
+                </div>
+                <div class="summary-grid">
+                  <div class="summary-card"><p class="label">小計</p><p id="estimate-subtotal" class="value">0 円</p></div>
+                  <div class="summary-card"><p class="label">消費税(10%)</p><p id="estimate-tax" class="value">0 円</p></div>
+                  <div class="summary-card"><p class="label">合計</p><p id="estimate-total" class="value">0 円</p></div>
+                </div>
+                <button id="estimate-submit-btn" type="submit">見積を登録</button>
+              </form>
+            </section>
+            <section class="panel">
+              <h2>見積一覧</h2>
+              <div class="search-filter-bar">
+                <label class="inline-field">顧客名検索<input id="estimate-customer-search" type="text" /></label>
+                <label class="inline-field">件名検索<input id="estimate-title-search" type="text" /></label>
+                <label class="inline-field">ステータス
+                  <select id="estimate-status-filter">
+                    <option value="all">全件</option>
+                    <option value="作成中">作成中</option>
+                    <option value="提出済">提出済</option>
+                    <option value="受注">受注</option>
+                    <option value="失注">失注</option>
+                  </select>
+                </label>
+                <label class="inline-field">有効期限
+                  <select id="estimate-expired-filter">
+                    <option value="all">全件</option>
+                    <option value="expired">期限切れのみ</option>
+                  </select>
+                </label>
+              </div>
+              <div id="estimate-empty" class="empty">見積データはまだありません。</div>
+              <ul id="estimate-list" class="item-list"></ul>
             </section>
           </div>
         </section>

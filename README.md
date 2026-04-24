@@ -121,3 +121,48 @@ for all
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 ```
+
+## 見積機能（見積作成・管理・請求データ出力）の追加SQL
+
+```sql
+create table if not exists estimates (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  customer_name text not null,
+  estimate_title text not null,
+  estimate_date date not null,
+  valid_until date,
+  status text default '作成中',
+  memo text,
+  subtotal bigint default 0,
+  tax bigint default 0,
+  total bigint default 0,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists estimate_items (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  estimate_id uuid not null,
+  item_name text not null,
+  quantity numeric default 1,
+  unit_price bigint default 0,
+  amount bigint default 0,
+  sort_order int default 0,
+  created_at timestamptz default now()
+);
+
+alter table estimates enable row level security;
+alter table estimate_items enable row level security;
+
+create policy "estimates_own" on estimates
+for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create policy "estimate_items_own" on estimate_items
+for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+```

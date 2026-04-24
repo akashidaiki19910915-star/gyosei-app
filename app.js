@@ -3,6 +3,7 @@ const SUPABASE_KEY = "sb_publishable_0DrKsieUcCyEZN_HRg8LhQ_QqFTPMtp";
 const STATUS_ORDER = ["未着手", "進行中", "完了"];
 const STATUS_FILTER_KEYS = [...STATUS_ORDER, "その他"];
 const DEADLINE_FILTER_KEYS = ["all", "overdue", "within7", "within30"];
+const ESTIMATE_STATUS_ORDER = ["作成中", "提出済", "受注", "失注"];
 
 const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
@@ -15,6 +16,8 @@ const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 
 const state = {
   cases: [],
+  estimates: [],
+  estimateItems: [],
   sales: [],
   expenses: [],
   fixedExpenses: [],
@@ -29,8 +32,12 @@ const state = {
   expensesSearchQuery: "",
   dailyReportSearchQuery: "",
   dailyReportDateFilter: "all",
+  estimateCustomerQuery: "",
+  estimateTitleQuery: "",
+  estimateStatusFilter: "all",
+  estimateExpiredFilter: "all",
 };
-const editState = { caseId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null };
+const editState = { caseId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null };
 
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
@@ -53,6 +60,7 @@ const excelImportForm = document.getElementById("excel-import-form");
 const tabs = Array.from(document.querySelectorAll(".tab-btn"));
 const panels = {
   cases: document.getElementById("tab-cases"),
+  estimates: document.getElementById("tab-estimates"),
   sales: document.getElementById("tab-sales"),
   expenses: document.getElementById("tab-expenses"),
   "daily-reports": document.getElementById("tab-daily-reports"),
@@ -146,6 +154,19 @@ const caseItemTemplate = document.getElementById("case-item-template");
 const saleItemTemplate = document.getElementById("sale-item-template");
 const expenseItemTemplate = document.getElementById("expense-item-template");
 const fixedExpenseItemTemplate = document.getElementById("fixed-expense-item-template");
+const estimateForm = document.getElementById("estimate-form");
+const estimateItemsWrap = document.getElementById("estimate-items");
+const estimateAddItemBtn = document.getElementById("estimate-add-item-btn");
+const estimateSubmitBtn = document.getElementById("estimate-submit-btn");
+const estimateSubtotal = document.getElementById("estimate-subtotal");
+const estimateTax = document.getElementById("estimate-tax");
+const estimateTotal = document.getElementById("estimate-total");
+const estimateList = document.getElementById("estimate-list");
+const estimateEmpty = document.getElementById("estimate-empty");
+const estimateCustomerSearch = document.getElementById("estimate-customer-search");
+const estimateTitleSearch = document.getElementById("estimate-title-search");
+const estimateStatusFilter = document.getElementById("estimate-status-filter");
+const estimateExpiredFilter = document.getElementById("estimate-expired-filter");
 
 let currentUser = null;
 let loadingCount = 0;
@@ -212,6 +233,7 @@ function bindEvents() {
   expenseForm.addEventListener("submit", handleExpenseSubmit);
   fixedExpenseForm.addEventListener("submit", handleFixedExpenseSubmit);
   dailyReportForm.addEventListener("submit", handleDailyReportSubmit);
+  estimateForm?.addEventListener("submit", handleEstimateSubmit);
 
   clearBtn.addEventListener("click", handleClearAll);
   caseList.addEventListener("click", handleCaseListAction);
@@ -251,6 +273,26 @@ function bindEvents() {
   csvImportForm?.addEventListener("submit", handleCsvImportSubmit);
   exportExcelBtn?.addEventListener("click", handleExportExcel);
   excelImportForm?.addEventListener("submit", handleExcelImportSubmit);
+  estimateAddItemBtn?.addEventListener("click", () => addEstimateItemRow());
+  estimateItemsWrap?.addEventListener("input", handleEstimateItemsInput);
+  estimateItemsWrap?.addEventListener("click", handleEstimateItemsClick);
+  estimateList?.addEventListener("click", handleEstimateListAction);
+  estimateCustomerSearch?.addEventListener("input", (event) => {
+    state.estimateCustomerQuery = String(event.target.value || "").trim().toLowerCase();
+    renderEstimates();
+  });
+  estimateTitleSearch?.addEventListener("input", (event) => {
+    state.estimateTitleQuery = String(event.target.value || "").trim().toLowerCase();
+    renderEstimates();
+  });
+  estimateStatusFilter?.addEventListener("change", (event) => {
+    state.estimateStatusFilter = event.target.value || "all";
+    renderEstimates();
+  });
+  estimateExpiredFilter?.addEventListener("change", (event) => {
+    state.estimateExpiredFilter = event.target.value || "all";
+    renderEstimates();
+  });
 }
 
 function handleAggregationChange(event) {
@@ -429,6 +471,7 @@ async function applyAuthState() {
   await withLoading(async () => {
     await loadAllData();
     resetCaseForm();
+    resetEstimateForm();
     resetSaleForm();
     resetExpenseForm();
     resetFixedExpenseForm();
@@ -477,8 +520,10 @@ async function handleLogout() {
 async function loadAllData() {
   if (!currentUser) return;
 
-  const [casesRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes] = await Promise.all([
+  const [casesRes, estimatesRes, estimateItemsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes] = await Promise.all([
     sbClient.from("cases").select("*").eq("user_id", currentUser.id),
+    sbClient.from("estimates").select("*").eq("user_id", currentUser.id),
+    sbClient.from("estimate_items").select("*").eq("user_id", currentUser.id),
     sbClient.from("sales").select("*").eq("user_id", currentUser.id),
     sbClient.from("expenses").select("*").eq("user_id", currentUser.id),
     sbClient.from("fixed_expenses").select("*").eq("user_id", currentUser.id),
@@ -486,12 +531,16 @@ async function loadAllData() {
   ]);
 
   if (casesRes.error) throw casesRes.error;
+  if (estimatesRes.error) throw estimatesRes.error;
+  if (estimateItemsRes.error) throw estimateItemsRes.error;
   if (salesRes.error) throw salesRes.error;
   if (expensesRes.error) throw expensesRes.error;
   if (fixedExpensesRes.error) throw fixedExpensesRes.error;
   if (dailyReportsRes.error) throw dailyReportsRes.error;
 
   state.cases = (casesRes.data || []).map(mapCaseFromDb);
+  state.estimates = (estimatesRes.data || []).map(mapEstimateFromDb);
+  state.estimateItems = (estimateItemsRes.data || []).map(mapEstimateItemFromDb);
   state.sales = (salesRes.data || []).map(mapSaleFromDb);
   state.expenses = (expensesRes.data || []).map(mapExpenseFromDb);
   state.fixedExpenses = (fixedExpensesRes.data || []).map(mapFixedExpenseFromDb);
@@ -702,6 +751,14 @@ async function handleCaseListAction(event) {
 
   if (btn.classList.contains("edit-btn")) {
     startCaseEdit(id);
+    return;
+  }
+  if (btn.classList.contains("case-csv-btn")) {
+    exportInvoiceDataForCase(id, "csv");
+    return;
+  }
+  if (btn.classList.contains("case-xlsx-btn")) {
+    exportInvoiceDataForCase(id, "xlsx");
     return;
   }
 
@@ -936,10 +993,12 @@ async function handleDailyReportsListAction(event) {
 
 async function handleClearAll() {
   if (!currentUser) return;
-  if (!window.confirm("案件・売上・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
+  if (!window.confirm("見積・案件・売上・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
 
   await withLoading(async () => {
-    const [salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes] = await Promise.all([
+    const [estimateItemsRes, estimatesRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes] = await Promise.all([
+      sbClient.from("estimate_items").delete().eq("user_id", currentUser.id),
+      sbClient.from("estimates").delete().eq("user_id", currentUser.id),
       sbClient.from("sales").delete().eq("user_id", currentUser.id),
       sbClient.from("expenses").delete().eq("user_id", currentUser.id),
       sbClient.from("fixed_expenses").delete().eq("user_id", currentUser.id),
@@ -954,6 +1013,7 @@ async function handleClearAll() {
     if (casesRes.error) throw casesRes.error;
 
     resetCaseForm();
+    resetEstimateForm();
     resetSaleForm();
     resetExpenseForm();
     resetFixedExpenseForm();
@@ -1194,6 +1254,7 @@ async function handleExcelImportSubmit(event) {
 
 function renderAfterDataChanged() {
   renderCaseOptions();
+  renderEstimates();
   renderCases();
   renderSales();
   renderExpenses();
@@ -1217,6 +1278,7 @@ function normalizeTabKey(tabKey) {
   const key = String(tabKey || "").trim();
   if (!key) return "cases";
   if (["daily-reports", "dailyReports", "report", "reports", "日報"].includes(key)) return "daily-reports";
+  if (["estimates", "estimate", "見積", "見積もり"].includes(key)) return "estimates";
   if (["cases", "案件"].includes(key)) return "cases";
   if (["sales", "売上"].includes(key)) return "sales";
   if (["expenses", "経費"].includes(key)) return "expenses";
@@ -1652,6 +1714,187 @@ function matchesDailyReportDateFilter(entry, filter) {
   return true;
 }
 
+function addEstimateItemRow(defaultItem = {}) {
+  if (!estimateItemsWrap) return;
+  const row = document.createElement("div");
+  row.className = "estimate-item-row";
+  row.innerHTML = `
+    <input type="text" data-key="itemName" placeholder="項目名" value="${escapeHtml(defaultItem.itemName || "")}" />
+    <input type="number" data-key="quantity" min="0" step="0.01" placeholder="数量" value="${defaultItem.quantity ?? 1}" />
+    <input type="number" data-key="unitPrice" min="0" step="1" placeholder="単価" value="${defaultItem.unitPrice ?? 0}" />
+    <p class="meta item-amount">${formatCurrency(defaultItem.amount ?? 0)}</p>
+    <button type="button" class="danger-btn estimate-item-remove-btn">削除</button>
+  `;
+  estimateItemsWrap.appendChild(row);
+  recalcEstimateTotals();
+}
+
+function handleEstimateItemsInput() {
+  recalcEstimateTotals();
+}
+
+function handleEstimateItemsClick(event) {
+  const btn = event.target.closest(".estimate-item-remove-btn");
+  if (!btn) return;
+  btn.closest(".estimate-item-row")?.remove();
+  if (!estimateItemsWrap.children.length) addEstimateItemRow();
+  recalcEstimateTotals();
+}
+
+function getEstimateItemsFromForm() {
+  if (!estimateItemsWrap) return [];
+  return Array.from(estimateItemsWrap.querySelectorAll(".estimate-item-row"))
+    .map((row, idx) => {
+      const itemName = asTrimmedText(row.querySelector('[data-key="itemName"]')?.value);
+      const quantity = Number(row.querySelector('[data-key="quantity"]')?.value || 0);
+      const unitPrice = normalizeAmount(row.querySelector('[data-key="unitPrice"]')?.value) ?? 0;
+      const amount = Math.floor((Number.isFinite(quantity) ? quantity : 0) * unitPrice);
+      return { itemName, quantity, unitPrice, amount, sortOrder: idx };
+    })
+    .filter((item) => item.itemName);
+}
+
+function recalcEstimateTotals() {
+  let subtotal = 0;
+  Array.from(estimateItemsWrap?.querySelectorAll(".estimate-item-row") || []).forEach((row) => {
+    const quantity = Number(row.querySelector('[data-key="quantity"]')?.value || 0);
+    const unitPrice = normalizeAmount(row.querySelector('[data-key="unitPrice"]')?.value) ?? 0;
+    const amount = Math.floor((Number.isFinite(quantity) ? quantity : 0) * unitPrice);
+    subtotal += amount;
+    const amountEl = row.querySelector(".item-amount");
+    if (amountEl) amountEl.textContent = formatCurrency(amount);
+  });
+  const tax = Math.floor(subtotal * 0.1);
+  const total = subtotal + tax;
+  if (estimateSubtotal) estimateSubtotal.textContent = formatCurrency(subtotal);
+  if (estimateTax) estimateTax.textContent = formatCurrency(tax);
+  if (estimateTotal) estimateTotal.textContent = formatCurrency(total);
+  return { subtotal, tax, total };
+}
+
+async function handleEstimateSubmit(event) {
+  event.preventDefault();
+  if (!currentUser) return;
+  const customerName = asTrimmedText(estimateForm.elements.customerName.value);
+  const estimateTitle = asTrimmedText(estimateForm.elements.estimateTitle.value);
+  const estimateDate = estimateForm.elements.estimateDate.value;
+  if (!customerName || !estimateTitle || !estimateDate) return;
+  const totals = recalcEstimateTotals();
+  const items = getEstimateItemsFromForm();
+  const payload = {
+    user_id: currentUser.id,
+    customer_name: customerName,
+    estimate_title: estimateTitle,
+    estimate_date: estimateDate,
+    valid_until: estimateForm.elements.validUntil.value || null,
+    status: normalizeEstimateStatus(estimateForm.elements.status.value),
+    memo: asTrimmedText(estimateForm.elements.memo.value) || null,
+    subtotal: totals.subtotal,
+    tax: totals.tax,
+    total: totals.total,
+  };
+  await withLoading(async () => {
+    let estimateId = editState.estimateId;
+    if (estimateId) {
+      const { error } = await sbClient.from("estimates").update(payload).eq("id", estimateId).eq("user_id", currentUser.id);
+      if (error) throw error;
+      const oldItemsDeleteRes = await sbClient.from("estimate_items").delete().eq("estimate_id", estimateId).eq("user_id", currentUser.id);
+      if (oldItemsDeleteRes.error) throw oldItemsDeleteRes.error;
+    } else {
+      const res = await sbClient.from("estimates").insert(payload).select("id").single();
+      if (res.error) throw res.error;
+      estimateId = res.data.id;
+    }
+    if (items.length) {
+      const { error } = await sbClient.from("estimate_items").insert(items.map((item) => ({
+        user_id: currentUser.id,
+        estimate_id: estimateId,
+        item_name: item.itemName,
+        quantity: item.quantity,
+        unit_price: item.unitPrice,
+        amount: item.amount,
+        sort_order: item.sortOrder,
+      })));
+      if (error) throw error;
+    }
+    if (payload.status === "受注") await ensureCaseFromEstimate(estimateId);
+    resetEstimateForm();
+    await refreshAfterMutation("見積を保存しました。");
+  }, "見積の保存に失敗しました。");
+}
+
+function renderEstimates() {
+  if (!estimateList || !estimateEmpty) return;
+  estimateList.innerHTML = "";
+  const filtered = state.estimates
+    .slice()
+    .sort((a, b) => toSortTimestamp(b.estimateDate) - toSortTimestamp(a.estimateDate))
+    .filter((entry) => {
+      if (state.estimateCustomerQuery && !String(entry.customerName || "").toLowerCase().includes(state.estimateCustomerQuery)) return false;
+      if (state.estimateTitleQuery && !String(entry.estimateTitle || "").toLowerCase().includes(state.estimateTitleQuery)) return false;
+      if (state.estimateStatusFilter !== "all" && entry.status !== state.estimateStatusFilter) return false;
+      if (state.estimateExpiredFilter === "expired" && !isEstimateExpired(entry)) return false;
+      return true;
+    });
+  filtered.forEach((entry) => {
+    const li = document.createElement("li");
+    li.className = "item";
+    li.dataset.id = entry.id;
+    const itemCount = state.estimateItems.filter((row) => row.estimateId === entry.id).length;
+    li.innerHTML = `
+      <div>
+        <p class="title">${escapeHtml(entry.customerName)}｜${escapeHtml(entry.estimateTitle)}</p>
+        <p class="meta">見積日: ${formatDate(entry.estimateDate)} / 有効期限: ${formatDate(entry.validUntil)} / ステータス: ${escapeHtml(entry.status)} / 合計: ${formatCurrency(entry.total)} / 明細: ${itemCount}件</p>
+      </div>
+      <div class="row-actions">
+        <button type="button" class="secondary-btn estimate-edit-btn">編集</button>
+        <button type="button" class="danger-btn estimate-delete-btn">削除</button>
+        <button type="button" class="secondary-btn estimate-case-btn">案件化</button>
+        <button type="button" class="secondary-btn estimate-csv-btn">請求CSV</button>
+        <button type="button" class="secondary-btn estimate-xlsx-btn">請求Excel</button>
+        <button type="button" class="secondary-btn estimate-sale-btn">売上登録</button>
+      </div>
+    `;
+    estimateList.appendChild(li);
+  });
+  estimateEmpty.hidden = filtered.length > 0;
+}
+
+function isEstimateExpired(entry) {
+  if (!entry.validUntil) return false;
+  return toDateOnlyTimestamp(entry.validUntil) < getTodayTimestamp();
+}
+
+async function handleEstimateListAction(event) {
+  const btn = event.target.closest("button");
+  if (!(btn instanceof HTMLButtonElement) || !currentUser) return;
+  const item = btn.closest(".item");
+  const estimateId = item?.dataset.id;
+  if (!estimateId) return;
+  if (btn.classList.contains("estimate-edit-btn")) return startEstimateEdit(estimateId);
+  if (btn.classList.contains("estimate-delete-btn")) {
+    if (!window.confirm("この見積を削除しますか？")) return;
+    await withLoading(async () => {
+      await sbClient.from("estimate_items").delete().eq("estimate_id", estimateId).eq("user_id", currentUser.id);
+      const { error } = await sbClient.from("estimates").delete().eq("id", estimateId).eq("user_id", currentUser.id);
+      if (error) throw error;
+      if (editState.estimateId === estimateId) resetEstimateForm();
+      await refreshAfterMutation("見積を削除しました。");
+    }, "見積の削除に失敗しました。");
+    return;
+  }
+  if (btn.classList.contains("estimate-case-btn")) return withLoading(async () => {
+    await ensureCaseFromEstimate(estimateId, true);
+    await refreshAfterMutation("案件化しました。");
+  }, "案件化に失敗しました。");
+  if (btn.classList.contains("estimate-csv-btn")) return exportInvoiceDataForEstimate(estimateId, "csv");
+  if (btn.classList.contains("estimate-xlsx-btn")) return exportInvoiceDataForEstimate(estimateId, "xlsx");
+  if (btn.classList.contains("estimate-sale-btn")) return withLoading(async () => {
+    await registerSaleFromEstimate(estimateId);
+    await refreshAfterMutation("売上を登録しました。");
+  }, "売上登録に失敗しました。");
+}
+
 
 function renderCases() {
   caseList.innerHTML = "";
@@ -1673,6 +1916,7 @@ function renderCases() {
     const meta = node.querySelector(".meta");
     const caseWorkMeta = node.querySelector(".case-work-meta");
     const profitMeta = node.querySelector(".profit-meta");
+    const rowActions = node.querySelector(".row-actions");
     const totals = profitsByCaseId[entry.id] || { sales: 0, expenses: 0, profit: 0 };
     const nextActionInfo = getNextActionInfo(entry);
 
@@ -1686,6 +1930,18 @@ function renderCases() {
     }
     profitMeta.textContent = `売上合計: ${formatCurrency(totals.sales)} / 経費合計: ${formatCurrency(totals.expenses)} / 利益: ${formatCurrency(totals.profit)}`;
     profitMeta.classList.toggle("loss-text", totals.profit < 0);
+    if (rowActions && !rowActions.querySelector(".case-csv-btn")) {
+      const csvBtn = document.createElement("button");
+      csvBtn.type = "button";
+      csvBtn.className = "secondary-btn case-csv-btn";
+      csvBtn.textContent = "請求CSV";
+      const xlsxBtn = document.createElement("button");
+      xlsxBtn.type = "button";
+      xlsxBtn.className = "secondary-btn case-xlsx-btn";
+      xlsxBtn.textContent = "請求Excel";
+      rowActions.appendChild(csvBtn);
+      rowActions.appendChild(xlsxBtn);
+    }
     caseList.appendChild(node);
   });
 
@@ -1880,6 +2136,39 @@ function resolveDailyReportCaseName(caseId) {
   return found ? `${found.customerName}｜${found.caseName}` : "案件なし";
 }
 
+function startEstimateEdit(estimateId) {
+  const target = state.estimates.find((entry) => entry.id === estimateId);
+  if (!target || !estimateForm) return;
+  activateTab("estimates");
+  editState.estimateId = target.id;
+  estimateForm.elements.customerName.value = target.customerName;
+  estimateForm.elements.estimateTitle.value = target.estimateTitle;
+  estimateForm.elements.estimateDate.value = target.estimateDate || "";
+  estimateForm.elements.validUntil.value = target.validUntil || "";
+  estimateForm.elements.status.value = normalizeEstimateStatus(target.status);
+  estimateForm.elements.memo.value = target.memo || "";
+  estimateItemsWrap.innerHTML = "";
+  const rows = state.estimateItems.filter((item) => item.estimateId === target.id).sort((a, b) => a.sortOrder - b.sortOrder);
+  if (!rows.length) addEstimateItemRow();
+  rows.forEach((row) => addEstimateItemRow(row));
+  recalcEstimateTotals();
+  estimateSubmitBtn.textContent = "見積を更新";
+  estimateForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function resetEstimateForm() {
+  resetEditMode("estimate");
+  estimateForm?.reset();
+  if (estimateForm?.elements?.estimateDate) estimateForm.elements.estimateDate.value = toDateString(new Date());
+  if (estimateForm?.elements?.status) estimateForm.elements.status.value = "作成中";
+  if (estimateItemsWrap) {
+    estimateItemsWrap.innerHTML = "";
+    addEstimateItemRow();
+  }
+  if (estimateSubmitBtn) estimateSubmitBtn.textContent = "見積を登録";
+  recalcEstimateTotals();
+}
+
 function resetCaseForm() {
   resetEditMode("case");
   caseForm.reset();
@@ -1919,6 +2208,124 @@ function resetEditMode(target) {
   if (target === "expense") editState.expenseId = null;
   if (target === "fixedExpense") editState.fixedExpenseId = null;
   if (target === "dailyReport") editState.dailyReportId = null;
+  if (target === "estimate") editState.estimateId = null;
+}
+
+function normalizeEstimateStatus(status) {
+  return ESTIMATE_STATUS_ORDER.includes(status) ? status : "作成中";
+}
+
+async function ensureCaseFromEstimate(estimateId, force = false) {
+  const estimate = state.estimates.find((entry) => entry.id === estimateId);
+  if (!estimate || (!force && estimate.status !== "受注")) return null;
+  const marker = `[estimate:${estimateId}]`;
+  const existing = state.cases.find((entry) => (entry.workMemo || "").includes(marker));
+  if (existing) return existing.id;
+  const payload = {
+    user_id: currentUser.id,
+    customer_name: estimate.customerName,
+    case_name: estimate.estimateTitle,
+    estimate_amount: estimate.total,
+    received_date: toDateString(new Date()),
+    due_date: null,
+    status: "未着手",
+    work_memo: marker,
+  };
+  const res = await sbClient.from("cases").insert(payload).select("id").single();
+  if (res.error) throw res.error;
+  return res.data.id;
+}
+
+function buildInvoiceRowsFromEstimate(estimate) {
+  const items = state.estimateItems
+    .filter((row) => row.estimateId === estimate.id)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  if (!items.length) {
+    return [{
+      customer_name: estimate.customerName,
+      subject: estimate.estimateTitle,
+      invoice_date: toDateString(new Date()),
+      item_name: estimate.estimateTitle,
+      quantity: 1,
+      unit_price: estimate.subtotal,
+      amount: estimate.subtotal,
+      subtotal: estimate.subtotal,
+      tax: estimate.tax,
+      total: estimate.total,
+    }];
+  }
+  return items.map((item) => ({
+    customer_name: estimate.customerName,
+    subject: estimate.estimateTitle,
+    invoice_date: toDateString(new Date()),
+    item_name: item.itemName,
+    quantity: item.quantity,
+    unit_price: item.unitPrice,
+    amount: item.amount,
+    subtotal: estimate.subtotal,
+    tax: estimate.tax,
+    total: estimate.total,
+  }));
+}
+
+function exportInvoiceDataForEstimate(estimateId, type) {
+  const estimate = state.estimates.find((entry) => entry.id === estimateId);
+  if (!estimate) return;
+  const rows = buildInvoiceRowsFromEstimate(estimate);
+  const headers = ["customer_name", "subject", "invoice_date", "item_name", "quantity", "unit_price", "amount", "subtotal", "tax", "total"];
+  const today = toDateString(new Date());
+  if (type === "csv") {
+    downloadCsvFile(`invoice-data-${today}.csv`, headers, rows);
+  } else {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, createExcelSheet(rows, headers), "請求データ");
+    XLSX.writeFile(wb, `invoice-data-${today}.xlsx`);
+  }
+}
+
+function exportInvoiceDataForCase(caseId, type) {
+  const foundCase = state.cases.find((entry) => entry.id === caseId);
+  if (!foundCase) return;
+  const subtotal = foundCase.estimateAmount ?? 0;
+  const tax = Math.floor(subtotal * 0.1);
+  const total = subtotal + tax;
+  const rows = [{
+    customer_name: foundCase.customerName,
+    subject: foundCase.caseName,
+    invoice_date: toDateString(new Date()),
+    item_name: foundCase.caseName,
+    quantity: 1,
+    unit_price: subtotal,
+    amount: subtotal,
+    subtotal,
+    tax,
+    total,
+  }];
+  const headers = ["customer_name", "subject", "invoice_date", "item_name", "quantity", "unit_price", "amount", "subtotal", "tax", "total"];
+  const today = toDateString(new Date());
+  if (type === "csv") {
+    downloadCsvFile(`invoice-data-${today}.csv`, headers, rows);
+  } else {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, createExcelSheet(rows, headers), "請求データ");
+    XLSX.writeFile(wb, `invoice-data-${today}.xlsx`);
+  }
+}
+
+async function registerSaleFromEstimate(estimateId) {
+  const caseId = await ensureCaseFromEstimate(estimateId, true);
+  const estimate = state.estimates.find((entry) => entry.id === estimateId);
+  if (!estimate) return;
+  const payload = {
+    user_id: currentUser.id,
+    case_id: caseId || null,
+    invoice_amount: estimate.total,
+    paid_amount: 0,
+    paid_date: null,
+    is_unpaid: true,
+  };
+  const { error } = await sbClient.from("sales").insert(payload);
+  if (error) throw error;
 }
 
 function buildDailyReportSummary() {
@@ -2628,6 +3035,36 @@ function mapCaseFromDb(row) {
   };
 }
 
+function mapEstimateFromDb(row) {
+  return {
+    id: row.id,
+    customerName: row.customer_name || "",
+    estimateTitle: row.estimate_title || "",
+    estimateDate: row.estimate_date || "",
+    validUntil: row.valid_until || "",
+    status: normalizeEstimateStatus(row.status),
+    memo: row.memo || "",
+    subtotal: normalizeAmount(row.subtotal) ?? 0,
+    tax: normalizeAmount(row.tax) ?? 0,
+    total: normalizeAmount(row.total) ?? 0,
+    createdAt: Date.parse(row.created_at) || Date.now(),
+    updatedAt: Date.parse(row.updated_at) || Date.now(),
+  };
+}
+
+function mapEstimateItemFromDb(row) {
+  return {
+    id: row.id,
+    estimateId: row.estimate_id,
+    itemName: row.item_name || "",
+    quantity: Number(row.quantity ?? 1) || 1,
+    unitPrice: normalizeAmount(row.unit_price) ?? 0,
+    amount: normalizeAmount(row.amount) ?? 0,
+    sortOrder: Number(row.sort_order ?? 0) || 0,
+    createdAt: Date.parse(row.created_at) || Date.now(),
+  };
+}
+
 function mapSaleFromDb(row) {
   const invoiceAmount = normalizeAmount(row.invoice_amount) ?? 0;
   const paidAmount = normalizeAmount(row.paid_amount);
@@ -2793,3 +3230,5 @@ function showAppMessage(text, isError) {
 function clearAppMessage() {
   showAppMessage("", false);
 }
+    if (estimateItemsRes.error) throw estimateItemsRes.error;
+    if (estimatesRes.error) throw estimatesRes.error;
