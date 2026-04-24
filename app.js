@@ -50,6 +50,7 @@ const expenseItemTemplate = document.getElementById("expense-item-template");
 
 let currentUser = null;
 let loadingCount = 0;
+let isResuming = false;
 
 initialize();
 
@@ -104,21 +105,33 @@ function bindEvents() {
   salesList.addEventListener("click", handleSalesListAction);
   expensesList.addEventListener("click", handleExpensesListAction);
   document.addEventListener("visibilitychange", handleVisibilityChange);
+  window.addEventListener("focus", handleWindowFocus);
 }
 
-async function handleVisibilityChange() {
-  if (document.hidden || !currentUser) return;
 
+async function handleVisibilityChange() {
+  if (document.hidden) return;
+  await handleResumeRefresh("visibilitychange");
+}
+
+async function handleWindowFocus() {
+  await handleResumeRefresh("focus");
+}
+
+async function handleResumeRefresh(trigger) {
+  if (!currentUser || isResuming) return;
+
+  isResuming = true;
   setLoading(true);
   try {
     await loadAllData();
     renderAfterDataChanged();
   } catch (error) {
-    console.error("画面復帰時の再読み込みに失敗しました。", error);
+    console.error(`画面復帰時の再読み込みに失敗しました。(${trigger})`, error);
     showAppMessage("画面復帰時のデータ更新に失敗しました。", true);
   } finally {
+    isResuming = false;
     setLoading(false);
-    clearLoadingState();
   }
 }
 
@@ -698,8 +711,9 @@ function setLoading(isLoading) {
     loadingOverlay.hidden = false;
     return;
   }
+
   loadingCount = Math.max(0, loadingCount - 1);
-  if (loadingCount === 0) loadingOverlay.hidden = true;
+  loadingOverlay.hidden = true;
 }
 
 function clearLoadingState() {
