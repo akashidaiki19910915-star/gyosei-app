@@ -2,8 +2,7 @@ const SUPABASE_URL = "https://ueelzyftlbnvjvpsmpyt.supabase.co";
 const SUPABASE_KEY = "sb_publishable_0DrKsieUcCyEZN_HRg8LhQ_QqFTPMtp";
 const STATUS_ORDER = ["未着手", "進行中", "完了"];
 
-const { createClient } = window.supabase;
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const state = { cases: [], sales: [], expenses: [] };
 const editState = { caseId: null, saleId: null, expenseId: null };
@@ -54,19 +53,31 @@ let currentUser = null;
 initialize();
 
 async function initialize() {
-  bindEvents();
+  setLoading(true);
+  setAuthControlsDisabled(true);
+  try {
+    bindEvents();
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await sbClient.auth.getSession();
 
-  currentUser = session?.user ?? null;
-  await applyAuthState();
-
-  supabase.auth.onAuthStateChange(async (_event, sessionState) => {
-    currentUser = sessionState?.user ?? null;
+    currentUser = session?.user ?? null;
     await applyAuthState();
-  });
+
+    sbClient.auth.onAuthStateChange(async (_event, sessionState) => {
+      currentUser = sessionState?.user ?? null;
+      await applyAuthState();
+    });
+  } catch (error) {
+    console.error("初期化処理に失敗しました。", error);
+    showAuthMessage("初期化に失敗しました。ページを再読み込みしてください。", true);
+    authView.hidden = false;
+    appView.hidden = true;
+  } finally {
+    setLoading(false);
+    setAuthControlsDisabled(false);
+  }
 }
 
 function bindEvents() {
@@ -114,7 +125,7 @@ async function handleLogin(event) {
   if (!email || !password) return;
 
   await withLoading(async () => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await sbClient.auth.signInWithPassword({ email, password });
     if (error) throw error;
     showAuthMessage("ログインしました。", false);
   }, "ログインに失敗しました。メールアドレスまたはパスワードを確認してください。", true);
@@ -129,7 +140,7 @@ async function handleSignup() {
   }
 
   await withLoading(async () => {
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { error } = await sbClient.auth.signUp({ email, password });
     if (error) throw error;
     showAuthMessage("新規登録が完了しました。確認メールを確認してください。", false);
   }, "新規登録に失敗しました。入力内容を確認してください。", true);
@@ -137,7 +148,7 @@ async function handleSignup() {
 
 async function handleLogout() {
   await withLoading(async () => {
-    const { error } = await supabase.auth.signOut();
+    const { error } = await sbClient.auth.signOut();
     if (error) throw error;
     showAuthMessage("ログアウトしました。", false);
     authForm.reset();
@@ -148,9 +159,9 @@ async function loadAllData() {
   if (!currentUser) return;
 
   const [casesRes, salesRes, expensesRes] = await Promise.all([
-    supabase.from("cases").select("*").eq("user_id", currentUser.id),
-    supabase.from("sales").select("*").eq("user_id", currentUser.id),
-    supabase.from("expenses").select("*").eq("user_id", currentUser.id),
+    sbClient.from("cases").select("*").eq("user_id", currentUser.id),
+    sbClient.from("sales").select("*").eq("user_id", currentUser.id),
+    sbClient.from("expenses").select("*").eq("user_id", currentUser.id),
   ]);
 
   if (casesRes.error) throw casesRes.error;
@@ -188,14 +199,14 @@ async function handleCaseSubmit(event) {
 
   await withLoading(async () => {
     if (editState.caseId) {
-      const { error } = await supabase.from("cases").update(payload).eq("id", editState.caseId).eq("user_id", currentUser.id);
+      const { error } = await sbClient.from("cases").update(payload).eq("id", editState.caseId).eq("user_id", currentUser.id);
       if (error) throw error;
       resetCaseForm();
       await refreshAfterMutation("案件を更新しました。");
       return;
     }
 
-    const { error } = await supabase.from("cases").insert(payload);
+    const { error } = await sbClient.from("cases").insert(payload);
     if (error) throw error;
     resetCaseForm();
     await refreshAfterMutation("案件を登録しました。");
@@ -224,14 +235,14 @@ async function handleSaleSubmit(event) {
 
   await withLoading(async () => {
     if (editState.saleId) {
-      const { error } = await supabase.from("sales").update(payload).eq("id", editState.saleId).eq("user_id", currentUser.id);
+      const { error } = await sbClient.from("sales").update(payload).eq("id", editState.saleId).eq("user_id", currentUser.id);
       if (error) throw error;
       resetSaleForm();
       await refreshAfterMutation("売上を更新しました。");
       return;
     }
 
-    const { error } = await supabase.from("sales").insert(payload);
+    const { error } = await sbClient.from("sales").insert(payload);
     if (error) throw error;
     resetSaleForm();
     await refreshAfterMutation("売上を登録しました。");
@@ -257,14 +268,14 @@ async function handleExpenseSubmit(event) {
 
   await withLoading(async () => {
     if (editState.expenseId) {
-      const { error } = await supabase.from("expenses").update(payload).eq("id", editState.expenseId).eq("user_id", currentUser.id);
+      const { error } = await sbClient.from("expenses").update(payload).eq("id", editState.expenseId).eq("user_id", currentUser.id);
       if (error) throw error;
       resetExpenseForm();
       await refreshAfterMutation("経費を更新しました。");
       return;
     }
 
-    const { error } = await supabase.from("expenses").insert(payload);
+    const { error } = await sbClient.from("expenses").insert(payload);
     if (error) throw error;
     resetExpenseForm();
     await refreshAfterMutation("経費を登録しました。");
@@ -296,7 +307,7 @@ async function handleCaseListAction(event) {
     if (!window.confirm("この案件を削除しますか？関連する売上・経費も削除されます。")) return;
 
     await withLoading(async () => {
-      const { error } = await supabase.from("cases").delete().eq("id", id).eq("user_id", currentUser.id);
+      const { error } = await sbClient.from("cases").delete().eq("id", id).eq("user_id", currentUser.id);
       if (error) throw error;
       if (editState.caseId === id) resetCaseForm();
       await refreshAfterMutation("案件を削除しました。");
@@ -327,7 +338,7 @@ async function handleSalesListAction(event) {
   if (btn.classList.contains("delete-btn")) {
     if (!window.confirm("この売上を削除しますか？")) return;
     await withLoading(async () => {
-      const { error } = await supabase.from("sales").delete().eq("id", id).eq("user_id", currentUser.id);
+      const { error } = await sbClient.from("sales").delete().eq("id", id).eq("user_id", currentUser.id);
       if (error) throw error;
       if (editState.saleId === id) resetSaleForm();
       await refreshAfterMutation("売上を削除しました。");
@@ -357,7 +368,7 @@ async function handleExpensesListAction(event) {
   if (btn.classList.contains("delete-btn")) {
     if (!window.confirm("この経費を削除しますか？")) return;
     await withLoading(async () => {
-      const { error } = await supabase.from("expenses").delete().eq("id", id).eq("user_id", currentUser.id);
+      const { error } = await sbClient.from("expenses").delete().eq("id", id).eq("user_id", currentUser.id);
       if (error) throw error;
       if (editState.expenseId === id) resetExpenseForm();
       await refreshAfterMutation("経費を削除しました。");
@@ -371,9 +382,9 @@ async function handleClearAll() {
 
   await withLoading(async () => {
     const [salesRes, expensesRes, casesRes] = await Promise.all([
-      supabase.from("sales").delete().eq("user_id", currentUser.id),
-      supabase.from("expenses").delete().eq("user_id", currentUser.id),
-      supabase.from("cases").delete().eq("user_id", currentUser.id),
+      sbClient.from("sales").delete().eq("user_id", currentUser.id),
+      sbClient.from("expenses").delete().eq("user_id", currentUser.id),
+      sbClient.from("cases").delete().eq("user_id", currentUser.id),
     ]);
 
     if (salesRes.error) throw salesRes.error;
@@ -641,6 +652,7 @@ async function withLoading(task, fallbackMessage, authArea = false) {
     if (authArea) showAuthMessage("", false);
     await task();
   } catch (error) {
+    console.error("処理に失敗しました。", error);
     const message = error?.message ? String(error.message) : fallbackMessage;
     if (authArea) {
       showAuthMessage(`${fallbackMessage}\n詳細: ${message}`, true);
@@ -654,6 +666,12 @@ async function withLoading(task, fallbackMessage, authArea = false) {
 
 function setLoading(isLoading) {
   loadingOverlay.hidden = !isLoading;
+}
+
+function setAuthControlsDisabled(disabled) {
+  const loginBtn = authForm?.querySelector('button[type="submit"]');
+  if (loginBtn) loginBtn.disabled = disabled;
+  if (signupBtn) signupBtn.disabled = disabled;
 }
 
 function showAuthMessage(text, isError) {
