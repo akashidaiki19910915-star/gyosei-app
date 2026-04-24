@@ -447,17 +447,17 @@ function clearDailyReportFilters() {
 
 async function handleVisibilityChange() {
   if (document.hidden) return;
-  showLoading(false);
+  clearLoadingState();
   await handleResumeRefresh("visibilitychange");
 }
 
 async function handleWindowFocus() {
-  showLoading(false);
+  clearLoadingState();
   await handleResumeRefresh("focus");
 }
 
 async function handlePageShow() {
-  showLoading(false);
+  clearLoadingState();
   await handleResumeRefresh("pageshow");
 }
 
@@ -843,6 +843,9 @@ async function startCaseEdit(caseId) {
     caseForm.elements.status.value = normalizeStatus(target.status);
     caseSubmitBtn.textContent = "案件を更新";
     caseForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    console.error("案件編集の開始に失敗しました。", error);
+    showAppMessage(`案件編集の開始に失敗しました。\n詳細: ${error?.message || error}`, true);
   } finally {
     showLoading(false);
   }
@@ -928,6 +931,9 @@ async function startSaleEdit(saleId) {
     saleForm.elements.isUnpaid.checked = Boolean(target.isUnpaid);
     saleSubmitBtn.textContent = "売上を更新";
     saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    console.error("売上編集の開始に失敗しました。", error);
+    showAppMessage(`売上編集の開始に失敗しました。\n詳細: ${error?.message || error}`, true);
   } finally {
     showLoading(false);
   }
@@ -946,6 +952,9 @@ async function startExpenseEdit(expenseId) {
     expenseCaseSelect.value = target.caseId || "";
     expenseSubmitBtn.textContent = "経費を更新";
     expenseForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    console.error("経費編集の開始に失敗しました。", error);
+    showAppMessage(`経費編集の開始に失敗しました。\n詳細: ${error?.message || error}`, true);
   } finally {
     showLoading(false);
   }
@@ -978,6 +987,9 @@ async function startFixedExpenseEdit(fixedExpenseId) {
     fixedExpenseForm.elements.fixedExpenseActive.checked = Boolean(target.active);
     fixedExpenseSubmitBtn.textContent = "固定費を更新";
     fixedExpenseForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    console.error("固定費編集の開始に失敗しました。", error);
+    showAppMessage(`固定費編集の開始に失敗しました。\n詳細: ${error?.message || error}`, true);
   } finally {
     showLoading(false);
   }
@@ -1059,6 +1071,9 @@ async function startDailyReportEdit(dailyReportId) {
     dailyReportForm.elements.reportMemo.value = target.memo || "";
     dailyReportSubmitBtn.textContent = "日報を更新";
     dailyReportForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    console.error("日報編集の開始に失敗しました。", error);
+    showAppMessage(`日報編集の開始に失敗しました。\n詳細: ${error?.message || error}`, true);
   } finally {
     showLoading(false);
   }
@@ -1895,8 +1910,12 @@ async function handleEstimateSubmit(event) {
     tax: totals.tax,
     total: totals.total,
   };
-  await withLoading(async () => {
+
+  showLoading(true);
+  try {
+    clearAppMessage();
     let estimateId = editState.estimateId;
+    const isUpdate = Boolean(estimateId);
     if (estimateId) {
       const { error } = await sbClient.from("estimates").update(payload).eq("id", estimateId).eq("user_id", currentUser.id);
       if (error) throw error;
@@ -1921,8 +1940,18 @@ async function handleEstimateSubmit(event) {
     }
     if (payload.status === "受注") await ensureCaseFromEstimate(estimateId);
     resetEstimateForm();
-    await refreshAfterMutation("見積を保存しました。");
-  }, "見積の保存に失敗しました。");
+    editState.estimateId = null;
+    subtabState.estimates = "list";
+    await loadAllData();
+    renderAfterDataChanged();
+    activateTab("estimates");
+    showAppMessage(isUpdate ? "見積を更新しました。" : "見積を登録しました。", false);
+  } catch (error) {
+    console.error("見積の保存に失敗しました。", error);
+    showAppMessage(`見積の保存に失敗しました。\n詳細: ${error?.message || error}`, true);
+  } finally {
+    showLoading(false);
+  }
 }
 
 function renderEstimates() {
@@ -2279,6 +2308,9 @@ async function startEstimateEdit(estimateId) {
     recalcEstimateTotals();
     estimateSubmitBtn.textContent = "見積を更新";
     estimateForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    console.error("見積編集の開始に失敗しました。", error);
+    showAppMessage(`見積編集の開始に失敗しました。\n詳細: ${error?.message || error}`, true);
   } finally {
     showLoading(false);
   }
