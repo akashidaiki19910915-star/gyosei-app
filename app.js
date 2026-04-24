@@ -4,7 +4,14 @@ const STATUS_ORDER = ["未着手", "進行中", "完了"];
 
 const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const state = { cases: [], sales: [], expenses: [], selectedMonth: toMonthKey(new Date()) };
+const state = {
+  cases: [],
+  sales: [],
+  expenses: [],
+  selectedAggregation: "month",
+  selectedMonth: toMonthKey(new Date()),
+  selectedYear: new Date().getFullYear(),
+};
 const editState = { caseId: null, saleId: null, expenseId: null };
 
 const authView = document.getElementById("auth-view");
@@ -28,6 +35,12 @@ const summaryGrid = document.getElementById("summary-grid");
 const caseProfitList = document.getElementById("case-profit-list");
 const caseProfitEmpty = document.getElementById("case-profit-empty");
 const targetMonthInput = document.getElementById("target-month");
+const targetYearInput = document.getElementById("target-year");
+const monthFilter = document.getElementById("month-filter");
+const yearFilter = document.getElementById("year-filter");
+const aggregationRadios = Array.from(document.querySelectorAll('input[name="aggregation-unit"]'));
+const yearlyBreakdown = document.getElementById("yearly-breakdown");
+const yearlyBreakdownBody = document.getElementById("yearly-breakdown-body");
 
 const caseForm = document.getElementById("case-form");
 const caseList = document.getElementById("case-list");
@@ -108,13 +121,27 @@ function bindEvents() {
   salesList.addEventListener("click", handleSalesListAction);
   expensesList.addEventListener("click", handleExpensesListAction);
   targetMonthInput?.addEventListener("input", handleTargetMonthChange);
+  targetYearInput?.addEventListener("input", handleTargetYearChange);
+  aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("focus", handleWindowFocus);
+}
+
+function handleAggregationChange(event) {
+  const next = event?.target?.value;
+  state.selectedAggregation = next === "year" ? "year" : "month";
+  renderDashboard();
 }
 
 function handleTargetMonthChange(event) {
   const nextValue = normalizeMonthKey(event?.target?.value);
   state.selectedMonth = nextValue || toMonthKey(new Date());
+  renderDashboard();
+}
+
+function handleTargetYearChange(event) {
+  const nextValue = normalizeYear(event?.target?.value);
+  state.selectedYear = nextValue || new Date().getFullYear();
   renderDashboard();
 }
 
@@ -462,19 +489,32 @@ function activateTab(tabKey) {
 
 function renderDashboard() {
   state.selectedMonth = normalizeMonthKey(state.selectedMonth) || toMonthKey(new Date());
+  state.selectedYear = normalizeYear(state.selectedYear) || new Date().getFullYear();
+  state.selectedAggregation = state.selectedAggregation === "year" ? "year" : "month";
+
+  aggregationRadios.forEach((radio) => {
+    radio.checked = radio.value === state.selectedAggregation;
+  });
+  if (monthFilter) monthFilter.hidden = state.selectedAggregation !== "month";
+  if (yearFilter) yearFilter.hidden = state.selectedAggregation !== "year";
   if (targetMonthInput) targetMonthInput.value = state.selectedMonth;
+  if (targetYearInput) targetYearInput.value = String(state.selectedYear);
 
   const salesByMonth = aggregateByMonth(state.sales, (s) => s.paidDate || s.createdAt, (s) => s.invoiceAmount);
   const expenseByMonth = aggregateByMonth(state.expenses, (e) => e.date, (e) => e.amount);
-  const sales = salesByMonth[state.selectedMonth] || 0;
-  const expenses = expenseByMonth[state.selectedMonth] || 0;
+  const isYearMode = state.selectedAggregation === "year";
+
+  const sales = isYearMode ? sumYearFromMonthlyMap(salesByMonth, state.selectedYear) : salesByMonth[state.selectedMonth] || 0;
+  const expenses = isYearMode ? sumYearFromMonthlyMap(expenseByMonth, state.selectedYear) : expenseByMonth[state.selectedMonth] || 0;
   const profit = sales - expenses;
 
   summaryGrid.innerHTML = "";
+  const labelPrefix = isYearMode ? "年別" : "月別";
+  const targetLabel = isYearMode ? `${state.selectedYear}年` : monthLabel(state.selectedMonth);
   [
-    { label: "対象月", value: monthLabel(state.selectedMonth), cls: "" },
-    { label: "月別売上合計", value: formatCurrency(sales), cls: "" },
-    { label: "月別経費合計", value: formatCurrency(expenses), cls: "" },
+    { label: isYearMode ? "対象年" : "対象月", value: targetLabel, cls: "" },
+    { label: `${labelPrefix}売上合計`, value: formatCurrency(sales), cls: "" },
+    { label: `${labelPrefix}経費合計`, value: formatCurrency(expenses), cls: "" },
     { label: "利益（売上−経費）", value: formatCurrency(profit), cls: `profit ${profit < 0 ? "loss" : ""}`.trim() },
   ].forEach((card) => {
     const div = document.createElement("div");
@@ -483,7 +523,12 @@ function renderDashboard() {
     summaryGrid.appendChild(div);
   });
 
-  renderCaseProfitList(state.selectedMonth);
+  renderYearlyBreakdown(salesByMonth, expenseByMonth);
+  renderCaseProfitList({
+    mode: state.selectedAggregation,
+    monthKey: state.selectedMonth,
+    year: state.selectedYear,
+  });
 }
 
 function renderCaseOptions() {
@@ -522,12 +567,12 @@ function renderCases() {
   caseEmpty.hidden = sorted.length > 0;
 }
 
-function renderCaseProfitList(monthKey = "") {
+function renderCaseProfitList(filter = {}) {
   if (!caseProfitList || !caseProfitEmpty) return;
-  const profitsByCaseId = buildCaseProfitMap(monthKey);
+  const profitsByCaseId = buildCaseProfitMap(filter);
   const sortedCases = state.cases
     .filter((entry) => {
-      if (!monthKey) return true;
+      if (!filter?.mode) return true;
       const totals = profitsByCaseId[entry.id];
       return Boolean(totals) && (totals.sales !== 0 || totals.expenses !== 0);
     })
@@ -549,13 +594,16 @@ function renderCaseProfitList(monthKey = "") {
 
   caseProfitEmpty.hidden = sortedCases.length > 0;
   if (!sortedCases.length) {
-    caseProfitEmpty.textContent = monthKey ? "選択した対象月の案件データはありません。" : "案件データがありません。";
+    caseProfitEmpty.textContent =
+      filter?.mode === "year" ? "選択した対象年の案件データはありません。" :
+      filter?.mode === "month" ? "選択した対象月の案件データはありません。" :
+      "案件データがありません。";
   } else {
     caseProfitEmpty.textContent = "案件データがありません。";
   }
 }
 
-function buildCaseProfitMap(monthKey = "") {
+function buildCaseProfitMap(filter = {}) {
   const map = {};
   state.cases.forEach((entry) => {
     map[entry.id] = { sales: 0, expenses: 0, profit: 0 };
@@ -563,13 +611,13 @@ function buildCaseProfitMap(monthKey = "") {
 
   state.sales.forEach((sale) => {
     if (!sale.caseId || !map[sale.caseId]) return;
-    if (monthKey && !isSameMonthKey(sale.paidDate || sale.createdAt, monthKey)) return;
+    if (!isWithinFilterDate(sale.paidDate || sale.createdAt, filter)) return;
     map[sale.caseId].sales += sale.invoiceAmount || 0;
   });
 
   state.expenses.forEach((expense) => {
     if (!expense.caseId || !map[expense.caseId]) return;
-    if (monthKey && !isSameMonthKey(expense.date, monthKey)) return;
+    if (!isWithinFilterDate(expense.date, filter)) return;
     map[expense.caseId].expenses += expense.amount || 0;
   });
 
@@ -578,6 +626,29 @@ function buildCaseProfitMap(monthKey = "") {
   });
 
   return map;
+}
+
+function renderYearlyBreakdown(salesByMonth, expenseByMonth) {
+  const isYearMode = state.selectedAggregation === "year";
+  if (yearlyBreakdown) yearlyBreakdown.hidden = !isYearMode;
+  if (!yearlyBreakdownBody) return;
+  yearlyBreakdownBody.innerHTML = "";
+  if (!isYearMode) return;
+
+  for (let month = 1; month <= 12; month += 1) {
+    const monthKey = `${state.selectedYear}-${String(month).padStart(2, "0")}`;
+    const sales = salesByMonth[monthKey] || 0;
+    const expenses = expenseByMonth[monthKey] || 0;
+    const profit = sales - expenses;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${month}月</td>
+      <td>${formatCurrency(sales)}</td>
+      <td>${formatCurrency(expenses)}</td>
+      <td class="${profit < 0 ? "loss-text" : ""}">${formatCurrency(profit)}</td>
+    `;
+    yearlyBreakdownBody.appendChild(tr);
+  }
 }
 
 function renderSales() {
@@ -696,6 +767,36 @@ function normalizeMonthKey(value) {
 
 function isSameMonthKey(dateSource, monthKey) {
   return toMonthKey(dateSource) === monthKey;
+}
+
+function toYearNumber(dateSource) {
+  const date = dateSource instanceof Date ? dateSource : new Date(dateSource);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.getFullYear();
+}
+
+function normalizeYear(value) {
+  const year = Number(value);
+  if (!Number.isInteger(year) || year < 1900 || year > 9999) return null;
+  return year;
+}
+
+function isWithinFilterDate(dateSource, filter = {}) {
+  if (!filter?.mode) return true;
+  if (filter.mode === "month") return isSameMonthKey(dateSource, filter.monthKey);
+  if (filter.mode === "year") return toYearNumber(dateSource) === normalizeYear(filter.year);
+  return true;
+}
+
+function sumYearFromMonthlyMap(monthlyMap, year) {
+  const normalizedYear = normalizeYear(year);
+  if (!normalizedYear) return 0;
+  let total = 0;
+  for (let month = 1; month <= 12; month += 1) {
+    const key = `${normalizedYear}-${String(month).padStart(2, "0")}`;
+    total += monthlyMap[key] || 0;
+  }
+  return total;
 }
 
 function formatCurrency(value) {
