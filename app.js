@@ -49,11 +49,12 @@ const saleItemTemplate = document.getElementById("sale-item-template");
 const expenseItemTemplate = document.getElementById("expense-item-template");
 
 let currentUser = null;
+let loadingCount = 0;
 
 initialize();
 
 async function initialize() {
-  showLoading();
+  setLoading(true);
   setAuthControlsDisabled(true);
   try {
     bindEvents();
@@ -66,8 +67,16 @@ async function initialize() {
     await applyAuthState();
 
     sbClient.auth.onAuthStateChange(async (_event, sessionState) => {
-      currentUser = sessionState?.user ?? null;
-      await applyAuthState();
+      setLoading(true);
+      try {
+        currentUser = sessionState?.user ?? null;
+        await applyAuthState();
+      } catch (error) {
+        console.error("認証状態の更新に失敗しました。", error);
+        showAuthMessage("認証状態の確認に失敗しました。ページを再読み込みしてください。", true);
+      } finally {
+        setLoading(false);
+      }
     });
   } catch (error) {
     console.error("初期化処理に失敗しました。", error);
@@ -75,7 +84,7 @@ async function initialize() {
     authView.hidden = false;
     appView.hidden = true;
   } finally {
-    hideLoading();
+    setLoading(false);
     setAuthControlsDisabled(false);
   }
 }
@@ -94,6 +103,23 @@ function bindEvents() {
   caseList.addEventListener("click", handleCaseListAction);
   salesList.addEventListener("click", handleSalesListAction);
   expensesList.addEventListener("click", handleExpensesListAction);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+}
+
+async function handleVisibilityChange() {
+  if (document.hidden || !currentUser) return;
+
+  setLoading(true);
+  try {
+    await loadAllData();
+    renderAfterDataChanged();
+  } catch (error) {
+    console.error("画面復帰時の再読み込みに失敗しました。", error);
+    showAppMessage("画面復帰時のデータ更新に失敗しました。", true);
+  } finally {
+    setLoading(false);
+    clearLoadingState();
+  }
 }
 
 async function applyAuthState() {
@@ -646,7 +672,7 @@ function mapExpenseFromDb(row) {
 }
 
 async function withLoading(task, fallbackMessage, authArea = false) {
-  showLoading();
+  setLoading(true);
   try {
     clearAppMessage();
     if (authArea) showAuthMessage("", false);
@@ -660,24 +686,24 @@ async function withLoading(task, fallbackMessage, authArea = false) {
       showAppMessage(`${fallbackMessage}\n詳細: ${message}`, true);
     }
   } finally {
-    hideLoading();
+    setLoading(false);
   }
 }
 
 function setLoading(isLoading) {
+  if (!loadingOverlay) return;
+
   if (isLoading) {
-    showLoading();
+    loadingCount += 1;
+    loadingOverlay.hidden = false;
     return;
   }
-  hideLoading();
+  loadingCount = Math.max(0, loadingCount - 1);
+  if (loadingCount === 0) loadingOverlay.hidden = true;
 }
 
-function showLoading() {
-  if (!loadingOverlay) return;
-  loadingOverlay.hidden = false;
-}
-
-function hideLoading() {
+function clearLoadingState() {
+  loadingCount = 0;
   if (!loadingOverlay) return;
   loadingOverlay.hidden = true;
 }
