@@ -852,14 +852,14 @@ async function startCaseEdit(caseId) {
 }
 
 async function handleSalesListAction(event) {
-  const btn = event.target;
+  const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
   const item = btn.closest(".item");
   if (!item || !currentUser) return;
   const id = item.dataset.id;
 
   if (btn.classList.contains("edit-btn")) {
-    startSaleEdit(id);
+    editSale(id);
     return;
   }
 
@@ -875,14 +875,14 @@ async function handleSalesListAction(event) {
 }
 
 async function handleExpensesListAction(event) {
-  const btn = event.target;
+  const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
   const item = btn.closest(".item");
   if (!item || !currentUser) return;
   const id = item.dataset.id;
 
   if (btn.classList.contains("edit-btn")) {
-    await startExpenseEdit(id);
+    await editExpense(id);
     return;
   }
 
@@ -898,12 +898,12 @@ async function handleExpensesListAction(event) {
 }
 
 function handleUnpaidListAction(event) {
-  const btn = event.target;
+  const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
   const saleId = btn.dataset.saleId;
   if (!saleId) return;
   if (btn.classList.contains("edit-sale-btn")) {
-    startSaleEdit(saleId);
+    editSale(saleId);
   }
 }
 
@@ -922,6 +922,7 @@ async function startSaleEdit(saleId) {
   try {
     const target = state.sales.find((entry) => entry.id === saleId);
     if (!target) return;
+    subtabState.sales = "entry";
     activateTab("sales");
     editState.saleId = target.id;
     saleCaseSelect.value = target.caseId;
@@ -944,6 +945,7 @@ async function startExpenseEdit(expenseId) {
   try {
     const target = state.expenses.find((entry) => entry.id === expenseId);
     if (!target) return;
+    subtabState.expenses = "entry";
     activateTab("expenses");
     editState.expenseId = target.id;
     expenseForm.elements.expenseDate.value = target.date;
@@ -1035,13 +1037,13 @@ async function handleFixedExpensesListAction(event) {
 }
 
 async function handleDailyReportsListAction(event) {
-  const btn = event.target;
+  const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement) || !currentUser) return;
   const id = btn.dataset.dailyReportId;
   if (!id) return;
 
   if (btn.classList.contains("edit-daily-report-btn")) {
-    await startDailyReportEdit(id);
+    await editDailyReport(id);
     return;
   }
 
@@ -1061,6 +1063,7 @@ async function startDailyReportEdit(dailyReportId) {
   try {
     const target = state.dailyReports.find((entry) => entry.id === dailyReportId);
     if (!target) return;
+    subtabState["daily-reports"] = "entry";
     activateTab("daily-reports");
     editState.dailyReportId = target.id;
     dailyReportForm.elements.reportDate.value = target.reportDate || "";
@@ -1078,6 +1081,22 @@ async function startDailyReportEdit(dailyReportId) {
     showLoading(false);
   }
 }
+
+async function editSale(saleId) {
+  await startSaleEdit(saleId);
+}
+
+async function editExpense(expenseId) {
+  await startExpenseEdit(expenseId);
+}
+
+async function editDailyReport(dailyReportId) {
+  await startDailyReportEdit(dailyReportId);
+}
+
+window.editSale = editSale;
+window.editExpense = editExpense;
+window.editDailyReport = editDailyReport;
 
 async function handleClearAll() {
   if (!currentUser) return;
