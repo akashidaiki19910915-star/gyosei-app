@@ -559,6 +559,18 @@ tbody tr:last-child td {
   margin-bottom: 0.6rem;
 }
 
+.dashboard-worktime-card {
+  margin: 0.75rem 0;
+}
+
+.dashboard-worktime-card h3 {
+  margin: 0 0 0.5rem;
+}
+
+.report-list-panel {
+  grid-column: 1 / -1;
+}
+
 .compact-list {
   margin-top: 0.2rem;
 }

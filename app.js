@@ -18,6 +18,7 @@ const state = {
   sales: [],
   expenses: [],
   fixedExpenses: [],
+  dailyReports: [],
   selectedAggregation: "month",
   selectedMonth: toMonthKey(new Date()),
   selectedYear: new Date().getFullYear(),
@@ -27,7 +28,7 @@ const state = {
   salesSearchQuery: "",
   expensesSearchQuery: "",
 };
-const editState = { caseId: null, saleId: null, expenseId: null, fixedExpenseId: null };
+const editState = { caseId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null };
 
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
@@ -52,9 +53,11 @@ const panels = {
   cases: document.getElementById("tab-cases"),
   sales: document.getElementById("tab-sales"),
   expenses: document.getElementById("tab-expenses"),
+  "daily-reports": document.getElementById("tab-daily-reports"),
 };
 
 const summaryGrid = document.getElementById("summary-grid");
+const worktimeSummaryGrid = document.getElementById("worktime-summary-grid");
 const caseProfitList = document.getElementById("case-profit-list");
 const caseProfitEmpty = document.getElementById("case-profit-empty");
 const targetMonthInput = document.getElementById("target-month");
@@ -124,6 +127,13 @@ const fixedExpenseForm = document.getElementById("fixed-expense-form");
 const fixedExpensesList = document.getElementById("fixed-expenses-list");
 const fixedExpensesEmpty = document.getElementById("fixed-expenses-empty");
 const fixedExpenseSubmitBtn = fixedExpenseForm.querySelector('button[type="submit"]');
+const dailyReportForm = document.getElementById("daily-report-form");
+const reportCaseSelect = document.getElementById("report-case-id");
+const dailyReportSubmitBtn = document.getElementById("daily-report-submit-btn");
+const dailyReportsBody = document.getElementById("daily-reports-body");
+const dailyReportsEmpty = document.getElementById("daily-reports-empty");
+const dailyReportsListWrap = document.getElementById("daily-reports-list-wrap");
+const dailyReportSummaryList = document.getElementById("daily-report-summary-list");
 
 const caseItemTemplate = document.getElementById("case-item-template");
 const saleItemTemplate = document.getElementById("sale-item-template");
@@ -194,12 +204,14 @@ function bindEvents() {
   saleForm.addEventListener("submit", handleSaleSubmit);
   expenseForm.addEventListener("submit", handleExpenseSubmit);
   fixedExpenseForm.addEventListener("submit", handleFixedExpenseSubmit);
+  dailyReportForm.addEventListener("submit", handleDailyReportSubmit);
 
   clearBtn.addEventListener("click", handleClearAll);
   caseList.addEventListener("click", handleCaseListAction);
   salesList.addEventListener("click", handleSalesListAction);
   expensesList.addEventListener("click", handleExpensesListAction);
   fixedExpensesList.addEventListener("click", handleFixedExpensesListAction);
+  dailyReportsBody?.addEventListener("click", handleDailyReportsListAction);
   unpaidListBody?.addEventListener("click", handleUnpaidListAction);
   billingLeakAlertBody?.addEventListener("click", handleBillingLeakAlertAction);
   targetMonthInput?.addEventListener("input", handleTargetMonthChange);
@@ -388,6 +400,7 @@ async function applyAuthState() {
     resetSaleForm();
     resetExpenseForm();
     resetFixedExpenseForm();
+    resetDailyReportForm();
     renderAfterDataChanged();
   }, "データの読み込みに失敗しました。テーブル設定を確認してください。");
 }
@@ -432,22 +445,25 @@ async function handleLogout() {
 async function loadAllData() {
   if (!currentUser) return;
 
-  const [casesRes, salesRes, expensesRes, fixedExpensesRes] = await Promise.all([
+  const [casesRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes] = await Promise.all([
     sbClient.from("cases").select("*").eq("user_id", currentUser.id),
     sbClient.from("sales").select("*").eq("user_id", currentUser.id),
     sbClient.from("expenses").select("*").eq("user_id", currentUser.id),
     sbClient.from("fixed_expenses").select("*").eq("user_id", currentUser.id),
+    sbClient.from("daily_reports").select("*").eq("user_id", currentUser.id),
   ]);
 
   if (casesRes.error) throw casesRes.error;
   if (salesRes.error) throw salesRes.error;
   if (expensesRes.error) throw expensesRes.error;
   if (fixedExpensesRes.error) throw fixedExpensesRes.error;
+  if (dailyReportsRes.error) throw dailyReportsRes.error;
 
   state.cases = (casesRes.data || []).map(mapCaseFromDb);
   state.sales = (salesRes.data || []).map(mapSaleFromDb);
   state.expenses = (expensesRes.data || []).map(mapExpenseFromDb);
   state.fixedExpenses = (fixedExpensesRes.data || []).map(mapFixedExpenseFromDb);
+  state.dailyReports = (dailyReportsRes.data || []).map(mapDailyReportFromDb);
 
   const createdCount = await ensureMonthlyFixedExpenses();
   if (createdCount > 0) {
@@ -610,6 +626,39 @@ async function handleFixedExpenseSubmit(event) {
     resetFixedExpenseForm();
     await refreshAfterMutation("固定費を登録しました。");
   }, "固定費の保存に失敗しました。入力内容を確認してください。");
+}
+
+async function handleDailyReportSubmit(event) {
+  event.preventDefault();
+  if (!currentUser) return;
+
+  const reportDate = dailyReportForm.elements.reportDate.value;
+  const workContent = asTrimmedText(dailyReportForm.elements.reportWorkContent.value);
+  if (!reportDate || !workContent) return;
+
+  const payload = {
+    user_id: currentUser.id,
+    report_date: reportDate,
+    case_id: reportCaseSelect.value || null,
+    work_content: workContent,
+    work_minutes: normalizeAmount(dailyReportForm.elements.reportWorkMinutes.value) ?? 0,
+    next_action: asTrimmedText(dailyReportForm.elements.reportNextAction.value) || null,
+    memo: asTrimmedText(dailyReportForm.elements.reportMemo.value) || null,
+  };
+
+  await withLoading(async () => {
+    if (editState.dailyReportId) {
+      const { error } = await sbClient.from("daily_reports").update(payload).eq("id", editState.dailyReportId).eq("user_id", currentUser.id);
+      if (error) throw error;
+      resetDailyReportForm();
+      await refreshAfterMutation("日報を更新しました。");
+      return;
+    }
+    const { error } = await sbClient.from("daily_reports").insert(payload);
+    if (error) throw error;
+    resetDailyReportForm();
+    await refreshAfterMutation("日報を登録しました。");
+  }, "日報の保存に失敗しました。入力内容を確認してください。");
 }
 
 async function handleCaseListAction(event) {
@@ -820,27 +869,63 @@ async function handleFixedExpensesListAction(event) {
   }
 }
 
+async function handleDailyReportsListAction(event) {
+  const btn = event.target;
+  if (!(btn instanceof HTMLButtonElement) || !currentUser) return;
+  const id = btn.dataset.dailyReportId;
+  if (!id) return;
+
+  if (btn.classList.contains("edit-daily-report-btn")) {
+    const target = state.dailyReports.find((entry) => entry.id === id);
+    if (!target) return;
+    activateTab("daily-reports");
+    editState.dailyReportId = target.id;
+    dailyReportForm.elements.reportDate.value = target.reportDate || "";
+    reportCaseSelect.value = target.caseId || "";
+    dailyReportForm.elements.reportWorkContent.value = target.workContent || "";
+    dailyReportForm.elements.reportWorkMinutes.value = target.workMinutes ?? 0;
+    dailyReportForm.elements.reportNextAction.value = target.nextAction || "";
+    dailyReportForm.elements.reportMemo.value = target.memo || "";
+    dailyReportSubmitBtn.textContent = "日報を更新";
+    dailyReportForm.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
+  if (btn.classList.contains("delete-daily-report-btn")) {
+    if (!window.confirm("この日報を削除しますか？")) return;
+    await withLoading(async () => {
+      const { error } = await sbClient.from("daily_reports").delete().eq("id", id).eq("user_id", currentUser.id);
+      if (error) throw error;
+      if (editState.dailyReportId === id) resetDailyReportForm();
+      await refreshAfterMutation("日報を削除しました。");
+    }, "日報の削除に失敗しました。");
+  }
+}
+
 async function handleClearAll() {
   if (!currentUser) return;
-  if (!window.confirm("案件・売上・経費・固定費の全データを削除します。よろしいですか？")) return;
+  if (!window.confirm("案件・売上・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
 
   await withLoading(async () => {
-    const [salesRes, expensesRes, fixedExpensesRes, casesRes] = await Promise.all([
+    const [salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes] = await Promise.all([
       sbClient.from("sales").delete().eq("user_id", currentUser.id),
       sbClient.from("expenses").delete().eq("user_id", currentUser.id),
       sbClient.from("fixed_expenses").delete().eq("user_id", currentUser.id),
+      sbClient.from("daily_reports").delete().eq("user_id", currentUser.id),
       sbClient.from("cases").delete().eq("user_id", currentUser.id),
     ]);
 
     if (salesRes.error) throw salesRes.error;
     if (expensesRes.error) throw expensesRes.error;
     if (fixedExpensesRes.error) throw fixedExpensesRes.error;
+    if (dailyReportsRes.error) throw dailyReportsRes.error;
     if (casesRes.error) throw casesRes.error;
 
     resetCaseForm();
     resetSaleForm();
     resetExpenseForm();
     resetFixedExpenseForm();
+    resetDailyReportForm();
     await refreshAfterMutation("全データを削除しました。");
   }, "全件削除に失敗しました。");
 }
@@ -1081,6 +1166,7 @@ function renderAfterDataChanged() {
   renderSales();
   renderExpenses();
   renderFixedExpenses();
+  renderDailyReports();
   renderDashboard();
 }
 
@@ -1104,10 +1190,12 @@ function renderDashboard() {
 
   const salesByMonth = aggregateByMonth(state.sales, (s) => s.paidDate || s.createdAt, (s) => s.invoiceAmount);
   const expenseByMonth = aggregateByMonth(state.expenses, (e) => e.date, (e) => e.amount);
+  const reportByMonth = aggregateByMonth(state.dailyReports, (r) => r.reportDate, (r) => r.workMinutes);
   const isYearMode = state.selectedAggregation === "year";
 
   const sales = isYearMode ? sumYearFromMonthlyMap(salesByMonth, state.selectedYear) : salesByMonth[state.selectedMonth] || 0;
   const expenses = isYearMode ? sumYearFromMonthlyMap(expenseByMonth, state.selectedYear) : expenseByMonth[state.selectedMonth] || 0;
+  const workMinutes = isYearMode ? sumYearFromMonthlyMap(reportByMonth, state.selectedYear) : reportByMonth[state.selectedMonth] || 0;
   const profit = sales - expenses;
 
   summaryGrid.innerHTML = "";
@@ -1117,6 +1205,7 @@ function renderDashboard() {
     { label: isYearMode ? "対象年" : "対象月", value: targetLabel, cls: "" },
     { label: `${labelPrefix}売上合計`, value: formatCurrency(sales), cls: "" },
     { label: `${labelPrefix}経費合計`, value: formatCurrency(expenses), cls: "" },
+    { label: `${labelPrefix}作業時間`, value: formatMinutes(workMinutes), cls: "" },
     { label: "利益（売上−経費）", value: formatCurrency(profit), cls: `profit ${profit < 0 ? "loss" : ""}`.trim() },
   ].forEach((card) => {
     const div = document.createElement("div");
@@ -1140,6 +1229,7 @@ function renderDashboard() {
     monthKey: state.selectedMonth,
     year: state.selectedYear,
   });
+  renderDashboardWorktimeSummary();
   renderUnpaidList();
 }
 
@@ -1419,6 +1509,44 @@ function renderCaseOptions() {
   saleCaseSelect.innerHTML = state.cases.length ? options : '<option value="">案件を先に登録してください</option>';
   saleCaseSelect.disabled = !state.cases.length;
   expenseCaseSelect.innerHTML = `<option value="">案件に紐付けしない</option>${options}`;
+  reportCaseSelect.innerHTML = `<option value="">案件なし</option>${options}`;
+}
+
+function renderDailyReports() {
+  if (!dailyReportsBody || !dailyReportsEmpty || !dailyReportsListWrap || !dailyReportSummaryList) return;
+  const sorted = state.dailyReports.slice().sort((a, b) => toSortTimestamp(b.reportDate) - toSortTimestamp(a.reportDate));
+  dailyReportsBody.innerHTML = "";
+
+  sorted.forEach((entry) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${formatDate(entry.reportDate)}</td>
+      <td>${escapeHtml(resolveDailyReportCaseName(entry.caseId))}</td>
+      <td>${escapeHtml(truncateText(entry.workContent || "", 120))}</td>
+      <td>${formatMinutes(entry.workMinutes)}</td>
+      <td>${escapeHtml(truncateText(entry.nextAction || "未設定", 80))}</td>
+      <td>${escapeHtml(truncateText(entry.memo || "未設定", 80))}</td>
+      <td><button type="button" class="secondary-btn edit-daily-report-btn" data-daily-report-id="${entry.id}">編集</button></td>
+      <td><button type="button" class="danger-btn delete-daily-report-btn" data-daily-report-id="${entry.id}">削除</button></td>
+    `;
+    dailyReportsBody.appendChild(tr);
+  });
+
+  dailyReportsEmpty.hidden = sorted.length > 0;
+  dailyReportsListWrap.hidden = sorted.length === 0;
+
+  const summary = buildDailyReportSummary();
+  dailyReportSummaryList.innerHTML = "";
+  [
+    { title: "今日の作業時間合計", value: formatMinutes(summary.todayMinutes) },
+    { title: "今月の作業時間合計", value: formatMinutes(summary.monthMinutes) },
+    { title: "案件別作業時間合計", value: summary.caseRows || "データなし" },
+  ].forEach((entry) => {
+    const li = document.createElement("li");
+    li.className = "item";
+    li.innerHTML = `<div><p class="title">${entry.title}</p><p class="meta">${escapeHtml(entry.value)}</p></div>`;
+    dailyReportSummaryList.appendChild(li);
+  });
 }
 
 function renderCases() {
@@ -1481,13 +1609,13 @@ function renderCaseProfitList(filter = {}) {
   caseProfitList.innerHTML = "";
 
   sortedCases.forEach((entry) => {
-    const totals = profitsByCaseId[entry.id] || { sales: 0, expenses: 0, profit: 0 };
+    const totals = profitsByCaseId[entry.id] || { sales: 0, expenses: 0, profit: 0, workMinutes: 0 };
     const li = document.createElement("li");
     li.className = "item";
     li.innerHTML = `
       <div>
         <p class="title">${escapeHtml(entry.customerName)}｜${escapeHtml(entry.caseName)}</p>
-        <p class="meta">売上合計: ${formatCurrency(totals.sales)} / 経費合計: ${formatCurrency(totals.expenses)} / <span class="${totals.profit < 0 ? "loss-text" : ""}">利益: ${formatCurrency(totals.profit)}</span></p>
+        <p class="meta">売上合計: ${formatCurrency(totals.sales)} / 経費合計: ${formatCurrency(totals.expenses)} / 作業時間: ${formatMinutes(totals.workMinutes)} / <span class="${totals.profit < 0 ? "loss-text" : ""}">利益: ${formatCurrency(totals.profit)}</span></p>
       </div>
     `;
     caseProfitList.appendChild(li);
@@ -1507,7 +1635,7 @@ function renderCaseProfitList(filter = {}) {
 function buildCaseProfitMap(filter = {}) {
   const map = {};
   state.cases.forEach((entry) => {
-    map[entry.id] = { sales: 0, expenses: 0, profit: 0 };
+    map[entry.id] = { sales: 0, expenses: 0, profit: 0, workMinutes: 0 };
   });
 
   state.sales.forEach((sale) => {
@@ -1520,6 +1648,12 @@ function buildCaseProfitMap(filter = {}) {
     if (!expense.caseId || !map[expense.caseId]) return;
     if (!isWithinFilterDate(expense.date, filter)) return;
     map[expense.caseId].expenses += expense.amount || 0;
+  });
+
+  state.dailyReports.forEach((report) => {
+    if (!report.caseId || !map[report.caseId]) return;
+    if (!isWithinFilterDate(report.reportDate, filter)) return;
+    map[report.caseId].workMinutes += report.workMinutes || 0;
   });
 
   Object.values(map).forEach((item) => {
@@ -1636,6 +1770,12 @@ function resolveCaseName(caseId) {
   return found ? `${found.customerName}｜${found.caseName}` : "（削除済み案件）";
 }
 
+function resolveDailyReportCaseName(caseId) {
+  if (!caseId) return "案件なし";
+  const found = state.cases.find((c) => c.id === caseId);
+  return found ? `${found.customerName}｜${found.caseName}` : "案件なし";
+}
+
 function resetCaseForm() {
   resetEditMode("case");
   caseForm.reset();
@@ -1662,11 +1802,56 @@ function resetFixedExpenseForm() {
   fixedExpenseSubmitBtn.textContent = "固定費を登録";
 }
 
+function resetDailyReportForm() {
+  resetEditMode("dailyReport");
+  dailyReportForm.reset();
+  dailyReportForm.elements.reportDate.value = toDateString(new Date());
+  dailyReportSubmitBtn.textContent = "日報を登録";
+}
+
 function resetEditMode(target) {
   if (target === "case") editState.caseId = null;
   if (target === "sale") editState.saleId = null;
   if (target === "expense") editState.expenseId = null;
   if (target === "fixedExpense") editState.fixedExpenseId = null;
+  if (target === "dailyReport") editState.dailyReportId = null;
+}
+
+function buildDailyReportSummary() {
+  const today = toDateString(new Date());
+  const currentMonthKey = toMonthKey(new Date());
+  const caseMinutes = {};
+  let todayMinutes = 0;
+  let monthMinutes = 0;
+
+  state.dailyReports.forEach((entry) => {
+    const minutes = entry.workMinutes || 0;
+    if (entry.reportDate === today) todayMinutes += minutes;
+    if (toMonthKey(entry.reportDate) === currentMonthKey) monthMinutes += minutes;
+    const key = entry.caseId || "none";
+    caseMinutes[key] = (caseMinutes[key] || 0) + minutes;
+  });
+
+  const caseRows = Object.entries(caseMinutes)
+    .sort((a, b) => b[1] - a[1])
+    .map(([caseId, minutes]) => `${resolveDailyReportCaseName(caseId === "none" ? null : caseId)}: ${formatMinutes(minutes)}`)
+    .join(" / ");
+  return { todayMinutes, monthMinutes, caseRows };
+}
+
+function renderDashboardWorktimeSummary() {
+  if (!worktimeSummaryGrid) return;
+  const summary = buildDailyReportSummary();
+  worktimeSummaryGrid.innerHTML = "";
+  [
+    { label: "今日の作業時間", value: formatMinutes(summary.todayMinutes) },
+    { label: "今月の作業時間", value: formatMinutes(summary.monthMinutes) },
+  ].forEach((entry) => {
+    const div = document.createElement("div");
+    div.className = "summary-card";
+    div.innerHTML = `<p class="label">${entry.label}</p><p class="value">${entry.value}</p>`;
+    worktimeSummaryGrid.appendChild(div);
+  });
 }
 
 function sortCases(a, b) {
@@ -1761,6 +1946,12 @@ function sumYearFromMonthlyMap(monthlyMap, year) {
 function formatCurrency(value) {
   if (typeof value !== "number" || Number.isNaN(value)) return "未入力";
   return `${new Intl.NumberFormat("ja-JP").format(value)} 円`;
+}
+
+function formatMinutes(value) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes < 0) return "0 分";
+  return `${new Intl.NumberFormat("ja-JP").format(Math.floor(minutes))} 分`;
 }
 
 function formatDate(dateText) {
@@ -2369,6 +2560,20 @@ function mapFixedExpenseFromDb(row) {
     dayOfMonth: normalizeDayOfMonth(row.day_of_month) ?? 1,
     startDate: row.start_date || "",
     active: Boolean(row.active),
+    createdAt: Date.parse(row.created_at) || Date.now(),
+    updatedAt: Date.parse(row.updated_at) || Date.now(),
+  };
+}
+
+function mapDailyReportFromDb(row) {
+  return {
+    id: row.id,
+    reportDate: row.report_date || "",
+    caseId: row.case_id || null,
+    workContent: row.work_content || "",
+    workMinutes: normalizeAmount(row.work_minutes) ?? 0,
+    nextAction: row.next_action || "",
+    memo: row.memo || "",
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
   };

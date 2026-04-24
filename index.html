@@ -107,6 +107,7 @@
           <button type="button" class="tab-btn active" data-tab="cases">案件</button>
           <button type="button" class="tab-btn" data-tab="sales">売上</button>
           <button type="button" class="tab-btn" data-tab="expenses">経費</button>
+          <button type="button" class="tab-btn" data-tab="daily-reports">日報</button>
         </nav>
 
         <section class="dashboard panel">
@@ -204,6 +205,10 @@
                 <tbody id="billing-leak-alert-body"></tbody>
               </table>
             </div>
+          </section>
+          <section class="dashboard-worktime-card">
+            <h3>日報作業時間</h3>
+            <div class="summary-grid" id="worktime-summary-grid"></div>
           </section>
           <div class="dashboard-filter-group">
             <fieldset class="aggregation-switch" aria-label="集計単位の切替">
@@ -469,6 +474,68 @@
               <h2>固定費一覧</h2>
               <div id="fixed-expenses-empty" class="empty">固定費データはまだありません。</div>
               <ul id="fixed-expenses-list" class="item-list"></ul>
+            </section>
+          </div>
+        </section>
+
+        <section id="tab-daily-reports" class="tab-panel">
+          <div class="layout two-col">
+            <section class="panel">
+              <h2>日報登録フォーム</h2>
+              <form id="daily-report-form" class="form">
+                <label>
+                  日付 <span class="required">必須</span>
+                  <input id="report-date" name="reportDate" type="date" required />
+                </label>
+                <label>
+                  案件選択（任意）
+                  <select id="report-case-id" name="reportCaseId"></select>
+                </label>
+                <label>
+                  作業内容 <span class="required">必須</span>
+                  <textarea id="report-work-content" name="reportWorkContent" rows="3" maxlength="2000" required></textarea>
+                </label>
+                <label>
+                  作業時間（分）
+                  <input id="report-work-minutes" name="reportWorkMinutes" type="number" min="0" step="1" />
+                </label>
+                <label>
+                  次回対応
+                  <textarea id="report-next-action" name="reportNextAction" rows="2" maxlength="2000"></textarea>
+                </label>
+                <label>
+                  メモ
+                  <textarea id="report-memo" name="reportMemo" rows="2" maxlength="2000"></textarea>
+                </label>
+                <button id="daily-report-submit-btn" type="submit">日報を登録</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <h2>日報集計</h2>
+              <ul id="daily-report-summary-list" class="item-list compact-list"></ul>
+            </section>
+
+            <section class="panel report-list-panel">
+              <h2>日報一覧</h2>
+              <div id="daily-reports-empty" class="empty">日報データはまだありません。</div>
+              <div id="daily-reports-list-wrap" class="table-wrap" hidden>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>日付</th>
+                      <th>案件名</th>
+                      <th>作業内容</th>
+                      <th>作業時間</th>
+                      <th>次回対応</th>
+                      <th>メモ</th>
+                      <th>編集</th>
+                      <th>削除</th>
+                    </tr>
+                  </thead>
+                  <tbody id="daily-reports-body"></tbody>
+                </table>
+              </div>
             </section>
           </div>
         </section>

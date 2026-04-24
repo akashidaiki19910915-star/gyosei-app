@@ -97,3 +97,27 @@ alter table cases add column if not exists work_memo text;
 alter table cases add column if not exists next_action_date date;
 alter table cases add column if not exists next_action text;
 ```
+
+## 日報機能のための追加SQL
+
+```sql
+create table if not exists daily_reports (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  report_date date not null,
+  case_id uuid,
+  work_content text not null,
+  work_minutes int default 0,
+  next_action text,
+  memo text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table daily_reports enable row level security;
+
+create policy "daily_reports_own" on daily_reports
+for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+```
