@@ -65,6 +65,11 @@ const unpaidAlertPeriod = document.getElementById("unpaid-alert-period");
 const unpaidAlertBody = document.getElementById("unpaid-alert-body");
 const unpaidAlertEmpty = document.getElementById("unpaid-alert-empty");
 const unpaidAlertListWrap = document.getElementById("unpaid-alert-list-wrap");
+const billingLeakAlertCard = document.getElementById("billing-leak-alert-card");
+const billingLeakAlertSummary = document.getElementById("billing-leak-alert-summary");
+const billingLeakAlertBody = document.getElementById("billing-leak-alert-body");
+const billingLeakAlertEmpty = document.getElementById("billing-leak-alert-empty");
+const billingLeakAlertListWrap = document.getElementById("billing-leak-alert-list-wrap");
 const unpaidListBody = document.getElementById("unpaid-list-body");
 const unpaidListEmpty = document.getElementById("unpaid-list-empty");
 const unpaidListWrap = document.getElementById("unpaid-list-wrap");
@@ -170,6 +175,7 @@ function bindEvents() {
   expensesList.addEventListener("click", handleExpensesListAction);
   fixedExpensesList.addEventListener("click", handleFixedExpensesListAction);
   unpaidListBody?.addEventListener("click", handleUnpaidListAction);
+  billingLeakAlertBody?.addEventListener("click", handleBillingLeakAlertAction);
   targetMonthInput?.addEventListener("input", handleTargetMonthChange);
   targetYearInput?.addEventListener("input", handleTargetYearChange);
   aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
@@ -609,6 +615,16 @@ function handleUnpaidListAction(event) {
   }
 }
 
+function handleBillingLeakAlertAction(event) {
+  const btn = event.target;
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const caseId = btn.dataset.caseId;
+  if (!caseId) return;
+  if (btn.classList.contains("register-sale-btn")) {
+    openSaleFormForCase(caseId);
+  }
+}
+
 function startSaleEdit(saleId) {
   const target = state.sales.find((entry) => entry.id === saleId);
   if (!target) return;
@@ -620,6 +636,19 @@ function startSaleEdit(saleId) {
   saleForm.elements.paidDate.value = target.paidDate || "";
   saleForm.elements.isUnpaid.checked = Boolean(target.isUnpaid);
   saleSubmitBtn.textContent = "売上を更新";
+  saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function openSaleFormForCase(caseId) {
+  const targetCase = state.cases.find((entry) => entry.id === caseId);
+  if (!targetCase || !saleCaseSelect) return;
+  activateTab("sales");
+  resetSaleForm();
+  saleCaseSelect.value = targetCase.id;
+  saleForm.elements.invoiceAmount.value = targetCase.estimateAmount ?? "";
+  saleForm.elements.paidAmount.value = "";
+  saleForm.elements.paidDate.value = "";
+  saleForm.elements.isUnpaid.checked = true;
   saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -972,6 +1001,7 @@ function renderDashboard() {
     monthKey: state.selectedMonth,
     year: state.selectedYear,
   });
+  renderBillingLeakAlert();
   renderYearlyBreakdown(salesByMonth, expenseByMonth);
   renderCaseProfitList({
     mode: state.selectedAggregation,
@@ -1061,6 +1091,43 @@ function renderUnpaidList() {
       <td><button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button></td>
     `;
     unpaidListBody.appendChild(tr);
+  });
+}
+
+function renderBillingLeakAlert() {
+  const billingLeakCases = getBillingLeakCandidates()
+    .slice()
+    .sort(sortCases);
+  const count = billingLeakCases.length;
+
+  if (billingLeakAlertCard) billingLeakAlertCard.classList.toggle("has-leak", count > 0);
+  if (billingLeakAlertSummary) {
+    billingLeakAlertSummary.textContent = count > 0
+      ? `請求漏れ候補 ${count}件`
+      : "請求漏れ候補はありません。";
+  }
+  if (billingLeakAlertEmpty) billingLeakAlertEmpty.hidden = count > 0;
+  if (billingLeakAlertListWrap) billingLeakAlertListWrap.hidden = count === 0;
+  if (!billingLeakAlertBody) return;
+  billingLeakAlertBody.innerHTML = "";
+
+  billingLeakCases.forEach((entry) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(entry.customerName)}</td>
+      <td>${escapeHtml(entry.caseName)}</td>
+      <td>${formatCurrency(entry.estimateAmount)}</td>
+      <td>${escapeHtml(entry.status || "完了")}</td>
+      <td><button type="button" class="secondary-btn register-sale-btn" data-case-id="${entry.id}">売上登録</button></td>
+    `;
+    billingLeakAlertBody.appendChild(tr);
+  });
+}
+
+function getBillingLeakCandidates() {
+  return state.cases.filter((entry) => {
+    if (getStatusCategory(entry.status) !== "完了") return false;
+    return !state.sales.some((sale) => sale.caseId === entry.id);
   });
 }
 

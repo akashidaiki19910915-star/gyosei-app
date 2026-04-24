@@ -238,6 +238,14 @@ button:hover { background: var(--primary-dark); }
   margin-bottom: 0.75rem;
 }
 
+.billing-leak-alert-card {
+  border: 1px solid #fed7aa;
+  background: #fffaf3;
+  border-radius: 10px;
+  padding: 0.8rem;
+  margin-bottom: 0.75rem;
+}
+
 .status-summary-card {
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -316,6 +324,11 @@ button:hover { background: var(--primary-dark); }
   background: #fff0f0;
 }
 
+.billing-leak-alert-card.has-leak {
+  border-color: #ea580c;
+  background: #fff4ed;
+}
+
 .unpaid-alert-header {
   display: flex;
   justify-content: space-between;
@@ -329,6 +342,11 @@ button:hover { background: var(--primary-dark); }
   color: #9f1239;
 }
 
+.billing-leak-alert-header h3 {
+  margin: 0;
+  color: #c2410c;
+}
+
 .unpaid-alert-period {
   margin: 0;
   color: #7f1d1d;
@@ -340,8 +358,17 @@ button:hover { background: var(--primary-dark); }
   font-weight: 700;
 }
 
+.billing-leak-alert-summary {
+  margin: 0.45rem 0 0.5rem;
+  font-weight: 700;
+}
+
 .unpaid-alert-table thead th {
   background: #fde8e8;
+}
+
+.billing-leak-alert-table thead th {
+  background: #ffedd5;
 }
 
 .table-wrap {
