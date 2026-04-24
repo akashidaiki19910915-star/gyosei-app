@@ -6,6 +6,7 @@
     <title>行政書士 案件・売上・経費管理</title>
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
     <script src="app.js" defer></script>
   </head>
   <body>
@@ -79,6 +80,24 @@
                   <input id="csv-import-file" name="csvImportFile" type="file" accept=".csv,text/csv" required />
                 </label>
                 <button id="csv-import-btn" type="submit">CSV取込を実行</button>
+              </form>
+            </section>
+          </div>
+          <div class="layout two-col">
+            <section>
+              <h2>Excel出力</h2>
+              <div class="csv-actions">
+                <button id="export-excel-btn" type="button">Excel出力（.xlsx）</button>
+              </div>
+            </section>
+            <section>
+              <h2>Excel取込</h2>
+              <form id="excel-import-form" class="form">
+                <label>
+                  ファイル
+                  <input id="excel-import-file" name="excelImportFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
+                </label>
+                <button id="excel-import-btn" type="submit">Excel取込を実行</button>
               </form>
             </section>
           </div>

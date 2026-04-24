@@ -37,6 +37,8 @@ const exportExpensesCsvBtn = document.getElementById("export-expenses-csv-btn");
 const exportFixedExpensesCsvBtn = document.getElementById("export-fixed-expenses-csv-btn");
 const exportAllCsvBtn = document.getElementById("export-all-csv-btn");
 const csvImportForm = document.getElementById("csv-import-form");
+const exportExcelBtn = document.getElementById("export-excel-btn");
+const excelImportForm = document.getElementById("excel-import-form");
 
 const tabs = Array.from(document.querySelectorAll(".tab-btn"));
 const panels = {
@@ -165,6 +167,8 @@ function bindEvents() {
   exportFixedExpensesCsvBtn?.addEventListener("click", handleExportFixedExpensesCsv);
   exportAllCsvBtn?.addEventListener("click", handleExportAllCsv);
   csvImportForm?.addEventListener("submit", handleCsvImportSubmit);
+  exportExcelBtn?.addEventListener("click", handleExportExcel);
+  excelImportForm?.addEventListener("submit", handleExcelImportSubmit);
 }
 
 function handleAggregationChange(event) {
@@ -768,6 +772,79 @@ async function handleCsvImportSubmit(event) {
   }, "CSV取込に失敗しました。");
 }
 
+function handleExportExcel() {
+  if (!window.XLSX) {
+    showAppMessage("Excel出力ライブラリ（SheetJS）の読み込みに失敗しました。", true);
+    return;
+  }
+  const workbook = XLSX.utils.book_new();
+  const caseHeaders = ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status"];
+  const saleHeaders = ["case_name", "invoice_amount", "paid_amount", "paid_date", "is_unpaid"];
+  const expenseHeaders = ["case_name", "date", "content", "amount"];
+  const fixedExpenseHeaders = ["content", "amount", "day_of_month", "start_date", "active"];
+  const caseRows = state.cases.map((entry) => ({
+    customer_name: entry.customerName,
+    case_name: entry.caseName,
+    estimate_amount: entry.estimateAmount ?? "",
+    received_date: entry.receivedDate || "",
+    due_date: entry.dueDate || "",
+    status: normalizeStatus(entry.status),
+  }));
+  const saleRows = state.sales.map((entry) => {
+    const foundCase = state.cases.find((c) => c.id === entry.caseId);
+    return {
+      case_name: foundCase?.caseName || "",
+      invoice_amount: entry.invoiceAmount ?? "",
+      paid_amount: entry.paidAmount ?? "",
+      paid_date: entry.paidDate || "",
+      is_unpaid: entry.isUnpaid ? "true" : "false",
+    };
+  });
+  const expenseRows = state.expenses.map((entry) => {
+    const foundCase = state.cases.find((c) => c.id === entry.caseId);
+    return {
+      case_name: foundCase?.caseName || "",
+      date: entry.date || "",
+      content: entry.content || "",
+      amount: entry.amount ?? "",
+    };
+  });
+  const fixedExpenseRows = state.fixedExpenses.map((entry) => ({
+    content: entry.content,
+    amount: entry.amount ?? "",
+    day_of_month: entry.dayOfMonth ?? "",
+    start_date: entry.startDate || "",
+    active: entry.active ? "true" : "false",
+  }));
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(caseRows, { header: caseHeaders }), "案件");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(saleRows, { header: saleHeaders }), "売上");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(expenseRows, { header: expenseHeaders }), "経費");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(fixedExpenseRows, { header: fixedExpenseHeaders }), "固定費");
+  XLSX.writeFile(workbook, "gyosei-app-export.xlsx");
+}
+
+async function handleExcelImportSubmit(event) {
+  event.preventDefault();
+  if (!currentUser || !excelImportForm) return;
+  if (!window.XLSX) {
+    showAppMessage("Excel取込ライブラリ（SheetJS）の読み込みに失敗しました。", true);
+    return;
+  }
+  const file = excelImportForm.elements.excelImportFile.files?.[0];
+  if (!file) return;
+  if (!window.confirm(`「${file.name}」をExcelとして取り込みます。よろしいですか？`)) return;
+
+  await withLoading(async () => {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
+    const result = await importWorkbookBySheet(workbook);
+    await loadAllData();
+    renderAfterDataChanged();
+    showAppMessage(`Excel取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, result.errorCount > 0);
+    excelImportForm.reset();
+  }, "Excel取込に失敗しました。");
+}
+
 function renderAfterDataChanged() {
   renderCaseOptions();
   renderCases();
@@ -1268,6 +1345,22 @@ function sanitizeHeader(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function parseSheetToObjects(sheet) {
+  if (!window.XLSX || !sheet) return { headers: [], rows: [] };
+  const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
+  const nonEmptyRows = rawRows.filter((row) => Array.isArray(row) && !row.every((cell) => String(cell ?? "").trim() === ""));
+  if (!nonEmptyRows.length) return { headers: [], rows: [] };
+  const headers = nonEmptyRows[0].map((h) => sanitizeHeader(h));
+  const rows = nonEmptyRows.slice(1).map((cells) => {
+    const obj = {};
+    headers.forEach((header, idx) => {
+      obj[header] = cells[idx] ?? "";
+    });
+    return obj;
+  });
+  return { headers, rows };
+}
+
 function parseCsvToObjects(csvText) {
   const rawRows = parseCsvText(csvText);
   const nonEmptyRows = rawRows.filter((row) => !row.every((cell) => String(cell || "").trim() === ""));
@@ -1291,10 +1384,19 @@ function validateRequiredHeaders(headers, requiredHeaders) {
 }
 
 function parseFlexibleDate(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const date = excelSerialToDateString(value);
+    if (date) return date;
+  }
   const trimmed = String(value || "").trim();
   if (!trimmed) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
   if (/^\d{4}\/\d{2}\/\d{2}$/.test(trimmed)) return trimmed.replaceAll("/", "-");
+  if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    const serial = Number(trimmed);
+    const date = excelSerialToDateString(serial);
+    if (date) return date;
+  }
   return null;
 }
 
@@ -1308,9 +1410,75 @@ function parseBooleanLike(value) {
   return ["1", "true", "yes", "y", "on"].includes(normalized);
 }
 
+function asTrimmedText(value) {
+  return String(value ?? "").trim();
+}
+
+function excelSerialToDateString(serial) {
+  if (!Number.isFinite(serial) || serial <= 0) return null;
+  const baseUtcMs = Date.UTC(1899, 11, 30);
+  const utcMs = baseUtcMs + Math.floor(serial) * 86400000;
+  const date = new Date(utcMs);
+  if (Number.isNaN(date.getTime())) return null;
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+async function importWorkbookBySheet(workbook) {
+  const total = { insertedCount: 0, skippedCount: 0, errorCount: 0 };
+  if (!workbook || !Array.isArray(workbook.SheetNames)) return total;
+  const mergeResult = (result) => {
+    total.insertedCount += result.insertedCount || 0;
+    total.skippedCount += result.skippedCount || 0;
+    total.errorCount += result.errorCount || 0;
+  };
+  const getSheetRows = (sheetName) => {
+    const sheet = workbook.Sheets[sheetName];
+    return parseSheetToObjects(sheet);
+  };
+
+  const caseData = getSheetRows("案件");
+  if (caseData.rows.length) {
+    mergeResult(await importRowsByType("cases", caseData));
+    await loadCasesOnly();
+  }
+  const salesData = getSheetRows("売上");
+  if (salesData.rows.length) {
+    mergeResult(await importRowsByType("sales", salesData));
+  }
+  const expensesData = getSheetRows("経費");
+  if (expensesData.rows.length) {
+    mergeResult(await importRowsByType("expenses", expensesData));
+  }
+  const fixedExpensesData = getSheetRows("固定費");
+  if (fixedExpensesData.rows.length) {
+    mergeResult(await importRowsByType("fixed_expenses", fixedExpensesData));
+  }
+  return total;
+}
+
+async function loadCasesOnly() {
+  if (!currentUser) return;
+  const casesRes = await sbClient.from("cases").select("*").eq("user_id", currentUser.id);
+  if (casesRes.error) throw casesRes.error;
+  state.cases = (casesRes.data || []).map(mapCaseFromDb);
+}
+
 async function importCsvByType(importType, csvText) {
-  const result = { insertedCount: 0, skippedCount: 0, errorCount: 0 };
   const { headers, rows } = parseCsvToObjects(csvText);
+  const normalizedRows = rows.map((row) => {
+    const copied = {};
+    Object.entries(row).forEach(([key, value]) => {
+      copied[key] = String(value ?? "").trim();
+    });
+    return copied;
+  });
+  return importRowsByType(importType, { headers, rows: normalizedRows });
+}
+
+async function importRowsByType(importType, tableData) {
+  const result = { insertedCount: 0, skippedCount: 0, errorCount: 0 };
+  const headers = (tableData?.headers || []).map((h) => sanitizeHeader(h));
+  const rows = (tableData?.rows || []).filter((row) => row && typeof row === "object");
   if (!rows.length) return result;
 
   if (importType === "cases") {
@@ -1318,8 +1486,8 @@ async function importCsvByType(importType, csvText) {
     const payloads = [];
     rows.forEach((row) => {
       try {
-        const customerName = row.customer_name?.trim();
-        const caseName = row.case_name?.trim();
+        const customerName = asTrimmedText(row.customer_name);
+        const caseName = asTrimmedText(row.case_name);
         if (!customerName || !caseName) {
           result.skippedCount += 1;
           return;
@@ -1351,7 +1519,7 @@ async function importCsvByType(importType, csvText) {
     const payloads = [];
     rows.forEach((row) => {
       try {
-        const caseName = row.case_name?.trim();
+        const caseName = asTrimmedText(row.case_name);
         const caseId = caseMap.get(caseName);
         if (!caseId) {
           result.skippedCount += 1;
@@ -1390,13 +1558,13 @@ async function importCsvByType(importType, csvText) {
     rows.forEach((row) => {
       try {
         const date = parseFlexibleDate(row.date);
-        const content = row.content?.trim();
+        const content = asTrimmedText(row.content);
         const amount = parseFlexibleAmount(row.amount);
         if (!date || !content || amount === null) {
           result.errorCount += 1;
           return;
         }
-        const caseName = row.case_name?.trim();
+        const caseName = asTrimmedText(row.case_name);
         const caseId = caseName ? (caseMap.get(caseName) || null) : null;
         payloads.push({
           user_id: currentUser.id,
@@ -1425,7 +1593,7 @@ async function importCsvByType(importType, csvText) {
     const payloads = [];
     rows.forEach((row) => {
       try {
-        const content = row.content?.trim();
+        const content = asTrimmedText(row.content);
         const amount = parseFlexibleAmount(row.amount);
         const dayOfMonth = normalizeDayOfMonth(row.day_of_month);
         const startDate = parseFlexibleDate(row.start_date);
