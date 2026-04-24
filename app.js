@@ -5,7 +5,7 @@ const STATUS_FILTER_KEYS = [...STATUS_ORDER, "その他"];
 const DEADLINE_FILTER_KEYS = ["all", "overdue", "within7", "within30"];
 const ESTIMATE_STATUS_ORDER = ["作成中", "提出済", "受注", "失注"];
 const OFFICE_INFO = {
-  name: "あかし行政書士事務所",
+  name: "赤司行政書士事務所",
   postalCode: "",
   address: "",
   tel: "",
@@ -141,6 +141,7 @@ const saleCaseSelect = document.getElementById("sale-case-id");
 const salesList = document.getElementById("sales-list");
 const salesEmpty = document.getElementById("sales-empty");
 const saleSubmitBtn = saleForm.querySelector('button[type="submit"]');
+const saleInvoiceMemoInput = document.getElementById("sale-invoice-memo");
 const salesSearchInput = document.getElementById("sales-search-input");
 const salesFilterClearBtn = document.getElementById("sales-filter-clear-btn");
 const salesFilterCount = document.getElementById("sales-filter-count");
@@ -190,6 +191,7 @@ const estimateExpiredFilter = document.getElementById("estimate-expired-filter")
 let currentUser = null;
 let loadingCount = 0;
 let isResuming = false;
+let isLoggingOut = false;
 
 initialize();
 
@@ -460,7 +462,7 @@ async function handlePageShow() {
 }
 
 async function handleResumeRefresh(trigger) {
-  if (!currentUser || isResuming) return;
+  if (!currentUser || isResuming || isLoggingOut) return;
 
   isResuming = true;
   showLoading(true);
@@ -478,10 +480,7 @@ async function handleResumeRefresh(trigger) {
 
 async function applyAuthState() {
   if (!currentUser) {
-    authView.hidden = false;
-    appView.hidden = true;
-    userLabel.textContent = "";
-    clearAppMessage();
+    clearAppState();
     return;
   }
 
@@ -530,16 +529,26 @@ async function handleSignup() {
 }
 
 async function handleLogout() {
-  await withLoading(async () => {
+  showLoading(true);
+  isLoggingOut = true;
+  try {
+    currentUser = null;
     const { error } = await sbClient.auth.signOut();
     if (error) throw error;
+    clearAppState();
     showAuthMessage("ログアウトしました。", false);
     authForm.reset();
-  }, "ログアウトに失敗しました。", true);
+  } catch (error) {
+    console.error("ログアウトに失敗しました。", error);
+    showAuthMessage(`ログアウトに失敗しました。\n詳細: ${error?.message || error}`, true);
+  } finally {
+    isLoggingOut = false;
+    showLoading(false);
+  }
 }
 
 async function loadAllData() {
-  if (!currentUser) return;
+  if (!currentUser || isLoggingOut) return;
 
   const [casesRes, estimatesRes, estimateItemsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes] = await Promise.all([
     sbClient.from("cases").select("*").eq("user_id", currentUser.id),
@@ -815,23 +824,28 @@ async function handleCaseListAction(event) {
   }
 }
 
-function startCaseEdit(caseId) {
-  const target = state.cases.find((entry) => entry.id === caseId);
-  if (!target) return;
-  subtabState.cases = "entry";
-  activateTab("cases");
-  editState.caseId = target.id;
-  caseForm.elements.customerName.value = target.customerName;
-  caseForm.elements.caseName.value = target.caseName;
-  caseForm.elements.amount.value = target.estimateAmount ?? "";
-  caseForm.elements.receivedDate.value = target.receivedDate || "";
-  caseForm.elements.dueDate.value = target.dueDate || "";
-  caseForm.elements.workMemo.value = sanitizeLegacyEstimateMemo(target.workMemo) || "";
-  caseForm.elements.nextActionDate.value = target.nextActionDate || "";
-  caseForm.elements.nextAction.value = target.nextAction || "";
-  caseForm.elements.status.value = normalizeStatus(target.status);
-  caseSubmitBtn.textContent = "案件を更新";
-  caseForm.scrollIntoView({ behavior: "smooth", block: "start" });
+async function startCaseEdit(caseId) {
+  showLoading(true);
+  try {
+    const target = state.cases.find((entry) => entry.id === caseId);
+    if (!target) return;
+    subtabState.cases = "entry";
+    activateTab("cases");
+    editState.caseId = target.id;
+    caseForm.elements.customerName.value = target.customerName;
+    caseForm.elements.caseName.value = target.caseName;
+    caseForm.elements.amount.value = target.estimateAmount ?? "";
+    caseForm.elements.receivedDate.value = target.receivedDate || "";
+    caseForm.elements.dueDate.value = target.dueDate || "";
+    caseForm.elements.workMemo.value = sanitizeLegacyEstimateMemo(target.workMemo) || "";
+    caseForm.elements.nextActionDate.value = target.nextActionDate || "";
+    caseForm.elements.nextAction.value = target.nextAction || "";
+    caseForm.elements.status.value = normalizeStatus(target.status);
+    caseSubmitBtn.textContent = "案件を更新";
+    caseForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  } finally {
+    showLoading(false);
+  }
 }
 
 async function handleSalesListAction(event) {
@@ -865,14 +879,7 @@ async function handleExpensesListAction(event) {
   const id = item.dataset.id;
 
   if (btn.classList.contains("edit-btn")) {
-    const target = state.expenses.find((entry) => entry.id === id);
-    if (!target) return;
-    editState.expenseId = target.id;
-    expenseForm.elements.expenseDate.value = target.date;
-    expenseForm.elements.expenseContent.value = target.content;
-    expenseForm.elements.expenseAmount.value = target.amount;
-    expenseCaseSelect.value = target.caseId || "";
-    expenseSubmitBtn.textContent = "経費を更新";
+    await startExpenseEdit(id);
     return;
   }
 
@@ -907,18 +914,41 @@ function handleBillingLeakAlertAction(event) {
   }
 }
 
-function startSaleEdit(saleId) {
-  const target = state.sales.find((entry) => entry.id === saleId);
-  if (!target) return;
-  activateTab("sales");
-  editState.saleId = target.id;
-  saleCaseSelect.value = target.caseId;
-  saleForm.elements.invoiceAmount.value = target.invoiceAmount;
-  saleForm.elements.paidAmount.value = target.paidAmount ?? "";
-  saleForm.elements.paidDate.value = target.paidDate || "";
-  saleForm.elements.isUnpaid.checked = Boolean(target.isUnpaid);
-  saleSubmitBtn.textContent = "売上を更新";
-  saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
+async function startSaleEdit(saleId) {
+  showLoading(true);
+  try {
+    const target = state.sales.find((entry) => entry.id === saleId);
+    if (!target) return;
+    activateTab("sales");
+    editState.saleId = target.id;
+    saleCaseSelect.value = target.caseId;
+    saleForm.elements.invoiceAmount.value = target.invoiceAmount;
+    saleForm.elements.paidAmount.value = target.paidAmount ?? "";
+    saleForm.elements.paidDate.value = target.paidDate || "";
+    saleForm.elements.isUnpaid.checked = Boolean(target.isUnpaid);
+    saleSubmitBtn.textContent = "売上を更新";
+    saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  } finally {
+    showLoading(false);
+  }
+}
+
+async function startExpenseEdit(expenseId) {
+  showLoading(true);
+  try {
+    const target = state.expenses.find((entry) => entry.id === expenseId);
+    if (!target) return;
+    activateTab("expenses");
+    editState.expenseId = target.id;
+    expenseForm.elements.expenseDate.value = target.date;
+    expenseForm.elements.expenseContent.value = target.content;
+    expenseForm.elements.expenseAmount.value = target.amount;
+    expenseCaseSelect.value = target.caseId || "";
+    expenseSubmitBtn.textContent = "経費を更新";
+    expenseForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  } finally {
+    showLoading(false);
+  }
 }
 
 function openSaleFormForCase(caseId) {
@@ -934,6 +964,25 @@ function openSaleFormForCase(caseId) {
   saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+async function startFixedExpenseEdit(fixedExpenseId) {
+  showLoading(true);
+  try {
+    const target = state.fixedExpenses.find((entry) => entry.id === fixedExpenseId);
+    if (!target) return;
+    activateTab("expenses");
+    editState.fixedExpenseId = target.id;
+    fixedExpenseForm.elements.fixedExpenseContent.value = target.content;
+    fixedExpenseForm.elements.fixedExpenseAmount.value = target.amount;
+    fixedExpenseForm.elements.fixedExpenseDayOfMonth.value = target.dayOfMonth;
+    fixedExpenseForm.elements.fixedExpenseStartDate.value = target.startDate || "";
+    fixedExpenseForm.elements.fixedExpenseActive.checked = Boolean(target.active);
+    fixedExpenseSubmitBtn.textContent = "固定費を更新";
+    fixedExpenseForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  } finally {
+    showLoading(false);
+  }
+}
+
 async function handleFixedExpensesListAction(event) {
   const btn = event.target;
   if (!(btn instanceof HTMLButtonElement)) return;
@@ -942,15 +991,7 @@ async function handleFixedExpensesListAction(event) {
   const id = item.dataset.id;
 
   if (btn.classList.contains("edit-btn")) {
-    const target = state.fixedExpenses.find((entry) => entry.id === id);
-    if (!target) return;
-    editState.fixedExpenseId = target.id;
-    fixedExpenseForm.elements.fixedExpenseContent.value = target.content;
-    fixedExpenseForm.elements.fixedExpenseAmount.value = target.amount;
-    fixedExpenseForm.elements.fixedExpenseDayOfMonth.value = target.dayOfMonth;
-    fixedExpenseForm.elements.fixedExpenseStartDate.value = target.startDate || "";
-    fixedExpenseForm.elements.fixedExpenseActive.checked = Boolean(target.active);
-    fixedExpenseSubmitBtn.textContent = "固定費を更新";
+    await startFixedExpenseEdit(id);
     return;
   }
 
@@ -988,18 +1029,7 @@ async function handleDailyReportsListAction(event) {
   if (!id) return;
 
   if (btn.classList.contains("edit-daily-report-btn")) {
-    const target = state.dailyReports.find((entry) => entry.id === id);
-    if (!target) return;
-    activateTab("daily-reports");
-    editState.dailyReportId = target.id;
-    dailyReportForm.elements.reportDate.value = target.reportDate || "";
-    reportCaseSelect.value = target.caseId || "";
-    dailyReportForm.elements.reportWorkContent.value = target.workContent || "";
-    dailyReportForm.elements.reportWorkMinutes.value = target.workMinutes ?? 0;
-    dailyReportForm.elements.reportNextAction.value = target.nextAction || "";
-    dailyReportForm.elements.reportMemo.value = target.memo || "";
-    dailyReportSubmitBtn.textContent = "日報を更新";
-    dailyReportForm.scrollIntoView({ behavior: "smooth", block: "start" });
+    await startDailyReportEdit(id);
     return;
   }
 
@@ -1011,6 +1041,26 @@ async function handleDailyReportsListAction(event) {
       if (editState.dailyReportId === id) resetDailyReportForm();
       await refreshAfterMutation("日報を削除しました。");
     }, "日報の削除に失敗しました。");
+  }
+}
+
+async function startDailyReportEdit(dailyReportId) {
+  showLoading(true);
+  try {
+    const target = state.dailyReports.find((entry) => entry.id === dailyReportId);
+    if (!target) return;
+    activateTab("daily-reports");
+    editState.dailyReportId = target.id;
+    dailyReportForm.elements.reportDate.value = target.reportDate || "";
+    reportCaseSelect.value = target.caseId || "";
+    dailyReportForm.elements.reportWorkContent.value = target.workContent || "";
+    dailyReportForm.elements.reportWorkMinutes.value = target.workMinutes ?? 0;
+    dailyReportForm.elements.reportNextAction.value = target.nextAction || "";
+    dailyReportForm.elements.reportMemo.value = target.memo || "";
+    dailyReportSubmitBtn.textContent = "日報を更新";
+    dailyReportForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  } finally {
+    showLoading(false);
   }
 }
 
@@ -2208,25 +2258,30 @@ function resolveDailyReportCaseName(caseId) {
   return found ? `${found.customerName}｜${found.caseName}` : "案件なし";
 }
 
-function startEstimateEdit(estimateId) {
-  const target = state.estimates.find((entry) => entry.id === estimateId);
-  if (!target || !estimateForm) return;
-  subtabState.estimates = "create";
-  activateTab("estimates");
-  editState.estimateId = target.id;
-  estimateForm.elements.customerName.value = target.customerName;
-  estimateForm.elements.estimateTitle.value = target.estimateTitle;
-  estimateForm.elements.estimateDate.value = target.estimateDate || "";
-  estimateForm.elements.validUntil.value = target.validUntil || "";
-  estimateForm.elements.status.value = normalizeEstimateStatus(target.status);
-  estimateForm.elements.memo.value = target.memo || "";
-  estimateItemsWrap.innerHTML = "";
-  const rows = state.estimateItems.filter((item) => item.estimateId === target.id).sort((a, b) => a.sortOrder - b.sortOrder);
-  if (!rows.length) addEstimateItemRow();
-  rows.forEach((row) => addEstimateItemRow(row));
-  recalcEstimateTotals();
-  estimateSubmitBtn.textContent = "見積を更新";
-  estimateForm.scrollIntoView({ behavior: "smooth", block: "start" });
+async function startEstimateEdit(estimateId) {
+  showLoading(true);
+  try {
+    const target = state.estimates.find((entry) => entry.id === estimateId);
+    if (!target || !estimateForm) return;
+    subtabState.estimates = "create";
+    activateTab("estimates");
+    editState.estimateId = target.id;
+    estimateForm.elements.customerName.value = target.customerName;
+    estimateForm.elements.estimateTitle.value = target.estimateTitle;
+    estimateForm.elements.estimateDate.value = target.estimateDate || "";
+    estimateForm.elements.validUntil.value = target.validUntil || "";
+    estimateForm.elements.status.value = normalizeEstimateStatus(target.status);
+    estimateForm.elements.memo.value = target.memo || "";
+    estimateItemsWrap.innerHTML = "";
+    const rows = state.estimateItems.filter((item) => item.estimateId === target.id).sort((a, b) => a.sortOrder - b.sortOrder);
+    if (!rows.length) addEstimateItemRow();
+    rows.forEach((row) => addEstimateItemRow(row));
+    recalcEstimateTotals();
+    estimateSubmitBtn.textContent = "見積を更新";
+    estimateForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  } finally {
+    showLoading(false);
+  }
 }
 
 function resetEstimateForm() {
@@ -2343,7 +2398,7 @@ function buildInvoiceRowsFromEstimate(estimate) {
   }));
 }
 
-function buildInvoiceDocumentFromEstimate(estimate) {
+function buildInvoiceDocumentFromEstimate(estimate, noteOverride = null) {
   const rows = buildInvoiceRowsFromEstimate(estimate);
   const invoiceDate = toDateString(new Date());
   return {
@@ -2374,18 +2429,20 @@ function buildInvoiceDocumentFromEstimate(estimate) {
     tax: estimate.tax ?? 0,
     total: estimate.total ?? 0,
     transferInfo: OFFICE_INFO.bank,
-    note: OFFICE_INFO.note,
+    note: asTrimmedText(noteOverride ?? "") || estimate.memo || OFFICE_INFO.note || "",
   };
 }
 
 function exportInvoiceDataForEstimate(estimateId) {
   const estimate = state.estimates.find((entry) => entry.id === estimateId);
   if (!estimate) return;
-  const invoiceData = buildInvoiceDocumentFromEstimate(estimate);
+  const note = requestInvoiceMemo(estimate.memo || "");
+  if (note === null) return;
+  const invoiceData = buildInvoiceDocumentFromEstimate(estimate, note);
   downloadInvoiceWorkbook(invoiceData);
 }
 
-function buildInvoiceDocumentFromCase(foundCase) {
+function buildInvoiceDocumentFromCase(foundCase, noteOverride = null) {
   const subtotal = foundCase.estimateAmount ?? 0;
   const tax = Math.floor(subtotal * 0.1);
   const total = subtotal + tax;
@@ -2417,14 +2474,16 @@ function buildInvoiceDocumentFromCase(foundCase) {
     tax,
     total,
     transferInfo: OFFICE_INFO.bank,
-    note: OFFICE_INFO.note,
+    note: asTrimmedText(noteOverride ?? "") || OFFICE_INFO.note || "",
   };
 }
 
 function exportInvoiceDataForCase(caseId) {
   const foundCase = state.cases.find((entry) => entry.id === caseId);
   if (!foundCase) return;
-  const invoiceData = buildInvoiceDocumentFromCase(foundCase);
+  const note = requestInvoiceMemo(asTrimmedText(saleInvoiceMemoInput?.value || ""));
+  if (note === null) return;
+  const invoiceData = buildInvoiceDocumentFromCase(foundCase, note);
   downloadInvoiceWorkbook(invoiceData);
 }
 
@@ -2452,7 +2511,9 @@ function openInvoicePrintPreviewFromEstimate(estimateId) {
   }
 
   try {
-    const documentData = buildInvoiceDocumentFromEstimate(estimate);
+    const note = requestInvoiceMemo(estimate.memo || "");
+    if (note === null) return;
+    const documentData = buildInvoiceDocumentFromEstimate(estimate, note);
     openBusinessDocumentPrintWindow(documentData, { type: "invoice" });
   } catch (error) {
     console.error("請求書の出力に失敗しました。", error);
@@ -2468,7 +2529,9 @@ function openInvoicePrintPreviewFromCase(caseId) {
   }
 
   try {
-    const documentData = buildInvoiceDocumentFromCase(foundCase);
+    const note = requestInvoiceMemo(asTrimmedText(saleInvoiceMemoInput?.value || ""));
+    if (note === null) return;
+    const documentData = buildInvoiceDocumentFromCase(foundCase, note);
     openBusinessDocumentPrintWindow(documentData, { type: "invoice" });
   } catch (error) {
     console.error("請求書の出力に失敗しました。", error);
@@ -2802,15 +2865,22 @@ body { margin: 0; background: #fff; color: #111827; font-family: "Hiragino Kaku 
       <tr class="total-row"><th>合計</th><td class="align-right">${formatCurrencyCompact(documentData.total)}</td></tr>
     </table>
     <section class="footer-grid">
-      ${isInvoice ? transferSectionHtml : `<div><strong>備考</strong><div class="note-box">${escapeHtml(documentData.note || "記載なし")}</div></div>`}
+      ${isInvoice ? transferSectionHtml : `<div><strong>備考</strong><div class="note-box">${escapeHtml(documentData.note || "")}</div></div>`}
       <div>
         <strong>${isInvoice ? "備考" : "支払条件 / 有効期限"}</strong>
-        <div class="note-box">${escapeHtml(isInvoice ? (documentData.note || "記載なし") : `${documentData.paymentTerms || "支払条件: 記載なし"}\n有効期限: ${documentData.validUntil || "記載なし"}`)}</div>
+        <div class="note-box">${escapeHtml(isInvoice ? (documentData.note || "") : `${documentData.paymentTerms || "支払条件: 記載なし"}\n有効期限: ${documentData.validUntil || "記載なし"}`)}</div>
       </div>
     </section>
   </main>
 </body>
 </html>`;
+}
+
+function requestInvoiceMemo(defaultValue = "") {
+  const initialValue = asTrimmedText(defaultValue || "");
+  const input = window.prompt("請求書備考を入力してください（未入力の場合は事務所既定文を使用）", initialValue);
+  if (input === null) return null;
+  return asTrimmedText(input);
 }
 
 function formatCurrencyCompact(value) {
@@ -3811,9 +3881,25 @@ function showAppMessage(text, isError) {
 function clearAppMessage() {
   showAppMessage("", false);
 }
-    if (estimateItemsRes.error) throw estimateItemsRes.error;
-    if (estimatesRes.error) throw estimatesRes.error;
-  const hasCompanyAddress = Boolean(asTrimmedText(documentData.companyAddress || ""));
-  const hasCompanyPhone = Boolean(asTrimmedText(documentData.companyPhone || ""));
-  const hasRegistrationNumber = Boolean(asTrimmedText(documentData.registrationNumber || ""));
-  const hasTransferInfo = Boolean(asTrimmedText(documentData.transferInfo || ""));
+
+function clearAppState() {
+  currentUser = null;
+  state.cases = [];
+  state.estimates = [];
+  state.estimateItems = [];
+  state.sales = [];
+  state.expenses = [];
+  state.fixedExpenses = [];
+  state.dailyReports = [];
+  resetCaseForm();
+  resetEstimateForm();
+  resetSaleForm();
+  resetExpenseForm();
+  resetFixedExpenseForm();
+  resetDailyReportForm();
+  clearAppMessage();
+  clearLoadingState();
+  authView.hidden = false;
+  appView.hidden = true;
+  userLabel.textContent = "";
+}

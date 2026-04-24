@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-    <script src="app.js" defer></script>
+    <script src="app.js?v=20260424-remarks-fix" defer></script>
   </head>
   <body>
     <div id="loading-overlay" class="loading-overlay" hidden>
@@ -387,7 +387,7 @@
                     <option value="失注">失注</option>
                   </select>
                 </label>
-                <label>メモ<textarea id="estimate-memo" name="memo" rows="3" maxlength="2000"></textarea></label>
+                <label>見積書備考<textarea id="estimate-memo" name="memo" rows="3" maxlength="2000"></textarea></label>
                 <div class="panel">
                   <h3>明細</h3>
                   <div id="estimate-items"></div>
@@ -461,6 +461,10 @@
                 <label class="checkbox">
                   <input id="is-unpaid" name="isUnpaid" type="checkbox" />
                   未入金フラグを立てる
+                </label>
+                <label>
+                  請求書備考（出力用）
+                  <textarea id="sale-invoice-memo" name="invoiceMemo" rows="2" maxlength="2000" placeholder="請求書出力時に使用する備考"></textarea>
                 </label>
                 <button type="submit">売上を登録</button>
               </form>
