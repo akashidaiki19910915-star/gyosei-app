@@ -55,6 +55,7 @@ const panels = {
   expenses: document.getElementById("tab-expenses"),
   "daily-reports": document.getElementById("tab-daily-reports"),
 };
+const dashboardSection = document.querySelector(".dashboard");
 
 const summaryGrid = document.getElementById("summary-grid");
 const worktimeSummaryGrid = document.getElementById("worktime-summary-grid");
@@ -1171,8 +1172,24 @@ function renderAfterDataChanged() {
 }
 
 function activateTab(tabKey) {
-  tabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tabKey));
-  Object.entries(panels).forEach(([key, panel]) => panel.classList.toggle("active", key === tabKey));
+  const normalizedTabKey = normalizeTabKey(tabKey);
+
+  tabs.forEach((btn) => btn.classList.toggle("active", normalizeTabKey(btn.dataset.tab) === normalizedTabKey));
+  Object.entries(panels).forEach(([key, panel]) => panel.classList.toggle("active", key === normalizedTabKey));
+
+  if (dashboardSection) {
+    dashboardSection.hidden = normalizedTabKey === "daily-reports";
+  }
+}
+
+function normalizeTabKey(tabKey) {
+  const key = String(tabKey || "").trim();
+  if (!key) return "cases";
+  if (["daily-reports", "dailyReports", "report", "reports", "日報"].includes(key)) return "daily-reports";
+  if (["cases", "案件"].includes(key)) return "cases";
+  if (["sales", "売上"].includes(key)) return "sales";
+  if (["expenses", "経費"].includes(key)) return "expenses";
+  return "cases";
 }
 
 function renderDashboard() {
