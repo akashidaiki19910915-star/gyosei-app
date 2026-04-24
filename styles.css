@@ -571,6 +571,101 @@ tbody tr:last-child td {
   grid-column: 1 / -1;
 }
 
+
+.daily-report-filter-bar {
+  grid-template-columns: minmax(240px, 2fr) minmax(140px, 1fr) auto;
+}
+
+.daily-report-filter-bar button {
+  align-self: end;
+}
+
+.daily-reports-cards {
+  margin-top: 0.4rem;
+}
+
+.daily-reports-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+.daily-report-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fbfdff;
+  padding: 0.75rem;
+}
+
+.daily-report-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin-bottom: 0.55rem;
+  align-items: start;
+}
+
+.daily-report-card-date {
+  margin: 0;
+  font-weight: 700;
+}
+
+.daily-report-card-case {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.daily-report-card-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.daily-report-card-meta {
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.daily-report-field,
+.daily-report-field-inline {
+  margin: 0;
+}
+
+.daily-report-field dt,
+.daily-report-field-inline dt {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 0.18rem;
+}
+
+.daily-report-field dd,
+.daily-report-field-inline dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.daily-report-field-inline {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+}
+
+.daily-report-field-inline dt {
+  margin: 0;
+}
+
+@media (max-width: 820px) {
+  .daily-report-filter-bar {
+    grid-template-columns: 1fr;
+  }
+}
+
 .compact-list {
   margin-top: 0.2rem;
 }
@@ -639,4 +734,7 @@ tbody tr:last-child td {
   .date-grid { grid-template-columns: 1fr; }
   .item { flex-direction: column; }
   .top-bar { flex-direction: column; align-items: flex-start; }
+  .daily-report-card-header { flex-direction: column; }
+  .daily-report-card-actions { width: 100%; justify-content: flex-start; }
+  .daily-report-card-actions button { flex: 1 1 auto; }
 }
