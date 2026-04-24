@@ -31,6 +31,12 @@ const signupBtn = document.getElementById("signup-btn");
 const logoutBtn = document.getElementById("logout-btn");
 const userLabel = document.getElementById("user-label");
 const appMessage = document.getElementById("app-message");
+const exportCasesCsvBtn = document.getElementById("export-cases-csv-btn");
+const exportSalesCsvBtn = document.getElementById("export-sales-csv-btn");
+const exportExpensesCsvBtn = document.getElementById("export-expenses-csv-btn");
+const exportFixedExpensesCsvBtn = document.getElementById("export-fixed-expenses-csv-btn");
+const exportAllCsvBtn = document.getElementById("export-all-csv-btn");
+const csvImportForm = document.getElementById("csv-import-form");
 
 const tabs = Array.from(document.querySelectorAll(".tab-btn"));
 const panels = {
@@ -152,6 +158,12 @@ function bindEvents() {
   aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("focus", handleWindowFocus);
+  exportCasesCsvBtn?.addEventListener("click", handleExportCasesCsv);
+  exportSalesCsvBtn?.addEventListener("click", handleExportSalesCsv);
+  exportExpensesCsvBtn?.addEventListener("click", handleExportExpensesCsv);
+  exportFixedExpensesCsvBtn?.addEventListener("click", handleExportFixedExpensesCsv);
+  exportAllCsvBtn?.addEventListener("click", handleExportAllCsv);
+  csvImportForm?.addEventListener("submit", handleCsvImportSubmit);
 }
 
 function handleAggregationChange(event) {
@@ -624,6 +636,130 @@ async function handleClearAll() {
   }, "全件削除に失敗しました。");
 }
 
+function handleExportCasesCsv() {
+  const rows = state.cases.map((entry) => ({
+    customer_name: entry.customerName,
+    case_name: entry.caseName,
+    estimate_amount: entry.estimateAmount ?? "",
+    received_date: entry.receivedDate || "",
+    due_date: entry.dueDate || "",
+    status: normalizeStatus(entry.status),
+  }));
+  downloadCsvFile("cases.csv", ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status"], rows);
+}
+
+function handleExportSalesCsv() {
+  const rows = state.sales.map((entry) => {
+    const foundCase = state.cases.find((c) => c.id === entry.caseId);
+    return {
+      case_name: foundCase?.caseName || "",
+      invoice_amount: entry.invoiceAmount ?? "",
+      paid_amount: entry.paidAmount ?? "",
+      paid_date: entry.paidDate || "",
+      is_unpaid: entry.isUnpaid ? "true" : "false",
+    };
+  });
+  downloadCsvFile("sales.csv", ["case_name", "invoice_amount", "paid_amount", "paid_date", "is_unpaid"], rows);
+}
+
+function handleExportExpensesCsv() {
+  const rows = state.expenses.map((entry) => {
+    const foundCase = state.cases.find((c) => c.id === entry.caseId);
+    return {
+      case_name: foundCase?.caseName || "",
+      date: entry.date || "",
+      content: entry.content || "",
+      amount: entry.amount ?? "",
+    };
+  });
+  downloadCsvFile("expenses.csv", ["case_name", "date", "content", "amount"], rows);
+}
+
+function handleExportFixedExpensesCsv() {
+  const rows = state.fixedExpenses.map((entry) => ({
+    content: entry.content,
+    amount: entry.amount ?? "",
+    day_of_month: entry.dayOfMonth ?? "",
+    start_date: entry.startDate || "",
+    active: entry.active ? "true" : "false",
+  }));
+  downloadCsvFile("fixed_expenses.csv", ["content", "amount", "day_of_month", "start_date", "active"], rows);
+}
+
+function handleExportAllCsv() {
+  const headers = [
+    "data_type",
+    "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status",
+    "invoice_amount", "paid_amount", "paid_date", "is_unpaid",
+    "date", "content", "amount",
+    "day_of_month", "start_date", "active",
+  ];
+  const rows = [];
+
+  state.cases.forEach((entry) => {
+    rows.push({
+      data_type: "case",
+      customer_name: entry.customerName,
+      case_name: entry.caseName,
+      estimate_amount: entry.estimateAmount ?? "",
+      received_date: entry.receivedDate || "",
+      due_date: entry.dueDate || "",
+      status: normalizeStatus(entry.status),
+    });
+  });
+  state.sales.forEach((entry) => {
+    const foundCase = state.cases.find((c) => c.id === entry.caseId);
+    rows.push({
+      data_type: "sale",
+      case_name: foundCase?.caseName || "",
+      invoice_amount: entry.invoiceAmount ?? "",
+      paid_amount: entry.paidAmount ?? "",
+      paid_date: entry.paidDate || "",
+      is_unpaid: entry.isUnpaid ? "true" : "false",
+    });
+  });
+  state.expenses.forEach((entry) => {
+    const foundCase = state.cases.find((c) => c.id === entry.caseId);
+    rows.push({
+      data_type: "expense",
+      case_name: foundCase?.caseName || "",
+      date: entry.date || "",
+      content: entry.content || "",
+      amount: entry.amount ?? "",
+    });
+  });
+  state.fixedExpenses.forEach((entry) => {
+    rows.push({
+      data_type: "fixed_expense",
+      content: entry.content,
+      amount: entry.amount ?? "",
+      day_of_month: entry.dayOfMonth ?? "",
+      start_date: entry.startDate || "",
+      active: entry.active ? "true" : "false",
+    });
+  });
+
+  downloadCsvFile("all_data.csv", headers, rows);
+}
+
+async function handleCsvImportSubmit(event) {
+  event.preventDefault();
+  if (!currentUser || !csvImportForm) return;
+  const importType = csvImportForm.elements.csvImportType.value;
+  const file = csvImportForm.elements.csvImportFile.files?.[0];
+  if (!file) return;
+  if (!window.confirm(`「${file.name}」を${importTypeToLabel(importType)}として取り込みます。よろしいですか？`)) return;
+
+  await withLoading(async () => {
+    const text = await file.text();
+    const result = await importCsvByType(importType, text);
+    await loadAllData();
+    renderAfterDataChanged();
+    showAppMessage(`CSV取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, result.errorCount > 0);
+    csvImportForm.reset();
+  }, "CSV取込に失敗しました。");
+}
+
 function renderAfterDataChanged() {
   renderCaseOptions();
   renderCases();
@@ -1006,6 +1142,287 @@ function normalizeDayOfMonth(raw) {
   const value = Number(raw);
   if (!Number.isInteger(value) || value < 1 || value > 31) return null;
   return value;
+}
+
+function importTypeToLabel(type) {
+  if (type === "cases") return "案件CSV";
+  if (type === "sales") return "売上CSV";
+  if (type === "expenses") return "経費CSV";
+  if (type === "fixed_expenses") return "固定費CSV";
+  return "CSV";
+}
+
+function downloadCsvFile(filename, headers, rows) {
+  const csv = buildCsvString(headers, rows);
+  const bom = "\uFEFF";
+  const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function buildCsvString(headers, rows) {
+  const headerLine = headers.map((h) => escapeCsvField(h)).join(",");
+  const lines = rows.map((row) => headers.map((header) => escapeCsvField(row[header] ?? "")).join(","));
+  return [headerLine, ...lines].join("\r\n");
+}
+
+function escapeCsvField(value) {
+  const normalized = String(value ?? "");
+  const escaped = normalized.replaceAll('"', '""');
+  return `"${escaped}"`;
+}
+
+function parseCsvText(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let index = 0;
+  let insideQuotes = false;
+  const normalizedText = String(text || "").replace(/^\uFEFF/, "");
+
+  while (index < normalizedText.length) {
+    const ch = normalizedText[index];
+    const next = normalizedText[index + 1];
+
+    if (ch === '"') {
+      if (insideQuotes && next === '"') {
+        field += '"';
+        index += 2;
+        continue;
+      }
+      insideQuotes = !insideQuotes;
+      index += 1;
+      continue;
+    }
+
+    if (!insideQuotes && ch === ",") {
+      row.push(field);
+      field = "";
+      index += 1;
+      continue;
+    }
+
+    if (!insideQuotes && (ch === "\n" || ch === "\r")) {
+      if (ch === "\r" && next === "\n") index += 1;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      index += 1;
+      continue;
+    }
+
+    field += ch;
+    index += 1;
+  }
+
+  row.push(field);
+  rows.push(row);
+  return rows;
+}
+
+function sanitizeHeader(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function parseCsvToObjects(csvText) {
+  const rawRows = parseCsvText(csvText);
+  const nonEmptyRows = rawRows.filter((row) => !row.every((cell) => String(cell || "").trim() === ""));
+  if (!nonEmptyRows.length) return { headers: [], rows: [] };
+  const headers = nonEmptyRows[0].map((h) => sanitizeHeader(h));
+  const rows = nonEmptyRows.slice(1).map((cells) => {
+    const obj = {};
+    headers.forEach((header, idx) => {
+      obj[header] = String(cells[idx] ?? "").trim();
+    });
+    return obj;
+  });
+  return { headers, rows };
+}
+
+function validateRequiredHeaders(headers, requiredHeaders) {
+  const missing = requiredHeaders.filter((header) => !headers.includes(header));
+  if (missing.length) {
+    throw new Error(`ヘッダー不足: ${missing.join(", ")}`);
+  }
+}
+
+function parseFlexibleDate(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  if (/^\d{4}\/\d{2}\/\d{2}$/.test(trimmed)) return trimmed.replaceAll("/", "-");
+  return null;
+}
+
+function parseFlexibleAmount(value) {
+  const normalized = String(value ?? "").trim().replaceAll(",", "");
+  return normalizeAmount(normalized);
+}
+
+function parseBooleanLike(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["1", "true", "yes", "y", "on"].includes(normalized);
+}
+
+async function importCsvByType(importType, csvText) {
+  const result = { insertedCount: 0, skippedCount: 0, errorCount: 0 };
+  const { headers, rows } = parseCsvToObjects(csvText);
+  if (!rows.length) return result;
+
+  if (importType === "cases") {
+    validateRequiredHeaders(headers, ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status"]);
+    const payloads = [];
+    rows.forEach((row) => {
+      try {
+        const customerName = row.customer_name?.trim();
+        const caseName = row.case_name?.trim();
+        if (!customerName || !caseName) {
+          result.skippedCount += 1;
+          return;
+        }
+        payloads.push({
+          user_id: currentUser.id,
+          customer_name: customerName,
+          case_name: caseName,
+          estimate_amount: parseFlexibleAmount(row.estimate_amount),
+          received_date: parseFlexibleDate(row.received_date),
+          due_date: parseFlexibleDate(row.due_date),
+          status: normalizeStatus(row.status),
+        });
+      } catch (_error) {
+        result.errorCount += 1;
+      }
+    });
+    if (payloads.length) {
+      const { error } = await sbClient.from("cases").insert(payloads);
+      if (error) throw error;
+      result.insertedCount += payloads.length;
+    }
+    return result;
+  }
+
+  if (importType === "sales") {
+    validateRequiredHeaders(headers, ["case_name", "invoice_amount", "paid_amount", "paid_date", "is_unpaid"]);
+    const caseMap = new Map(state.cases.map((c) => [c.caseName, c.id]));
+    const payloads = [];
+    rows.forEach((row) => {
+      try {
+        const caseName = row.case_name?.trim();
+        const caseId = caseMap.get(caseName);
+        if (!caseId) {
+          result.skippedCount += 1;
+          return;
+        }
+        const invoiceAmount = parseFlexibleAmount(row.invoice_amount);
+        if (invoiceAmount === null) {
+          result.errorCount += 1;
+          return;
+        }
+        const paidAmount = parseFlexibleAmount(row.paid_amount);
+        payloads.push({
+          user_id: currentUser.id,
+          case_id: caseId,
+          invoice_amount: invoiceAmount,
+          paid_amount: paidAmount,
+          paid_date: parseFlexibleDate(row.paid_date),
+          is_unpaid: parseBooleanLike(row.is_unpaid) || (paidAmount ?? 0) < invoiceAmount,
+        });
+      } catch (_error) {
+        result.errorCount += 1;
+      }
+    });
+    if (payloads.length) {
+      const { error } = await sbClient.from("sales").insert(payloads);
+      if (error) throw error;
+      result.insertedCount += payloads.length;
+    }
+    return result;
+  }
+
+  if (importType === "expenses") {
+    validateRequiredHeaders(headers, ["case_name", "date", "content", "amount"]);
+    const caseMap = new Map(state.cases.map((c) => [c.caseName, c.id]));
+    const payloads = [];
+    rows.forEach((row) => {
+      try {
+        const date = parseFlexibleDate(row.date);
+        const content = row.content?.trim();
+        const amount = parseFlexibleAmount(row.amount);
+        if (!date || !content || amount === null) {
+          result.errorCount += 1;
+          return;
+        }
+        const caseName = row.case_name?.trim();
+        const caseId = caseName ? (caseMap.get(caseName) || null) : null;
+        payloads.push({
+          user_id: currentUser.id,
+          case_id: caseId,
+          date,
+          content,
+          amount,
+        });
+      } catch (_error) {
+        result.errorCount += 1;
+      }
+    });
+    if (payloads.length) {
+      const { error } = await sbClient.from("expenses").insert(payloads);
+      if (error) throw error;
+      result.insertedCount += payloads.length;
+    }
+    return result;
+  }
+
+  if (importType === "fixed_expenses") {
+    validateRequiredHeaders(headers, ["content", "amount", "day_of_month", "start_date", "active"]);
+    const existing = new Set(
+      state.fixedExpenses.map((entry) => `${entry.content}__${entry.amount}__${entry.dayOfMonth}`)
+    );
+    const payloads = [];
+    rows.forEach((row) => {
+      try {
+        const content = row.content?.trim();
+        const amount = parseFlexibleAmount(row.amount);
+        const dayOfMonth = normalizeDayOfMonth(row.day_of_month);
+        const startDate = parseFlexibleDate(row.start_date);
+        if (!content || amount === null || !dayOfMonth || !startDate) {
+          result.errorCount += 1;
+          return;
+        }
+        const dupKey = `${content}__${amount}__${dayOfMonth}`;
+        if (existing.has(dupKey)) {
+          result.skippedCount += 1;
+          return;
+        }
+        existing.add(dupKey);
+        payloads.push({
+          user_id: currentUser.id,
+          content,
+          amount,
+          day_of_month: dayOfMonth,
+          start_date: startDate,
+          active: parseBooleanLike(row.active),
+        });
+      } catch (_error) {
+        result.errorCount += 1;
+      }
+    });
+    if (payloads.length) {
+      const { error } = await sbClient.from("fixed_expenses").insert(payloads);
+      if (error) throw error;
+      result.insertedCount += payloads.length;
+    }
+    return result;
+  }
+
+  throw new Error("未対応のCSV取込種別です。");
 }
 
 function escapeHtml(text) {

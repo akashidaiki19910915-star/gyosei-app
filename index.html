@@ -50,6 +50,40 @@
       <main class="container">
         <p id="app-message" class="message" aria-live="polite"></p>
 
+        <section class="panel csv-panel">
+          <div class="layout two-col">
+            <section>
+              <h2>CSV出力</h2>
+              <div class="csv-actions">
+                <button id="export-cases-csv-btn" type="button">案件CSV</button>
+                <button id="export-sales-csv-btn" type="button">売上CSV</button>
+                <button id="export-expenses-csv-btn" type="button">経費CSV</button>
+                <button id="export-fixed-expenses-csv-btn" type="button">固定費CSV</button>
+                <button id="export-all-csv-btn" type="button" class="secondary-btn">全データCSV</button>
+              </div>
+            </section>
+            <section>
+              <h2>CSV取込</h2>
+              <form id="csv-import-form" class="form">
+                <label>
+                  種類
+                  <select id="csv-import-type" name="csvImportType" required>
+                    <option value="cases">案件CSV</option>
+                    <option value="sales">売上CSV</option>
+                    <option value="expenses">経費CSV</option>
+                    <option value="fixed_expenses">固定費CSV</option>
+                  </select>
+                </label>
+                <label>
+                  ファイル
+                  <input id="csv-import-file" name="csvImportFile" type="file" accept=".csv,text/csv" required />
+                </label>
+                <button id="csv-import-btn" type="submit">CSV取込を実行</button>
+              </form>
+            </section>
+          </div>
+        </section>
+
         <nav class="tabs" aria-label="メイン機能">
           <button type="button" class="tab-btn active" data-tab="cases">案件</button>
           <button type="button" class="tab-btn" data-tab="sales">売上</button>
