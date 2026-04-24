@@ -58,6 +58,8 @@ const exportExcelBtn = document.getElementById("export-excel-btn");
 const excelImportForm = document.getElementById("excel-import-form");
 
 const tabs = Array.from(document.querySelectorAll(".tab-btn"));
+const subtabButtons = Array.from(document.querySelectorAll(".subtab-btn"));
+const subtabPanels = Array.from(document.querySelectorAll(".subtab-panel"));
 const panels = {
   cases: document.getElementById("tab-cases"),
   estimates: document.getElementById("tab-estimates"),
@@ -66,6 +68,13 @@ const panels = {
   "daily-reports": document.getElementById("tab-daily-reports"),
 };
 const dashboardSection = document.querySelector(".dashboard");
+const subtabState = {
+  cases: "dashboard",
+  estimates: "create",
+  sales: "entry",
+  expenses: "entry",
+  "daily-reports": "entry",
+};
 
 const summaryGrid = document.getElementById("summary-grid");
 const worktimeSummaryGrid = document.getElementById("worktime-summary-grid");
@@ -224,6 +233,7 @@ async function initialize() {
 
 function bindEvents() {
   tabs.forEach((btn) => btn.addEventListener("click", () => activateTab(btn.dataset.tab)));
+  subtabButtons.forEach((btn) => btn.addEventListener("click", () => activateSubtab(btn.dataset.parentTab, btn.dataset.subtab)));
   authForm.addEventListener("submit", handleLogin);
   signupBtn.addEventListener("click", handleSignup);
   logoutBtn.addEventListener("click", handleLogout);
@@ -293,6 +303,7 @@ function bindEvents() {
     state.estimateExpiredFilter = event.target.value || "all";
     renderEstimates();
   });
+  activateTab("cases");
 }
 
 function handleAggregationChange(event) {
@@ -545,6 +556,7 @@ async function loadAllData() {
   state.expenses = (expensesRes.data || []).map(mapExpenseFromDb);
   state.fixedExpenses = (fixedExpensesRes.data || []).map(mapFixedExpenseFromDb);
   state.dailyReports = (dailyReportsRes.data || []).map(mapDailyReportFromDb);
+  await cleanupLegacyEstimateMemoMarkers();
 
   const createdCount = await ensureMonthlyFixedExpenses();
   if (createdCount > 0) {
@@ -796,6 +808,7 @@ async function handleCaseListAction(event) {
 function startCaseEdit(caseId) {
   const target = state.cases.find((entry) => entry.id === caseId);
   if (!target) return;
+  subtabState.cases = "entry";
   activateTab("cases");
   editState.caseId = target.id;
   caseForm.elements.customerName.value = target.customerName;
@@ -803,7 +816,7 @@ function startCaseEdit(caseId) {
   caseForm.elements.amount.value = target.estimateAmount ?? "";
   caseForm.elements.receivedDate.value = target.receivedDate || "";
   caseForm.elements.dueDate.value = target.dueDate || "";
-  caseForm.elements.workMemo.value = target.workMemo || "";
+  caseForm.elements.workMemo.value = sanitizeLegacyEstimateMemo(target.workMemo) || "";
   caseForm.elements.nextActionDate.value = target.nextActionDate || "";
   caseForm.elements.nextAction.value = target.nextAction || "";
   caseForm.elements.status.value = normalizeStatus(target.status);
@@ -1030,7 +1043,7 @@ function handleExportCasesCsv() {
     received_date: entry.receivedDate || "",
     due_date: entry.dueDate || "",
     status: normalizeStoredStatus(entry.status),
-    work_memo: entry.workMemo || "",
+    work_memo: sanitizeLegacyEstimateMemo(entry.workMemo) || "",
     next_action_date: entry.nextActionDate || "",
     next_action: entry.nextAction || "",
   }));
@@ -1094,7 +1107,7 @@ function handleExportAllCsv() {
       received_date: entry.receivedDate || "",
       due_date: entry.dueDate || "",
       status: normalizeStoredStatus(entry.status),
-      work_memo: entry.workMemo || "",
+      work_memo: sanitizeLegacyEstimateMemo(entry.workMemo) || "",
       next_action_date: entry.nextActionDate || "",
       next_action: entry.nextAction || "",
     });
@@ -1175,7 +1188,7 @@ function exportExcel() {
       received_date: entry.receivedDate || "",
       due_date: entry.dueDate || "",
       status: normalizeStoredStatus(entry.status),
-      work_memo: entry.workMemo || "",
+      work_memo: sanitizeLegacyEstimateMemo(entry.workMemo) || "",
       next_action_date: entry.nextActionDate || "",
       next_action: entry.nextAction || "",
     }));
@@ -1269,8 +1282,37 @@ function activateTab(tabKey) {
   tabs.forEach((btn) => btn.classList.toggle("active", normalizeTabKey(btn.dataset.tab) === normalizedTabKey));
   Object.entries(panels).forEach(([key, panel]) => panel.classList.toggle("active", key === normalizedTabKey));
 
-  if (dashboardSection) {
-    dashboardSection.hidden = normalizedTabKey === "daily-reports";
+  if (dashboardSection) dashboardSection.hidden = normalizedTabKey !== "cases";
+  applySubtabVisibility(normalizedTabKey);
+}
+
+function activateSubtab(parentTab, subtab) {
+  const normalizedTab = normalizeTabKey(parentTab);
+  if (!subtab) return;
+  subtabState[normalizedTab] = subtab;
+  applySubtabVisibility(normalizedTab);
+}
+
+function applySubtabVisibility(activeMainTab) {
+  const normalizedTab = normalizeTabKey(activeMainTab);
+  Object.keys(subtabState).forEach((tabKey) => {
+    const activeSubtab = subtabState[tabKey];
+    subtabButtons
+      .filter((btn) => normalizeTabKey(btn.dataset.parentTab) === tabKey)
+      .forEach((btn) => {
+        btn.classList.toggle("active", tabKey === normalizedTab && btn.dataset.subtab === activeSubtab);
+      });
+    subtabPanels
+      .filter((panel) => normalizeTabKey(panel.dataset.parentTab) === tabKey)
+      .forEach((panel) => {
+        const isCasesDashboardPanel = tabKey === "cases" && panel.id === "cases-dashboard-panel";
+        const shouldShow = tabKey === normalizedTab && (panel.dataset.subtab === activeSubtab || (isCasesDashboardPanel && activeSubtab === "alerts"));
+        panel.hidden = !shouldShow;
+      });
+  });
+  if (dashboardSection && normalizedTab === "cases") {
+    const isAlertMode = subtabState.cases === "alerts";
+    dashboardSection.classList.toggle("alerts-only", isAlertMode);
   }
 }
 
@@ -1838,18 +1880,27 @@ function renderEstimates() {
     });
   filtered.forEach((entry) => {
     const li = document.createElement("li");
-    li.className = "item";
+    li.className = "item estimate-card";
     li.dataset.id = entry.id;
     const itemCount = state.estimateItems.filter((row) => row.estimateId === entry.id).length;
+    const casedLabel = entry.caseId ? "案件化済み" : "未案件化";
     li.innerHTML = `
-      <div>
-        <p class="title">${escapeHtml(entry.customerName)}｜${escapeHtml(entry.estimateTitle)}</p>
-        <p class="meta">見積日: ${formatDate(entry.estimateDate)} / 有効期限: ${formatDate(entry.validUntil)} / ステータス: ${escapeHtml(entry.status)} / 合計: ${formatCurrency(entry.total)} / 明細: ${itemCount}件</p>
+      <div class="estimate-card-body">
+        <p class="title estimate-card-title">${escapeHtml(entry.estimateTitle)}</p>
+        <div class="estimate-card-grid">
+          <p class="meta"><span>顧客名:</span> ${escapeHtml(entry.customerName)}</p>
+          <p class="meta"><span>見積日:</span> ${formatDate(entry.estimateDate)}</p>
+          <p class="meta"><span>有効期限:</span> ${formatDate(entry.validUntil)}</p>
+          <p class="meta"><span>ステータス:</span> ${escapeHtml(entry.status)}</p>
+          <p class="meta"><span>合計金額:</span> ${formatCurrency(entry.total)}</p>
+          <p class="meta"><span>明細件数:</span> ${itemCount}件</p>
+          <p class="meta"><span>案件化:</span> ${casedLabel}</p>
+        </div>
       </div>
-      <div class="row-actions">
+      <div class="row-actions estimate-card-actions">
         <button type="button" class="secondary-btn estimate-edit-btn">編集</button>
         <button type="button" class="danger-btn estimate-delete-btn">削除</button>
-        <button type="button" class="secondary-btn estimate-case-btn">案件化</button>
+        <button type="button" class="secondary-btn estimate-case-btn" ${entry.caseId ? "disabled" : ""}>案件化</button>
         <button type="button" class="secondary-btn estimate-csv-btn">請求CSV</button>
         <button type="button" class="secondary-btn estimate-xlsx-btn">請求Excel</button>
         <button type="button" class="secondary-btn estimate-sale-btn">売上登録</button>
@@ -1884,6 +1935,11 @@ async function handleEstimateListAction(event) {
     return;
   }
   if (btn.classList.contains("estimate-case-btn")) return withLoading(async () => {
+    const estimate = state.estimates.find((entry) => entry.id === estimateId);
+    if (estimate?.caseId) {
+      showAppMessage("この見積はすでに案件化済みです。", true);
+      return;
+    }
     await ensureCaseFromEstimate(estimateId, true);
     await refreshAfterMutation("案件化しました。");
   }, "案件化に失敗しました。");
@@ -1924,7 +1980,7 @@ function renderCases() {
     title.textContent = `${entry.customerName}｜${entry.caseName}`;
     meta.textContent = `見積: ${formatCurrency(entry.estimateAmount)} / ステータス: ${entry.status} / 受付日: ${formatDate(entry.receivedDate)} / 期限日: ${formatDate(entry.dueDate)} / 次回対応日: ${formatDate(entry.nextActionDate)} / 次回対応内容: ${entry.nextAction || "未設定"}`;
     if (caseWorkMeta) {
-      caseWorkMeta.textContent = `作業メモ: ${truncateText(entry.workMemo || "未設定", 60)}`;
+      caseWorkMeta.textContent = `作業メモ: ${truncateText(sanitizeLegacyEstimateMemo(entry.workMemo) || "未設定", 60)}`;
       caseWorkMeta.classList.remove("next-action-overdue", "next-action-within3", "next-action-within7");
       if (nextActionInfo) caseWorkMeta.classList.add(nextActionInfo.urgencyClass);
     }
@@ -2139,6 +2195,7 @@ function resolveDailyReportCaseName(caseId) {
 function startEstimateEdit(estimateId) {
   const target = state.estimates.find((entry) => entry.id === estimateId);
   if (!target || !estimateForm) return;
+  subtabState.estimates = "create";
   activateTab("estimates");
   editState.estimateId = target.id;
   estimateForm.elements.customerName.value = target.customerName;
@@ -2218,9 +2275,7 @@ function normalizeEstimateStatus(status) {
 async function ensureCaseFromEstimate(estimateId, force = false) {
   const estimate = state.estimates.find((entry) => entry.id === estimateId);
   if (!estimate || (!force && estimate.status !== "受注")) return null;
-  const marker = `[estimate:${estimateId}]`;
-  const existing = state.cases.find((entry) => (entry.workMemo || "").includes(marker));
-  if (existing) return existing.id;
+  if (estimate.caseId) return estimate.caseId;
   const payload = {
     user_id: currentUser.id,
     customer_name: estimate.customerName,
@@ -2229,10 +2284,14 @@ async function ensureCaseFromEstimate(estimateId, force = false) {
     received_date: toDateString(new Date()),
     due_date: null,
     status: "未着手",
-    work_memo: marker,
+    work_memo: asTrimmedText(estimate.memo) || "",
+    next_action_date: null,
+    next_action: "",
   };
   const res = await sbClient.from("cases").insert(payload).select("id").single();
   if (res.error) throw res.error;
+  const updateRes = await sbClient.from("estimates").update({ case_id: res.data.id }).eq("id", estimateId).eq("user_id", currentUser.id);
+  if (updateRes.error) throw updateRes.error;
   return res.data.id;
 }
 
@@ -2313,9 +2372,9 @@ function exportInvoiceDataForCase(caseId, type) {
 }
 
 async function registerSaleFromEstimate(estimateId) {
-  const caseId = await ensureCaseFromEstimate(estimateId, true);
   const estimate = state.estimates.find((entry) => entry.id === estimateId);
   if (!estimate) return;
+  const caseId = estimate.caseId || await ensureCaseFromEstimate(estimateId, true);
   const payload = {
     user_id: currentUser.id,
     case_id: caseId || null,
@@ -3035,6 +3094,26 @@ function mapCaseFromDb(row) {
   };
 }
 
+function sanitizeLegacyEstimateMemo(workMemo) {
+  return String(workMemo || "")
+    .replace(/\[estimate:[^\]]+\]/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+async function cleanupLegacyEstimateMemoMarkers() {
+  if (!currentUser || !state.cases.length) return;
+  const targets = state.cases.filter((entry) => String(entry.workMemo || "").includes("[estimate:"));
+  if (!targets.length) return;
+  await Promise.all(targets.map(async (entry) => {
+    const cleanedMemo = sanitizeLegacyEstimateMemo(entry.workMemo);
+    if (cleanedMemo === entry.workMemo) return;
+    const { error } = await sbClient.from("cases").update({ work_memo: cleanedMemo }).eq("id", entry.id).eq("user_id", currentUser.id);
+    if (error) throw error;
+    entry.workMemo = cleanedMemo;
+  }));
+}
+
 function mapEstimateFromDb(row) {
   return {
     id: row.id,
@@ -3047,6 +3126,7 @@ function mapEstimateFromDb(row) {
     subtotal: normalizeAmount(row.subtotal) ?? 0,
     tax: normalizeAmount(row.tax) ?? 0,
     total: normalizeAmount(row.total) ?? 0,
+    caseId: row.case_id || null,
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
   };
