@@ -2405,30 +2405,77 @@ function exportInvoiceDataForCase(caseId) {
 
 function openEstimatePrintPreview(estimateId) {
   const estimate = state.estimates.find((entry) => entry.id === estimateId);
-  if (!estimate) return;
-  openBusinessDocumentPrintWindow(buildEstimateDocumentFromEstimate(estimate), { type: "estimate" });
+  if (!estimate) {
+    showAppMessage("出力対象データが見つかりません", true);
+    return;
+  }
+
+  try {
+    const documentData = buildEstimateDocumentFromEstimate(estimate);
+    openBusinessDocumentPrintWindow(documentData, { type: "estimate" });
+  } catch (error) {
+    console.error("見積書の出力に失敗しました。", error);
+    showAppMessage("見積書の出力に失敗しました。再度お試しください。", true);
+  }
 }
 
 function openInvoicePrintPreviewFromEstimate(estimateId) {
   const estimate = state.estimates.find((entry) => entry.id === estimateId);
-  if (!estimate) return;
-  openBusinessDocumentPrintWindow(buildInvoiceDocumentFromEstimate(estimate), { type: "invoice" });
+  if (!estimate) {
+    showAppMessage("出力対象データが見つかりません", true);
+    return;
+  }
+
+  try {
+    const documentData = buildInvoiceDocumentFromEstimate(estimate);
+    openBusinessDocumentPrintWindow(documentData, { type: "invoice" });
+  } catch (error) {
+    console.error("請求書の出力に失敗しました。", error);
+    showAppMessage("請求書の出力に失敗しました。再度お試しください。", true);
+  }
 }
 
 function openInvoicePrintPreviewFromCase(caseId) {
   const foundCase = state.cases.find((entry) => entry.id === caseId);
-  if (!foundCase) return;
-  openBusinessDocumentPrintWindow(buildInvoiceDocumentFromCase(foundCase), { type: "invoice" });
+  if (!foundCase) {
+    showAppMessage("出力対象データが見つかりません", true);
+    return;
+  }
+
+  try {
+    const documentData = buildInvoiceDocumentFromCase(foundCase);
+    openBusinessDocumentPrintWindow(documentData, { type: "invoice" });
+  } catch (error) {
+    console.error("請求書の出力に失敗しました。", error);
+    showAppMessage("請求書の出力に失敗しました。再度お試しください。", true);
+  }
 }
 
 function openBusinessDocumentPrintWindow(documentData, options = { type: "invoice" }) {
-  const win = window.open("", "_blank", "noopener,noreferrer");
-  if (!win) {
-    showAppMessage("帳票画面を開けませんでした。ポップアップ許可を確認してください。", true);
+  let html = "";
+  try {
+    html = buildBusinessDocumentHtml(documentData, options);
+  } catch (error) {
+    console.error("帳票HTMLの生成に失敗しました。", error);
+    showAppMessage("帳票の生成に失敗しました。再度お試しください。", true);
     return;
   }
-  win.document.write(buildBusinessDocumentHtml(documentData, options));
-  win.document.close();
+
+  if (typeof html !== "string" || !html.trim()) {
+    console.error("帳票HTMLの生成結果が不正です。", { documentData, options, html });
+    showAppMessage("帳票の生成に失敗しました。再度お試しください。", true);
+    return;
+  }
+
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    showAppMessage("ポップアップがブロックされています。ブラウザ設定を確認してください。", true);
+    return;
+  }
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
 }
 
 function downloadInvoiceWorkbook(invoiceData) {
@@ -2627,7 +2674,7 @@ function buildBusinessDocumentHtml(documentData, options = { type: "invoice" }) 
   }).join("");
   const headerToneClass = isInvoice ? "tone-dark" : "tone-blue";
 
-  return `<!doctype html>
+  return `<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
