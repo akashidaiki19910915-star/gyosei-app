@@ -765,12 +765,8 @@ async function handleCaseListAction(event) {
     startCaseEdit(id);
     return;
   }
-  if (btn.classList.contains("case-csv-btn")) {
-    exportInvoiceDataForCase(id, "csv");
-    return;
-  }
   if (btn.classList.contains("case-xlsx-btn")) {
-    exportInvoiceDataForCase(id, "xlsx");
+    exportInvoiceDataForCase(id);
     return;
   }
 
@@ -1901,7 +1897,6 @@ function renderEstimates() {
         <button type="button" class="secondary-btn estimate-edit-btn">編集</button>
         <button type="button" class="danger-btn estimate-delete-btn">削除</button>
         <button type="button" class="secondary-btn estimate-case-btn" ${entry.caseId ? "disabled" : ""}>案件化</button>
-        <button type="button" class="secondary-btn estimate-csv-btn">請求CSV</button>
         <button type="button" class="secondary-btn estimate-xlsx-btn">請求Excel</button>
         <button type="button" class="secondary-btn estimate-sale-btn">売上登録</button>
       </div>
@@ -1943,8 +1938,7 @@ async function handleEstimateListAction(event) {
     await ensureCaseFromEstimate(estimateId, true);
     await refreshAfterMutation("案件化しました。");
   }, "案件化に失敗しました。");
-  if (btn.classList.contains("estimate-csv-btn")) return exportInvoiceDataForEstimate(estimateId, "csv");
-  if (btn.classList.contains("estimate-xlsx-btn")) return exportInvoiceDataForEstimate(estimateId, "xlsx");
+  if (btn.classList.contains("estimate-xlsx-btn")) return exportInvoiceDataForEstimate(estimateId);
   if (btn.classList.contains("estimate-sale-btn")) return withLoading(async () => {
     await registerSaleFromEstimate(estimateId);
     await refreshAfterMutation("売上を登録しました。");
@@ -1986,16 +1980,11 @@ function renderCases() {
     }
     profitMeta.textContent = `売上合計: ${formatCurrency(totals.sales)} / 経費合計: ${formatCurrency(totals.expenses)} / 利益: ${formatCurrency(totals.profit)}`;
     profitMeta.classList.toggle("loss-text", totals.profit < 0);
-    if (rowActions && !rowActions.querySelector(".case-csv-btn")) {
-      const csvBtn = document.createElement("button");
-      csvBtn.type = "button";
-      csvBtn.className = "secondary-btn case-csv-btn";
-      csvBtn.textContent = "請求CSV";
+    if (rowActions && !rowActions.querySelector(".case-xlsx-btn")) {
       const xlsxBtn = document.createElement("button");
       xlsxBtn.type = "button";
       xlsxBtn.className = "secondary-btn case-xlsx-btn";
       xlsxBtn.textContent = "請求Excel";
-      rowActions.appendChild(csvBtn);
       rowActions.appendChild(xlsxBtn);
     }
     caseList.appendChild(node);
@@ -2327,48 +2316,172 @@ function buildInvoiceRowsFromEstimate(estimate) {
   }));
 }
 
-function exportInvoiceDataForEstimate(estimateId, type) {
-  const estimate = state.estimates.find((entry) => entry.id === estimateId);
-  if (!estimate) return;
+function buildInvoiceDocumentFromEstimate(estimate) {
   const rows = buildInvoiceRowsFromEstimate(estimate);
-  const headers = ["customer_name", "subject", "invoice_date", "item_name", "quantity", "unit_price", "amount", "subtotal", "tax", "total"];
-  const today = toDateString(new Date());
-  if (type === "csv") {
-    downloadCsvFile(`invoice-data-${today}.csv`, headers, rows);
-  } else {
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, createExcelSheet(rows, headers), "請求データ");
-    XLSX.writeFile(wb, `invoice-data-${today}.xlsx`);
-  }
+  return {
+    customerName: estimate.customerName || "顧客名未設定",
+    subject: estimate.estimateTitle || "請求内容",
+    invoiceDate: toDateString(new Date()),
+    invoiceNumber: `INV-${toDateString(new Date()).replaceAll("-", "")}-${String(estimate.id || "0000").slice(0, 6)}`,
+    companyName: "行政書士事務所 サンプル",
+    companyAddress: "東京都千代田区サンプル1-2-3",
+    companyEmail: "info@example-office.jp",
+    details: rows.map((row, index) => ({
+      no: index + 1,
+      itemName: row.item_name,
+      quantity: row.quantity,
+      unitPrice: row.unit_price,
+      amount: row.amount,
+    })),
+    subtotal: estimate.subtotal ?? 0,
+    tax: estimate.tax ?? 0,
+    total: estimate.total ?? 0,
+    note: "振込先：〇〇銀行 本店 普通 1234567 サンプルジムショ",
+  };
 }
 
-function exportInvoiceDataForCase(caseId, type) {
-  const foundCase = state.cases.find((entry) => entry.id === caseId);
-  if (!foundCase) return;
+function exportInvoiceDataForEstimate(estimateId) {
+  const estimate = state.estimates.find((entry) => entry.id === estimateId);
+  if (!estimate) return;
+  const invoiceData = buildInvoiceDocumentFromEstimate(estimate);
+  downloadInvoiceWorkbook(invoiceData);
+}
+
+function buildInvoiceDocumentFromCase(foundCase) {
   const subtotal = foundCase.estimateAmount ?? 0;
   const tax = Math.floor(subtotal * 0.1);
   const total = subtotal + tax;
-  const rows = [{
-    customer_name: foundCase.customerName,
-    subject: foundCase.caseName,
-    invoice_date: toDateString(new Date()),
-    item_name: foundCase.caseName,
-    quantity: 1,
-    unit_price: subtotal,
-    amount: subtotal,
+  return {
+    customerName: foundCase.customerName || "顧客名未設定",
+    subject: foundCase.caseName || "請求内容",
+    invoiceDate: toDateString(new Date()),
+    invoiceNumber: `INV-${toDateString(new Date()).replaceAll("-", "")}-${String(foundCase.id || "0000").slice(0, 6)}`,
+    companyName: "行政書士事務所 サンプル",
+    companyAddress: "東京都千代田区サンプル1-2-3",
+    companyEmail: "info@example-office.jp",
+    details: [{
+      no: 1,
+      itemName: foundCase.caseName,
+      quantity: 1,
+      unitPrice: subtotal,
+      amount: subtotal,
+    }],
     subtotal,
     tax,
     total,
+    note: "振込先：〇〇銀行 本店 普通 1234567 サンプルジムショ",
+  };
+}
+
+function exportInvoiceDataForCase(caseId) {
+  const foundCase = state.cases.find((entry) => entry.id === caseId);
+  if (!foundCase) return;
+  const invoiceData = buildInvoiceDocumentFromCase(foundCase);
+  downloadInvoiceWorkbook(invoiceData);
+}
+
+function downloadInvoiceWorkbook(invoiceData) {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, createInvoiceSheet(invoiceData), "請求書");
+  const invoiceDate = String(invoiceData.invoiceDate || toDateString(new Date())).replaceAll("-", "");
+  const safeCustomerName = sanitizeFileNamePart(invoiceData.customerName || "customer");
+  XLSX.writeFile(wb, `invoice_${safeCustomerName}_${invoiceDate}.xlsx`);
+}
+
+function createInvoiceSheet(invoiceData) {
+  const data = [];
+  const detailRows = (invoiceData.details || []).length ? invoiceData.details : [{
+    no: 1, itemName: invoiceData.subject || "請求内容", quantity: 1, unitPrice: 0, amount: 0,
   }];
-  const headers = ["customer_name", "subject", "invoice_date", "item_name", "quantity", "unit_price", "amount", "subtotal", "tax", "total"];
-  const today = toDateString(new Date());
-  if (type === "csv") {
-    downloadCsvFile(`invoice-data-${today}.csv`, headers, rows);
-  } else {
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, createExcelSheet(rows, headers), "請求データ");
-    XLSX.writeFile(wb, `invoice-data-${today}.xlsx`);
+
+  data[0] = ["", "", "", "請求書", "", "", "", ""];
+  data[2] = ["請求先", "", "", "", "", "発行日", "", invoiceData.invoiceDate || ""];
+  data[3] = [`${invoiceData.customerName || "顧客名未設定"} 御中`, "", "", "", "", "請求書番号", "", invoiceData.invoiceNumber || ""];
+  data[5] = ["", "", "", "", "", invoiceData.companyName || "", "", ""];
+  data[6] = ["", "", "", "", "", invoiceData.companyAddress || "", "", ""];
+  data[7] = ["", "", "", "", "", `メール: ${invoiceData.companyEmail || ""}`, "", ""];
+  data[9] = ["ご請求金額（税込）", "", "", "", "", "", "", invoiceData.total ?? 0];
+  data[11] = ["No", "内容", "", "", "数量", "単価", "金額", ""];
+
+  detailRows.forEach((row, index) => {
+    const line = 12 + index;
+    data[line] = [row.no ?? index + 1, row.itemName || "", "", "", row.quantity ?? 0, row.unitPrice ?? 0, row.amount ?? 0, ""];
+  });
+
+  const summaryStart = 13 + detailRows.length;
+  data[summaryStart] = ["", "", "", "", "", "小計", "", invoiceData.subtotal ?? 0];
+  data[summaryStart + 1] = ["", "", "", "", "", "消費税（10%）", "", invoiceData.tax ?? 0];
+  data[summaryStart + 2] = ["", "", "", "", "", "合計", "", invoiceData.total ?? 0];
+  data[summaryStart + 4] = ["備考", "", "", "", "", "", "", ""];
+  data[summaryStart + 5] = [invoiceData.note || "", "", "", "", "", "", "", ""];
+
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws["!cols"] = [{ wch: 6 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 18 }];
+  ws["!merges"] = [
+    { s: { r: 0, c: 3 }, e: { r: 0, c: 5 } },
+    { s: { r: 3, c: 0 }, e: { r: 3, c: 3 } },
+    { s: { r: 5, c: 5 }, e: { r: 5, c: 7 } },
+    { s: { r: 6, c: 5 }, e: { r: 6, c: 7 } },
+    { s: { r: 7, c: 5 }, e: { r: 7, c: 7 } },
+    { s: { r: 9, c: 0 }, e: { r: 9, c: 6 } },
+    { s: { r: 11, c: 1 }, e: { r: 11, c: 3 } },
+    { s: { r: 11, c: 6 }, e: { r: 11, c: 7 } },
+    { s: { r: summaryStart + 4, c: 0 }, e: { r: summaryStart + 4, c: 7 } },
+    { s: { r: summaryStart + 5, c: 0 }, e: { r: summaryStart + 5, c: 7 } },
+  ];
+
+  const tableStart = 11;
+  const tableEnd = 12 + detailRows.length - 1;
+  applyInvoiceCellStyle(ws, 0, 3, { bold: true, fontSize: 24, align: "center" });
+  applyInvoiceCellStyle(ws, 3, 0, { fontSize: 14 });
+  applyInvoiceCellStyle(ws, 9, 0, { bold: true, fontSize: 16 });
+  applyInvoiceCellStyle(ws, 9, 7, { bold: true, fontSize: 16, numFmt: "¥#,##0" });
+
+  for (let col = 0; col <= 7; col += 1) {
+    applyInvoiceCellStyle(ws, tableStart, col, { bold: true, align: "center", border: true, fillGray: true });
   }
+  for (let row = tableEnd >= 12 ? 12 : 12; row <= tableEnd; row += 1) {
+    for (let col = 0; col <= 7; col += 1) {
+      const options = { border: true };
+      if (col === 4) options.align = "center";
+      if (col === 5 || col === 6) options.numFmt = "¥#,##0";
+      applyInvoiceCellStyle(ws, row, col, options);
+    }
+  }
+
+  [summaryStart, summaryStart + 1, summaryStart + 2].forEach((row) => {
+    applyInvoiceCellStyle(ws, row, 5, { border: true, align: "center", bold: row === summaryStart + 2 });
+    applyInvoiceCellStyle(ws, row, 7, { border: true, numFmt: "¥#,##0", bold: row === summaryStart + 2 });
+  });
+  ws["!ref"] = `A1:H${summaryStart + 6}`;
+  return ws;
+}
+
+function applyInvoiceCellStyle(ws, row, col, options = {}) {
+  const address = XLSX.utils.encode_cell({ r: row, c: col });
+  if (!ws[address]) ws[address] = { t: "s", v: "" };
+  if (options.numFmt) ws[address].z = options.numFmt;
+  ws[address].s = {
+    font: { name: "Meiryo", sz: options.fontSize || 11, bold: Boolean(options.bold) },
+    alignment: { horizontal: options.align || "left", vertical: "center" },
+    border: options.border
+      ? {
+        top: { style: "thin", color: { rgb: "000000" } },
+        bottom: { style: "thin", color: { rgb: "000000" } },
+        left: { style: "thin", color: { rgb: "000000" } },
+        right: { style: "thin", color: { rgb: "000000" } },
+      }
+      : undefined,
+    fill: options.fillGray ? { fgColor: { rgb: "EFEFEF" } } : undefined,
+  };
+}
+
+function sanitizeFileNamePart(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 40) || "customer";
 }
 
 async function registerSaleFromEstimate(estimateId) {
