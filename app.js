@@ -1,18 +1,22 @@
-const DATA_STORAGE_KEY = "gyosei-app-data-v3";
-const LEGACY_STORAGE_KEYS = ["gyosei-app-data-v2", "gyosei-cases"];
+const SUPABASE_URL = "https://ueelzyftlbnvjvpsmpyt.supabase.co";
+const SUPABASE_KEY = "sb_publishable_0DrKsieUcCyEZN_HRg8LhQ_QqFTPMtp";
 const STATUS_ORDER = ["未着手", "進行中", "完了"];
 
-const state = {
-  cases: [],
-  sales: [],
-  expenses: [],
-};
+const { createClient } = window.supabase;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const editState = {
-  caseId: null,
-  saleId: null,
-  expenseId: null,
-};
+const state = { cases: [], sales: [], expenses: [] };
+const editState = { caseId: null, saleId: null, expenseId: null };
+
+const authView = document.getElementById("auth-view");
+const appView = document.getElementById("app-view");
+const loadingOverlay = document.getElementById("loading-overlay");
+const authForm = document.getElementById("auth-form");
+const authMessage = document.getElementById("auth-message");
+const signupBtn = document.getElementById("signup-btn");
+const logoutBtn = document.getElementById("logout-btn");
+const userLabel = document.getElementById("user-label");
+const appMessage = document.getElementById("app-message");
 
 const tabs = Array.from(document.querySelectorAll(".tab-btn"));
 const panels = {
@@ -45,167 +49,233 @@ const caseItemTemplate = document.getElementById("case-item-template");
 const saleItemTemplate = document.getElementById("sale-item-template");
 const expenseItemTemplate = document.getElementById("expense-item-template");
 
+let currentUser = null;
+
 initialize();
 
-function initialize() {
-  const loaded = loadData();
-  state.cases = loaded.cases;
-  state.sales = loaded.sales;
-  state.expenses = loaded.expenses;
-
+async function initialize() {
   bindEvents();
-  renderCaseOptions();
-  renderCases();
-  renderSales();
-  renderExpenses();
-  renderDashboard();
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  currentUser = session?.user ?? null;
+  await applyAuthState();
+
+  supabase.auth.onAuthStateChange(async (_event, sessionState) => {
+    currentUser = sessionState?.user ?? null;
+    await applyAuthState();
+  });
 }
 
 function bindEvents() {
-  tabs.forEach((btn) => {
-    btn.addEventListener("click", () => activateTab(btn.dataset.tab));
-  });
+  tabs.forEach((btn) => btn.addEventListener("click", () => activateTab(btn.dataset.tab)));
+  authForm.addEventListener("submit", handleLogin);
+  signupBtn.addEventListener("click", handleSignup);
+  logoutBtn.addEventListener("click", handleLogout);
 
   caseForm.addEventListener("submit", handleCaseSubmit);
   saleForm.addEventListener("submit", handleSaleSubmit);
   expenseForm.addEventListener("submit", handleExpenseSubmit);
 
-  clearBtn.addEventListener("click", () => {
-    if (!window.confirm("案件・売上・経費の全データを削除します。よろしいですか？")) return;
-    state.cases = [];
-    state.sales = [];
-    state.expenses = [];
-    resetEditMode("case");
-    resetEditMode("sale");
-    resetEditMode("expense");
-    saveData();
-    renderAfterDataChanged();
-  });
-
+  clearBtn.addEventListener("click", handleClearAll);
   caseList.addEventListener("click", handleCaseListAction);
   salesList.addEventListener("click", handleSalesListAction);
   expensesList.addEventListener("click", handleExpensesListAction);
 }
 
-function handleCaseSubmit(event) {
+async function applyAuthState() {
+  if (!currentUser) {
+    authView.hidden = false;
+    appView.hidden = true;
+    userLabel.textContent = "";
+    clearAppMessage();
+    return;
+  }
+
+  authView.hidden = true;
+  appView.hidden = false;
+  userLabel.textContent = currentUser.email || "ログイン中";
+
+  await withLoading(async () => {
+    await loadAllData();
+    resetCaseForm();
+    resetSaleForm();
+    resetExpenseForm();
+    renderAfterDataChanged();
+  }, "データの読み込みに失敗しました。テーブル設定を確認してください。");
+}
+
+async function handleLogin(event) {
   event.preventDefault();
+  const email = authForm.elements.email.value.trim();
+  const password = authForm.elements.password.value;
+  if (!email || !password) return;
+
+  await withLoading(async () => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    showAuthMessage("ログインしました。", false);
+  }, "ログインに失敗しました。メールアドレスまたはパスワードを確認してください。", true);
+}
+
+async function handleSignup() {
+  const email = authForm.elements.email.value.trim();
+  const password = authForm.elements.password.value;
+  if (!email || !password) {
+    showAuthMessage("メールアドレスとパスワードを入力してください。", true);
+    return;
+  }
+
+  await withLoading(async () => {
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) throw error;
+    showAuthMessage("新規登録が完了しました。確認メールを確認してください。", false);
+  }, "新規登録に失敗しました。入力内容を確認してください。", true);
+}
+
+async function handleLogout() {
+  await withLoading(async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+    showAuthMessage("ログアウトしました。", false);
+    authForm.reset();
+  }, "ログアウトに失敗しました。", true);
+}
+
+async function loadAllData() {
+  if (!currentUser) return;
+
+  const [casesRes, salesRes, expensesRes] = await Promise.all([
+    supabase.from("cases").select("*").eq("user_id", currentUser.id),
+    supabase.from("sales").select("*").eq("user_id", currentUser.id),
+    supabase.from("expenses").select("*").eq("user_id", currentUser.id),
+  ]);
+
+  if (casesRes.error) throw casesRes.error;
+  if (salesRes.error) throw salesRes.error;
+  if (expensesRes.error) throw expensesRes.error;
+
+  state.cases = (casesRes.data || []).map(mapCaseFromDb);
+  state.sales = (salesRes.data || []).map(mapSaleFromDb);
+  state.expenses = (expensesRes.data || []).map(mapExpenseFromDb);
+}
+
+async function refreshAfterMutation(successMessage) {
+  await loadAllData();
+  renderAfterDataChanged();
+  if (successMessage) showAppMessage(successMessage, false);
+}
+
+async function handleCaseSubmit(event) {
+  event.preventDefault();
+  if (!currentUser) return;
 
   const customerName = caseForm.elements.customerName.value.trim();
   const caseName = caseForm.elements.caseName.value.trim();
   if (!customerName || !caseName) return;
 
   const payload = {
-    customerName,
-    caseName,
-    estimateAmount: normalizeAmount(caseForm.elements.amount.value),
-    receivedDate: caseForm.elements.receivedDate.value || "",
-    dueDate: caseForm.elements.dueDate.value || "",
+    user_id: currentUser.id,
+    customer_name: customerName,
+    case_name: caseName,
+    estimate_amount: normalizeAmount(caseForm.elements.amount.value),
+    received_date: caseForm.elements.receivedDate.value || null,
+    due_date: caseForm.elements.dueDate.value || null,
     status: normalizeStatus(caseForm.elements.status.value),
-    updatedAt: Date.now(),
   };
 
-  if (editState.caseId) {
-    const index = state.cases.findIndex((item) => item.id === editState.caseId);
-    if (index !== -1) {
-      state.cases[index] = { ...state.cases[index], ...payload };
+  await withLoading(async () => {
+    if (editState.caseId) {
+      const { error } = await supabase.from("cases").update(payload).eq("id", editState.caseId).eq("user_id", currentUser.id);
+      if (error) throw error;
+      resetCaseForm();
+      await refreshAfterMutation("案件を更新しました。");
+      return;
     }
-  } else {
-    state.cases.push({
-      id: crypto.randomUUID(),
-      ...payload,
-      createdAt: Date.now(),
-    });
-  }
 
-  resetCaseForm();
-  saveData();
-  renderAfterDataChanged();
+    const { error } = await supabase.from("cases").insert(payload);
+    if (error) throw error;
+    resetCaseForm();
+    await refreshAfterMutation("案件を登録しました。");
+  }, "案件の保存に失敗しました。入力内容を確認してください。");
 }
 
-function handleSaleSubmit(event) {
+async function handleSaleSubmit(event) {
   event.preventDefault();
-  if (!state.cases.length) return;
+  if (!currentUser || !state.cases.length) return;
 
   const invoiceAmount = normalizeAmount(saleForm.elements.invoiceAmount.value);
   if (invoiceAmount === null) return;
 
   const paidAmount = normalizeAmount(saleForm.elements.paidAmount.value);
+  const caseId = saleCaseSelect.value;
+  if (!caseId) return;
 
   const payload = {
-    caseId: saleCaseSelect.value,
-    invoiceAmount,
-    paidAmount,
-    paidDate: saleForm.elements.paidDate.value || "",
-    isUnpaid: saleForm.elements.isUnpaid.checked || (paidAmount ?? 0) < invoiceAmount,
+    user_id: currentUser.id,
+    case_id: caseId,
+    invoice_amount: invoiceAmount,
+    paid_amount: paidAmount,
+    paid_date: saleForm.elements.paidDate.value || null,
+    is_unpaid: saleForm.elements.isUnpaid.checked || (paidAmount ?? 0) < invoiceAmount,
   };
 
-  if (!payload.caseId) return;
-
-  if (editState.saleId) {
-    const index = state.sales.findIndex((item) => item.id === editState.saleId);
-    if (index !== -1) {
-      state.sales[index] = {
-        ...state.sales[index],
-        ...payload,
-        updatedAt: Date.now(),
-      };
+  await withLoading(async () => {
+    if (editState.saleId) {
+      const { error } = await supabase.from("sales").update(payload).eq("id", editState.saleId).eq("user_id", currentUser.id);
+      if (error) throw error;
+      resetSaleForm();
+      await refreshAfterMutation("売上を更新しました。");
+      return;
     }
-  } else {
-    state.sales.push({
-      id: crypto.randomUUID(),
-      ...payload,
-      createdAt: Date.now(),
-    });
-  }
 
-  resetSaleForm();
-  saveData();
-  renderAfterDataChanged();
+    const { error } = await supabase.from("sales").insert(payload);
+    if (error) throw error;
+    resetSaleForm();
+    await refreshAfterMutation("売上を登録しました。");
+  }, "売上の保存に失敗しました。入力内容を確認してください。");
 }
 
-function handleExpenseSubmit(event) {
+async function handleExpenseSubmit(event) {
   event.preventDefault();
+  if (!currentUser) return;
 
   const date = expenseForm.elements.expenseDate.value;
   const content = expenseForm.elements.expenseContent.value.trim();
   const amount = normalizeAmount(expenseForm.elements.expenseAmount.value);
-
   if (!date || !content || amount === null) return;
 
   const payload = {
+    user_id: currentUser.id,
     date,
     content,
     amount,
-    caseId: expenseCaseSelect.value || null,
+    case_id: expenseCaseSelect.value || null,
   };
 
-  if (editState.expenseId) {
-    const index = state.expenses.findIndex((item) => item.id === editState.expenseId);
-    if (index !== -1) {
-      state.expenses[index] = {
-        ...state.expenses[index],
-        ...payload,
-        updatedAt: Date.now(),
-      };
+  await withLoading(async () => {
+    if (editState.expenseId) {
+      const { error } = await supabase.from("expenses").update(payload).eq("id", editState.expenseId).eq("user_id", currentUser.id);
+      if (error) throw error;
+      resetExpenseForm();
+      await refreshAfterMutation("経費を更新しました。");
+      return;
     }
-  } else {
-    state.expenses.push({
-      id: crypto.randomUUID(),
-      ...payload,
-      createdAt: Date.now(),
-    });
-  }
 
-  resetExpenseForm();
-  saveData();
-  renderAfterDataChanged();
+    const { error } = await supabase.from("expenses").insert(payload);
+    if (error) throw error;
+    resetExpenseForm();
+    await refreshAfterMutation("経費を登録しました。");
+  }, "経費の保存に失敗しました。入力内容を確認してください。");
 }
 
-function handleCaseListAction(event) {
+async function handleCaseListAction(event) {
   const btn = event.target;
   if (!(btn instanceof HTMLButtonElement)) return;
   const item = btn.closest(".item");
-  if (!item) return;
+  if (!item || !currentUser) return;
   const id = item.dataset.id;
 
   if (btn.classList.contains("edit-btn")) {
@@ -224,20 +294,21 @@ function handleCaseListAction(event) {
 
   if (btn.classList.contains("delete-btn")) {
     if (!window.confirm("この案件を削除しますか？関連する売上・経費も削除されます。")) return;
-    state.cases = state.cases.filter((entry) => entry.id !== id);
-    state.sales = state.sales.filter((entry) => entry.caseId !== id);
-    state.expenses = state.expenses.filter((entry) => entry.caseId !== id);
-    if (editState.caseId === id) resetCaseForm();
-    saveData();
-    renderAfterDataChanged();
+
+    await withLoading(async () => {
+      const { error } = await supabase.from("cases").delete().eq("id", id).eq("user_id", currentUser.id);
+      if (error) throw error;
+      if (editState.caseId === id) resetCaseForm();
+      await refreshAfterMutation("案件を削除しました。");
+    }, "案件の削除に失敗しました。");
   }
 }
 
-function handleSalesListAction(event) {
+async function handleSalesListAction(event) {
   const btn = event.target;
   if (!(btn instanceof HTMLButtonElement)) return;
   const item = btn.closest(".item");
-  if (!item) return;
+  if (!item || !currentUser) return;
   const id = item.dataset.id;
 
   if (btn.classList.contains("edit-btn")) {
@@ -255,18 +326,20 @@ function handleSalesListAction(event) {
 
   if (btn.classList.contains("delete-btn")) {
     if (!window.confirm("この売上を削除しますか？")) return;
-    state.sales = state.sales.filter((entry) => entry.id !== id);
-    if (editState.saleId === id) resetSaleForm();
-    saveData();
-    renderAfterDataChanged();
+    await withLoading(async () => {
+      const { error } = await supabase.from("sales").delete().eq("id", id).eq("user_id", currentUser.id);
+      if (error) throw error;
+      if (editState.saleId === id) resetSaleForm();
+      await refreshAfterMutation("売上を削除しました。");
+    }, "売上の削除に失敗しました。");
   }
 }
 
-function handleExpensesListAction(event) {
+async function handleExpensesListAction(event) {
   const btn = event.target;
   if (!(btn instanceof HTMLButtonElement)) return;
   const item = btn.closest(".item");
-  if (!item) return;
+  if (!item || !currentUser) return;
   const id = item.dataset.id;
 
   if (btn.classList.contains("edit-btn")) {
@@ -283,11 +356,35 @@ function handleExpensesListAction(event) {
 
   if (btn.classList.contains("delete-btn")) {
     if (!window.confirm("この経費を削除しますか？")) return;
-    state.expenses = state.expenses.filter((entry) => entry.id !== id);
-    if (editState.expenseId === id) resetExpenseForm();
-    saveData();
-    renderAfterDataChanged();
+    await withLoading(async () => {
+      const { error } = await supabase.from("expenses").delete().eq("id", id).eq("user_id", currentUser.id);
+      if (error) throw error;
+      if (editState.expenseId === id) resetExpenseForm();
+      await refreshAfterMutation("経費を削除しました。");
+    }, "経費の削除に失敗しました。");
   }
+}
+
+async function handleClearAll() {
+  if (!currentUser) return;
+  if (!window.confirm("案件・売上・経費の全データを削除します。よろしいですか？")) return;
+
+  await withLoading(async () => {
+    const [salesRes, expensesRes, casesRes] = await Promise.all([
+      supabase.from("sales").delete().eq("user_id", currentUser.id),
+      supabase.from("expenses").delete().eq("user_id", currentUser.id),
+      supabase.from("cases").delete().eq("user_id", currentUser.id),
+    ]);
+
+    if (salesRes.error) throw salesRes.error;
+    if (expensesRes.error) throw expensesRes.error;
+    if (casesRes.error) throw casesRes.error;
+
+    resetCaseForm();
+    resetSaleForm();
+    resetExpenseForm();
+    await refreshAfterMutation("全データを削除しました。");
+  }, "全件削除に失敗しました。");
 }
 
 function renderAfterDataChanged() {
@@ -300,16 +397,13 @@ function renderAfterDataChanged() {
 
 function activateTab(tabKey) {
   tabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tabKey));
-  Object.entries(panels).forEach(([key, panel]) => {
-    panel.classList.toggle("active", key === tabKey);
-  });
+  Object.entries(panels).forEach(([key, panel]) => panel.classList.toggle("active", key === tabKey));
 }
 
 function renderDashboard() {
-  const salesByMonth = aggregateByMonth(state.sales, (s) => s.createdAt, (s) => s.invoiceAmount);
+  const salesByMonth = aggregateByMonth(state.sales, (s) => s.paidDate || s.createdAt, (s) => s.invoiceAmount);
   const expenseByMonth = aggregateByMonth(state.expenses, (e) => e.date, (e) => e.amount);
   const monthKeys = [...new Set([...Object.keys(salesByMonth), ...Object.keys(expenseByMonth)])].sort().reverse();
-
   const currentMonth = monthKeys[0] || toMonthKey(new Date());
   const sales = salesByMonth[currentMonth] || 0;
   const expenses = expenseByMonth[currentMonth] || 0;
@@ -338,12 +432,10 @@ function renderCaseOptions() {
 
   saleCaseSelect.innerHTML = state.cases.length ? options : '<option value="">案件を先に登録してください</option>';
   saleCaseSelect.disabled = !state.cases.length;
-
   expenseCaseSelect.innerHTML = `<option value="">案件に紐付けしない</option>${options}`;
 }
 
 function renderCases() {
-  if (!caseList || !caseEmpty || !caseItemTemplate) return;
   caseList.innerHTML = "";
   const sorted = state.cases.slice().sort(sortCases);
 
@@ -363,7 +455,6 @@ function renderCases() {
 }
 
 function renderSales() {
-  if (!salesList || !salesEmpty || !saleItemTemplate) return;
   salesList.innerHTML = "";
   const sorted = state.sales.slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
 
@@ -383,11 +474,8 @@ function renderSales() {
 }
 
 function renderExpenses() {
-  if (!expensesList || !expensesEmpty || !expenseItemTemplate) return;
   expensesList.innerHTML = "";
-  const sorted = state.expenses
-    .slice()
-    .sort((a, b) => toSortTimestamp(b.date) - toSortTimestamp(a.date));
+  const sorted = state.expenses.slice().sort((a, b) => toSortTimestamp(b.date) - toSortTimestamp(a.date));
 
   sorted.forEach((expense) => {
     const node = expenseItemTemplate.content.cloneNode(true);
@@ -406,8 +494,7 @@ function renderExpenses() {
 
 function resolveCaseName(caseId) {
   const found = state.cases.find((c) => c.id === caseId);
-  if (!found) return "（削除済み案件）";
-  return `${found.customerName}｜${found.caseName}`;
+  return found ? `${found.customerName}｜${found.caseName}` : "（削除済み案件）";
 }
 
 function resetCaseForm() {
@@ -506,84 +593,79 @@ function escapeHtml(text) {
     .replaceAll("'", "&#039;");
 }
 
-function saveData() {
-  localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(state));
-}
-
-function loadData() {
-  try {
-    const raw = localStorage.getItem(DATA_STORAGE_KEY);
-    if (raw) return sanitizeData(JSON.parse(raw));
-
-    const oldV2Raw = localStorage.getItem(LEGACY_STORAGE_KEYS[0]);
-    if (oldV2Raw) {
-      const migrated = sanitizeData(JSON.parse(oldV2Raw));
-      localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(migrated));
-      return migrated;
-    }
-
-    const legacyCasesRaw = localStorage.getItem(LEGACY_STORAGE_KEYS[1]);
-    if (legacyCasesRaw) {
-      const migrated = sanitizeData({ cases: JSON.parse(legacyCasesRaw), sales: [], expenses: [] });
-      localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(migrated));
-      return migrated;
-    }
-  } catch {
-    return { cases: [], sales: [], expenses: [] };
-  }
-
-  return { cases: [], sales: [], expenses: [] };
-}
-
-function sanitizeData(input) {
-  const safe = input && typeof input === "object" ? input : {};
-  const cases = Array.isArray(safe.cases) ? safe.cases : [];
-  const sales = Array.isArray(safe.sales) ? safe.sales : [];
-  const expenses = Array.isArray(safe.expenses) ? safe.expenses : [];
-
+function mapCaseFromDb(row) {
   return {
-    cases: cases
-      .filter((c) => c && typeof c === "object")
-      .map((c) => ({
-        id: c.id || crypto.randomUUID(),
-        customerName: String(c.customerName || "").trim(),
-        caseName: String(c.caseName || "").trim(),
-        estimateAmount: normalizeAmount(c.estimateAmount ?? c.amount),
-        receivedDate: String(c.receivedDate || ""),
-        dueDate: String(c.dueDate || ""),
-        status: normalizeStatus(c.status),
-        createdAt: Number.isFinite(c.createdAt) ? c.createdAt : Date.now(),
-        updatedAt: Number.isFinite(c.updatedAt) ? c.updatedAt : Date.now(),
-      }))
-      .filter((c) => c.customerName && c.caseName),
-    sales: sales
-      .filter((s) => s && typeof s === "object")
-      .map((s) => {
-        const invoiceAmount = normalizeAmount(s.invoiceAmount);
-        const paidAmount = normalizeAmount(s.paidAmount);
-        return {
-          id: s.id || crypto.randomUUID(),
-          caseId: String(s.caseId || ""),
-          invoiceAmount: invoiceAmount ?? 0,
-          paidAmount,
-          paidDate: String(s.paidDate || ""),
-          isUnpaid: Boolean(s.isUnpaid) || (paidAmount ?? 0) < (invoiceAmount ?? 0),
-          createdAt: Number.isFinite(s.createdAt) ? s.createdAt : Date.now(),
-          updatedAt: Number.isFinite(s.updatedAt) ? s.updatedAt : Date.now(),
-        };
-      })
-      .filter((s) => s.caseId),
-    expenses: expenses
-      .filter((e) => e && typeof e === "object")
-      .map((e) => ({
-        id: e.id || crypto.randomUUID(),
-        date: String(e.date || ""),
-        content: String(e.content || "").trim(),
-        amount: normalizeAmount(e.amount) ?? 0,
-        caseId: e.caseId ? String(e.caseId) : null,
-        createdAt: Number.isFinite(e.createdAt) ? e.createdAt : Date.now(),
-        updatedAt: Number.isFinite(e.updatedAt) ? e.updatedAt : Date.now(),
-      }))
-      .filter((e) => e.date && e.content),
+    id: row.id,
+    customerName: row.customer_name || "",
+    caseName: row.case_name || "",
+    estimateAmount: normalizeAmount(row.estimate_amount),
+    receivedDate: row.received_date || "",
+    dueDate: row.due_date || "",
+    status: normalizeStatus(row.status),
+    createdAt: Date.parse(row.created_at) || Date.now(),
+    updatedAt: Date.parse(row.updated_at) || Date.now(),
   };
+}
+
+function mapSaleFromDb(row) {
+  const invoiceAmount = normalizeAmount(row.invoice_amount) ?? 0;
+  const paidAmount = normalizeAmount(row.paid_amount);
+  return {
+    id: row.id,
+    caseId: row.case_id,
+    invoiceAmount,
+    paidAmount,
+    paidDate: row.paid_date || "",
+    isUnpaid: Boolean(row.is_unpaid) || (paidAmount ?? 0) < invoiceAmount,
+    createdAt: Date.parse(row.created_at) || Date.now(),
+    updatedAt: Date.parse(row.updated_at) || Date.now(),
+  };
+}
+
+function mapExpenseFromDb(row) {
+  return {
+    id: row.id,
+    date: row.date || "",
+    content: row.content || "",
+    amount: normalizeAmount(row.amount) ?? 0,
+    caseId: row.case_id || null,
+    createdAt: Date.parse(row.created_at) || Date.now(),
+    updatedAt: Date.parse(row.updated_at) || Date.now(),
+  };
+}
+
+async function withLoading(task, fallbackMessage, authArea = false) {
+  setLoading(true);
+  try {
+    clearAppMessage();
+    if (authArea) showAuthMessage("", false);
+    await task();
+  } catch (error) {
+    const message = error?.message ? String(error.message) : fallbackMessage;
+    if (authArea) {
+      showAuthMessage(`${fallbackMessage}\n詳細: ${message}`, true);
+    } else {
+      showAppMessage(`${fallbackMessage}\n詳細: ${message}`, true);
+    }
+  } finally {
+    setLoading(false);
+  }
+}
+
+function setLoading(isLoading) {
+  loadingOverlay.hidden = !isLoading;
+}
+
+function showAuthMessage(text, isError) {
+  authMessage.textContent = text;
+  authMessage.classList.toggle("error", isError);
+}
+
+function showAppMessage(text, isError) {
+  appMessage.textContent = text;
+  appMessage.classList.toggle("error", isError);
+}
+
+function clearAppMessage() {
+  showAppMessage("", false);
 }

@@ -5,147 +5,185 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>行政書士 案件・売上・経費管理</title>
     <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js" defer></script>
   </head>
   <body>
-    <header class="top-bar">
-      <h1>行政書士 案件・売上・経費管理</h1>
-      <p>案件管理＋売上/経費管理（localStorage保存）</p>
-    </header>
+    <div id="loading-overlay" class="loading-overlay" hidden>
+      <div class="loading-box">読み込み中です...</div>
+    </div>
 
-    <main class="container">
-      <nav class="tabs" aria-label="メイン機能">
-        <button type="button" class="tab-btn active" data-tab="cases">案件</button>
-        <button type="button" class="tab-btn" data-tab="sales">売上</button>
-        <button type="button" class="tab-btn" data-tab="expenses">経費</button>
-      </nav>
-
-      <section class="dashboard panel">
-        <h2>月次ダッシュボード</h2>
-        <div class="summary-grid" id="summary-grid"></div>
-      </section>
-
-      <section id="tab-cases" class="tab-panel active">
-        <div class="layout two-col">
-          <section class="panel">
-            <h2>新規案件登録</h2>
-            <form id="case-form" class="form">
-              <label>
-                顧客名 <span class="required">必須</span>
-                <input id="customer-name" name="customerName" type="text" required maxlength="80" />
-              </label>
-              <label>
-                案件名 <span class="required">必須</span>
-                <input id="case-name" name="caseName" type="text" required maxlength="120" />
-              </label>
-              <label>
-                見積金額（円）
-                <input id="amount" name="amount" type="number" min="0" step="1" />
-              </label>
-              <div class="date-grid">
-                <label>
-                  受付日
-                  <input id="received-date" name="receivedDate" type="date" />
-                </label>
-                <label>
-                  期限日
-                  <input id="due-date" name="dueDate" type="date" />
-                </label>
-              </div>
-              <label>
-                ステータス
-                <select id="status" name="status">
-                  <option value="未着手">未着手</option>
-                  <option value="進行中">進行中</option>
-                  <option value="完了">完了</option>
-                </select>
-              </label>
-              <button type="submit">案件を追加</button>
-            </form>
-          </section>
-
-          <section class="panel">
-            <div class="panel-title-row">
-              <h2>案件一覧（期限順）</h2>
-              <button id="clear-btn" type="button" class="danger-btn">全件削除</button>
-            </div>
-            <div id="case-empty" class="empty">案件はまだ登録されていません。</div>
-            <ul id="case-list" class="item-list"></ul>
-          </section>
-        </div>
-      </section>
-
-      <section id="tab-sales" class="tab-panel">
-        <div class="layout two-col">
-          <section class="panel">
-            <h2>売上登録</h2>
-            <form id="sale-form" class="form">
-              <label>
-                対象案件 <span class="required">必須</span>
-                <select id="sale-case-id" name="saleCaseId" required></select>
-              </label>
-              <label>
-                請求額（円） <span class="required">必須</span>
-                <input id="invoice-amount" name="invoiceAmount" type="number" min="0" step="1" required />
-              </label>
-              <label>
-                入金額（円）
-                <input id="paid-amount" name="paidAmount" type="number" min="0" step="1" />
-              </label>
-              <label>
-                入金日
-                <input id="paid-date" name="paidDate" type="date" />
-              </label>
-              <label class="checkbox">
-                <input id="is-unpaid" name="isUnpaid" type="checkbox" />
-                未入金フラグを立てる
-              </label>
-              <button type="submit">売上を登録</button>
-            </form>
-          </section>
-
-          <section class="panel">
-            <h2>売上一覧</h2>
-            <div id="sales-empty" class="empty">売上データはまだありません。</div>
-            <ul id="sales-list" class="item-list"></ul>
-          </section>
-        </div>
-      </section>
-
-      <section id="tab-expenses" class="tab-panel">
-        <div class="layout two-col">
-          <section class="panel">
-            <h2>経費登録</h2>
-            <form id="expense-form" class="form">
-              <div class="date-grid">
-                <label>
-                  日付 <span class="required">必須</span>
-                  <input id="expense-date" name="expenseDate" type="date" required />
-                </label>
-                <label>
-                  案件（任意）
-                  <select id="expense-case-id" name="expenseCaseId"></select>
-                </label>
-              </div>
-              <label>
-                内容 <span class="required">必須</span>
-                <input id="expense-content" name="expenseContent" type="text" maxlength="120" placeholder="例：交通費、印紙代" required />
-              </label>
-              <label>
-                金額（円） <span class="required">必須</span>
-                <input id="expense-amount" name="expenseAmount" type="number" min="0" step="1" required />
-              </label>
-              <button type="submit">経費を登録</button>
-            </form>
-          </section>
-
-          <section class="panel">
-            <h2>経費一覧</h2>
-            <div id="expenses-empty" class="empty">経費データはまだありません。</div>
-            <ul id="expenses-list" class="item-list"></ul>
-          </section>
-        </div>
+    <main class="auth-container" id="auth-view">
+      <section class="panel auth-panel">
+        <h1>ログイン</h1>
+        <p class="auth-caption">メールアドレスとパスワードでログインしてください。</p>
+        <form id="auth-form" class="form">
+          <label>
+            メールアドレス
+            <input id="auth-email" name="email" type="email" required />
+          </label>
+          <label>
+            パスワード
+            <input id="auth-password" name="password" type="password" minlength="6" required />
+          </label>
+          <div class="auth-actions">
+            <button id="login-btn" type="submit">ログイン</button>
+            <button id="signup-btn" type="button" class="secondary-btn">新規登録</button>
+          </div>
+        </form>
+        <p id="auth-message" class="message" aria-live="polite"></p>
       </section>
     </main>
+
+    <div id="app-view" hidden>
+      <header class="top-bar">
+        <div>
+          <h1>行政書士 案件・売上・経費管理</h1>
+          <p>案件管理＋売上/経費管理（Supabase保存）</p>
+        </div>
+        <div class="top-actions">
+          <span id="user-label" class="user-label"></span>
+          <button id="logout-btn" type="button" class="secondary-btn">ログアウト</button>
+        </div>
+      </header>
+
+      <main class="container">
+        <p id="app-message" class="message" aria-live="polite"></p>
+
+        <nav class="tabs" aria-label="メイン機能">
+          <button type="button" class="tab-btn active" data-tab="cases">案件</button>
+          <button type="button" class="tab-btn" data-tab="sales">売上</button>
+          <button type="button" class="tab-btn" data-tab="expenses">経費</button>
+        </nav>
+
+        <section class="dashboard panel">
+          <h2>月次ダッシュボード</h2>
+          <div class="summary-grid" id="summary-grid"></div>
+        </section>
+
+        <section id="tab-cases" class="tab-panel active">
+          <div class="layout two-col">
+            <section class="panel">
+              <h2>新規案件登録</h2>
+              <form id="case-form" class="form">
+                <label>
+                  顧客名 <span class="required">必須</span>
+                  <input id="customer-name" name="customerName" type="text" required maxlength="80" />
+                </label>
+                <label>
+                  案件名 <span class="required">必須</span>
+                  <input id="case-name" name="caseName" type="text" required maxlength="120" />
+                </label>
+                <label>
+                  見積金額（円）
+                  <input id="amount" name="amount" type="number" min="0" step="1" />
+                </label>
+                <div class="date-grid">
+                  <label>
+                    受付日
+                    <input id="received-date" name="receivedDate" type="date" />
+                  </label>
+                  <label>
+                    期限日
+                    <input id="due-date" name="dueDate" type="date" />
+                  </label>
+                </div>
+                <label>
+                  ステータス
+                  <select id="status" name="status">
+                    <option value="未着手">未着手</option>
+                    <option value="進行中">進行中</option>
+                    <option value="完了">完了</option>
+                  </select>
+                </label>
+                <button type="submit">案件を追加</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-title-row">
+                <h2>案件一覧（期限順）</h2>
+                <button id="clear-btn" type="button" class="danger-btn">全件削除</button>
+              </div>
+              <div id="case-empty" class="empty">案件はまだ登録されていません。</div>
+              <ul id="case-list" class="item-list"></ul>
+            </section>
+          </div>
+        </section>
+
+        <section id="tab-sales" class="tab-panel">
+          <div class="layout two-col">
+            <section class="panel">
+              <h2>売上登録</h2>
+              <form id="sale-form" class="form">
+                <label>
+                  対象案件 <span class="required">必須</span>
+                  <select id="sale-case-id" name="saleCaseId" required></select>
+                </label>
+                <label>
+                  請求額（円） <span class="required">必須</span>
+                  <input id="invoice-amount" name="invoiceAmount" type="number" min="0" step="1" required />
+                </label>
+                <label>
+                  入金額（円）
+                  <input id="paid-amount" name="paidAmount" type="number" min="0" step="1" />
+                </label>
+                <label>
+                  入金日
+                  <input id="paid-date" name="paidDate" type="date" />
+                </label>
+                <label class="checkbox">
+                  <input id="is-unpaid" name="isUnpaid" type="checkbox" />
+                  未入金フラグを立てる
+                </label>
+                <button type="submit">売上を登録</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <h2>売上一覧</h2>
+              <div id="sales-empty" class="empty">売上データはまだありません。</div>
+              <ul id="sales-list" class="item-list"></ul>
+            </section>
+          </div>
+        </section>
+
+        <section id="tab-expenses" class="tab-panel">
+          <div class="layout two-col">
+            <section class="panel">
+              <h2>経費登録</h2>
+              <form id="expense-form" class="form">
+                <div class="date-grid">
+                  <label>
+                    日付 <span class="required">必須</span>
+                    <input id="expense-date" name="expenseDate" type="date" required />
+                  </label>
+                  <label>
+                    案件（任意）
+                    <select id="expense-case-id" name="expenseCaseId"></select>
+                  </label>
+                </div>
+                <label>
+                  内容 <span class="required">必須</span>
+                  <input id="expense-content" name="expenseContent" type="text" maxlength="120" placeholder="例：交通費、印紙代" required />
+                </label>
+                <label>
+                  金額（円） <span class="required">必須</span>
+                  <input id="expense-amount" name="expenseAmount" type="number" min="0" step="1" required />
+                </label>
+                <button type="submit">経費を登録</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <h2>経費一覧</h2>
+              <div id="expenses-empty" class="empty">経費データはまだありません。</div>
+              <ul id="expenses-list" class="item-list"></ul>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
 
     <template id="case-item-template">
       <li class="item">
@@ -176,7 +214,5 @@
         <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
       </li>
     </template>
-
-    <script src="app.js" defer></script>
   </body>
 </html>
