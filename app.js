@@ -208,7 +208,8 @@ const estimateExpiredFilter = document.getElementById("estimate-expired-filter")
 let currentUser = null;
 let isResuming = false;
 let isLoggingOut = false;
-let loadingTimerId = null;
+let loadingCount = 0;
+let loadingTimeoutId = null;
 
 initialize();
 
@@ -225,7 +226,6 @@ if (window.location.protocol === "file:") {
 }
 
 async function initialize() {
-  showLoading(true);
   setAuthControlsDisabled(true);
   try {
     bindEvents();
@@ -235,18 +235,20 @@ async function initialize() {
     } = await sbClient.auth.getSession();
 
     currentUser = session?.user ?? null;
-    await applyAuthState();
+    await withLoading("初期化", async () => {
+      await applyAuthState();
+    }, { messageTarget: "auth" });
 
     sbClient.auth.onAuthStateChange(async (_event, sessionState) => {
-      showLoading(true);
+      if (isLoggingOut) return;
       try {
         currentUser = sessionState?.user ?? null;
-        await applyAuthState();
+        await withLoading("認証状態変更", async () => {
+          await applyAuthState();
+        }, { messageTarget: "auth" });
       } catch (error) {
         console.error("認証状態の更新に失敗しました。", error);
         showAuthMessage("認証状態の確認に失敗しました。ページを再読み込みしてください。", true);
-      } finally {
-        showLoading(false);
       }
     });
   } catch (error) {
@@ -255,7 +257,6 @@ async function initialize() {
     authView.hidden = false;
     appView.hidden = true;
   } finally {
-    showLoading(false);
     setAuthControlsDisabled(false);
   }
 }
@@ -308,7 +309,7 @@ function bindEvents() {
   window.addEventListener("focus", handleWindowFocus);
   window.addEventListener("pageshow", handlePageShow);
   loadingForceCloseBtn?.addEventListener("click", () => {
-    showLoading(false);
+    forceHideLoading();
     showAppMessage("読み込みを強制解除しました。必要なら再操作してください。", true);
   });
   exportCasesCsvBtn?.addEventListener("click", handleExportCasesCsv);
@@ -473,17 +474,17 @@ function clearDailyReportFilters() {
 
 async function handleVisibilityChange() {
   if (document.hidden) return;
-  showLoading(false);
+  forceHideLoading();
   await handleResumeRefresh("visibilitychange");
 }
 
 async function handleWindowFocus() {
-  showLoading(false);
+  forceHideLoading();
   await handleResumeRefresh("focus");
 }
 
 async function handlePageShow() {
-  showLoading(false);
+  forceHideLoading();
   await handleResumeRefresh("pageshow");
 }
 
@@ -513,16 +514,14 @@ async function applyAuthState() {
   appView.hidden = false;
   userLabel.textContent = currentUser.email || "ログイン中";
 
-  await withLoading("データの読み込み", async () => {
-    await loadAllData();
-    resetCaseForm();
-    resetEstimateForm();
-    resetSaleForm();
-    resetExpenseForm();
-    resetFixedExpenseForm();
-    resetDailyReportForm();
-    renderAfterDataChanged();
-  });
+  await loadAllData();
+  resetCaseForm();
+  resetEstimateForm();
+  resetSaleForm();
+  resetExpenseForm();
+  resetFixedExpenseForm();
+  resetDailyReportForm();
+  renderAfterDataChanged();
 }
 
 async function handleLogin(event) {
@@ -558,13 +557,16 @@ async function handleLogout() {
   try {
     await withLoading("ログアウト", async () => {
       currentUser = null;
+      clearAppState();
+      authView.hidden = false;
+      appView.hidden = true;
       const { error } = await sbClient.auth.signOut();
       if (error) throw error;
-      clearAppState();
       showAuthMessage("ログアウトしました。", false);
       authForm.reset();
     }, { messageTarget: "auth", triggerButton: logoutBtn });
   } finally {
+    forceHideLoading();
     isLoggingOut = false;
   }
 }
@@ -611,12 +613,10 @@ async function loadAllData() {
   }
 }
 
-async function refreshAfterMutation(successMessage, taskName = "") {
+async function refreshAfterMutation(message) {
   await loadAllData();
-  console.log("loadAllData done", taskName);
   renderAfterDataChanged();
-  console.log("render done", taskName);
-  if (successMessage) showAppMessage(successMessage, false);
+  if (message) showAppMessage(message, false);
 }
 
 async function handleClientSubmit(event) {
@@ -973,7 +973,6 @@ async function handleCaseListAction(event) {
 }
 
 async function startCaseEdit(caseId) {
-  await withLoading("編集ボタン処理", async () => {
     const target = state.cases.find((entry) => entry.id === caseId);
     if (!target) return;
     subtabState.cases = "entry";
@@ -994,8 +993,8 @@ async function startCaseEdit(caseId) {
     caseForm.elements.status.value = normalizeStatus(target.status);
     caseSubmitBtn.textContent = "案件を更新";
     caseForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
 }
+
 
 async function handleSalesListAction(event) {
   const btn = event.target.closest("button");
@@ -1081,7 +1080,6 @@ function handleBillingLeakAlertAction(event) {
 }
 
 async function startSaleEdit(saleId) {
-  await withLoading("編集ボタン処理", async () => {
     const target = state.sales.find((entry) => entry.id === saleId);
     if (!target) return;
     subtabState.sales = "entry";
@@ -1094,11 +1092,10 @@ async function startSaleEdit(saleId) {
     saleForm.elements.isUnpaid.checked = Boolean(target.isUnpaid);
     saleSubmitBtn.textContent = "売上を更新";
     saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
 }
 
+
 async function startExpenseEdit(expenseId) {
-  await withLoading("編集ボタン処理", async () => {
     const target = state.expenses.find((entry) => entry.id === expenseId);
     if (!target) return;
     subtabState.expenses = "entry";
@@ -1113,8 +1110,8 @@ async function startExpenseEdit(expenseId) {
     expenseCaseSelect.value = target.caseId || "";
     expenseSubmitBtn.textContent = "経費を更新";
     expenseForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
 }
+
 
 function openSaleFormForCase(caseId) {
   const targetCase = state.cases.find((entry) => entry.id === caseId);
@@ -1130,7 +1127,6 @@ function openSaleFormForCase(caseId) {
 }
 
 async function startFixedExpenseEdit(fixedExpenseId) {
-  await withLoading("編集ボタン処理", async () => {
     const target = state.fixedExpenses.find((entry) => entry.id === fixedExpenseId);
     if (!target) return;
     activateTab("expenses");
@@ -1142,8 +1138,8 @@ async function startFixedExpenseEdit(fixedExpenseId) {
     fixedExpenseForm.elements.fixedExpenseActive.checked = Boolean(target.active);
     fixedExpenseSubmitBtn.textContent = "固定費を更新";
     fixedExpenseForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
 }
+
 
 async function handleFixedExpensesListAction(event) {
   const btn = event.target;
@@ -1213,7 +1209,6 @@ async function handleDailyReportsListAction(event) {
 }
 
 async function startDailyReportEdit(dailyReportId) {
-  await withLoading("編集ボタン処理", async () => {
     const target = state.dailyReports.find((entry) => entry.id === dailyReportId);
     if (!target) return;
     subtabState["daily-reports"] = "entry";
@@ -1227,8 +1222,8 @@ async function startDailyReportEdit(dailyReportId) {
     dailyReportForm.elements.reportMemo.value = target.memo || "";
     dailyReportSubmitBtn.textContent = "日報を更新";
     dailyReportForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
 }
+
 
 async function editSale(saleId) {
   await startSaleEdit(saleId);
@@ -1447,11 +1442,8 @@ async function handleCsvImportSubmit(event) {
     const text = await readCsvFileTextWithEncodingFallback(file);
     const result = await importCsvByType(importType, text);
     console.log("DB success", "CSV取込");
-    await loadAllData();
-    console.log("loadAllData done", "CSV取込");
-    renderAfterDataChanged();
-    console.log("render done", "CSV取込");
-    showAppMessage(`CSV取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, result.errorCount > 0);
+    await refreshAfterMutation(`CSV取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`);
+    if (result.errorCount > 0) showAppMessage(`CSV取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, true);
     csvImportForm.reset();
   }, { triggerButton: event.submitter });
 }
@@ -1571,11 +1563,8 @@ async function handleExcelImportSubmit(event) {
     const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
     const result = await importWorkbookBySheet(workbook);
     console.log("DB success", "Excel取込");
-    await loadAllData();
-    console.log("loadAllData done", "Excel取込");
-    renderAfterDataChanged();
-    console.log("render done", "Excel取込");
-    showAppMessage(`Excel取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, result.errorCount > 0);
+    await refreshAfterMutation(`Excel取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`);
+    if (result.errorCount > 0) showAppMessage(`Excel取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, true);
     excelImportForm.reset();
   }, { triggerButton: event.submitter });
 }
@@ -2650,7 +2639,6 @@ function resolveDailyReportCaseName(caseId) {
 }
 
 async function startEstimateEdit(estimateId) {
-  await withLoading("編集ボタン処理", async () => {
     const target = state.estimates.find((entry) => entry.id === estimateId);
     if (!target || !estimateForm) return;
     subtabState.estimates = "create";
@@ -2670,8 +2658,8 @@ async function startEstimateEdit(estimateId) {
     recalcEstimateTotals();
     estimateSubmitBtn.textContent = "見積を更新";
     estimateForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
 }
+
 
 function resetEstimateForm() {
   resetEditMode("estimate");
@@ -4414,10 +4402,47 @@ function setSubmitButtonsDisabled(disabled) {
   });
 }
 
+function updateLoadingOverlay() {
+  if (!loadingOverlay) return;
+  const isLoading = loadingCount > 0;
+  loadingOverlay.hidden = !isLoading;
+  loadingOverlay.style.display = isLoading ? "grid" : "none";
+}
+
+function startLoading(taskName) {
+  loadingCount += 1;
+  console.log("LOADING START", taskName, loadingCount);
+  updateLoadingOverlay();
+  if (loadingTimeoutId) window.clearTimeout(loadingTimeoutId);
+  loadingTimeoutId = window.setTimeout(() => {
+    console.warn("LOADING TIMEOUT FORCE HIDE");
+    forceHideLoading();
+    showAppMessage("読み込みが長時間継続したため自動解除しました。", true);
+  }, 10000);
+}
+
+function endLoading(taskName) {
+  loadingCount = Math.max(0, loadingCount - 1);
+  console.log("LOADING END", taskName, loadingCount);
+  if (loadingCount === 0 && loadingTimeoutId) {
+    window.clearTimeout(loadingTimeoutId);
+    loadingTimeoutId = null;
+  }
+  updateLoadingOverlay();
+}
+
+function forceHideLoading() {
+  loadingCount = 0;
+  if (loadingTimeoutId) {
+    window.clearTimeout(loadingTimeoutId);
+    loadingTimeoutId = null;
+  }
+  updateLoadingOverlay();
+}
+
 async function withLoading(taskName, asyncFn, options = {}) {
   const { messageTarget = "app", triggerButton = null } = options;
-  console.log("START", taskName);
-  showLoading(true);
+  startLoading(taskName);
   setSubmitButtonsDisabled(true);
   if (triggerButton instanceof HTMLButtonElement) triggerButton.disabled = true;
   try {
@@ -4437,35 +4462,20 @@ async function withLoading(taskName, asyncFn, options = {}) {
   } finally {
     setSubmitButtonsDisabled(false);
     if (triggerButton instanceof HTMLButtonElement) triggerButton.disabled = false;
-    showLoading(false);
-    console.log("END", taskName);
-  }
-}
-
-function showLoading(show) {
-  if (!loadingOverlay) return;
-  if (loadingTimerId) {
-    window.clearTimeout(loadingTimerId);
-    loadingTimerId = null;
-  }
-
-  loadingOverlay.hidden = !show;
-  loadingOverlay.style.display = show ? "grid" : "none";
-
-  if (show) {
-    loadingTimerId = window.setTimeout(() => {
-      showLoading(false);
-      showAppMessage("読み込みが長時間継続したため自動解除しました。", true);
-    }, 10000);
+    endLoading(taskName);
   }
 }
 
 function setLoading(isLoading) {
-  showLoading(isLoading);
+  if (isLoading) {
+    startLoading("setLoading");
+  } else {
+    forceHideLoading();
+  }
 }
 
 function clearLoadingState() {
-  showLoading(false);
+  forceHideLoading();
 }
 
 function setAuthControlsDisabled(disabled) {
@@ -4488,6 +4498,33 @@ function clearAppMessage() {
   showAppMessage("", false);
 }
 
+function resetViewState() {
+  state.selectedAggregation = "month";
+  state.selectedMonth = toMonthKey(new Date());
+  state.selectedYear = new Date().getFullYear();
+  state.caseStatusFilter = "all";
+  state.caseSearchQuery = "";
+  state.caseDeadlineFilter = "all";
+  state.salesSearchQuery = "";
+  state.expensesSearchQuery = "";
+  state.dailyReportSearchQuery = "";
+  state.dailyReportDateFilter = "all";
+  state.estimateCustomerQuery = "";
+  state.estimateTitleQuery = "";
+  state.estimateStatusFilter = "all";
+  state.estimateExpiredFilter = "all";
+}
+
+function resetEditState() {
+  editState.clientId = null;
+  editState.caseId = null;
+  editState.saleId = null;
+  editState.expenseId = null;
+  editState.fixedExpenseId = null;
+  editState.dailyReportId = null;
+  editState.estimateId = null;
+}
+
 function clearAppState() {
   currentUser = null;
   state.clients = [];
@@ -4498,6 +4535,8 @@ function clearAppState() {
   state.expenses = [];
   state.fixedExpenses = [];
   state.dailyReports = [];
+  resetViewState();
+  resetEditState();
   resetClientForm();
   resetCaseForm();
   resetEstimateForm();
