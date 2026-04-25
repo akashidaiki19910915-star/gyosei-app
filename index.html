@@ -515,6 +515,22 @@
                   <input id="expense-content" name="expenseContent" type="text" maxlength="120" placeholder="例：交通費、印紙代" required />
                 </label>
                 <label>
+                  支払先
+                  <input id="expense-payee" name="expensePayee" type="text" maxlength="120" placeholder="例：JR西日本、〇〇文具店" />
+                </label>
+                <label>
+                  支払方法
+                  <select id="expense-payment-method" name="expensePaymentMethod">
+                    <option value="">未設定</option>
+                    <option value="現金">現金</option>
+                    <option value="クレジットカード">クレジットカード</option>
+                    <option value="銀行振込">銀行振込</option>
+                    <option value="電子マネー">電子マネー</option>
+                    <option value="口座振替">口座振替</option>
+                    <option value="その他">その他</option>
+                  </select>
+                </label>
+                <label>
                   金額（円） <span class="required">必須</span>
                   <input id="expense-amount" name="expenseAmount" type="number" min="0" step="1" required />
                 </label>
@@ -527,7 +543,7 @@
               <div class="search-filter-bar">
                 <label class="inline-field">
                   検索
-                  <input id="expenses-search-input" type="text" placeholder="内容・案件名・金額で検索" />
+                  <input id="expenses-search-input" type="text" placeholder="内容・支払先・支払方法・案件名・金額で検索" />
                 </label>
                 <button id="expenses-filter-clear-btn" type="button" class="secondary-btn">条件クリア</button>
               </div>
