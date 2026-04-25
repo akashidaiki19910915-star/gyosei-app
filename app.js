@@ -70,6 +70,9 @@ const exportFixedExpensesCsvBtn = document.getElementById("export-fixed-expenses
 const exportAllCsvBtn = document.getElementById("export-all-csv-btn");
 const csvImportForm = document.getElementById("csv-import-form");
 const exportExcelBtn = document.getElementById("export-excel-btn");
+const exportAnalysisExcelBtn = document.getElementById("export-analysis-excel-btn");
+const exportClientAnalysisCsvBtn = document.getElementById("export-client-analysis-csv-btn");
+const exportReferralAnalysisCsvBtn = document.getElementById("export-referral-analysis-csv-btn");
 const excelImportForm = document.getElementById("excel-import-form");
 
 const tabs = Array.from(document.querySelectorAll(".tab-btn"));
@@ -117,6 +120,14 @@ const billingLeakAlertListWrap = document.getElementById("billing-leak-alert-lis
 const unpaidListBody = document.getElementById("unpaid-list-body");
 const unpaidListEmpty = document.getElementById("unpaid-list-empty");
 const unpaidListWrap = document.getElementById("unpaid-list-wrap");
+const analysisPeriodLabel = document.getElementById("analysis-period-label");
+const clientAnalysisBody = document.getElementById("client-analysis-body");
+const clientAnalysisEmpty = document.getElementById("client-analysis-empty");
+const clientAnalysisWrap = document.getElementById("client-analysis-wrap");
+const referralAnalysisBody = document.getElementById("referral-analysis-body");
+const referralAnalysisEmpty = document.getElementById("referral-analysis-empty");
+const referralAnalysisWrap = document.getElementById("referral-analysis-wrap");
+const analyticsRankingGrid = document.getElementById("analytics-ranking-grid");
 const statusSummaryList = document.getElementById("status-summary-list");
 const statusSummaryTotal = document.getElementById("status-summary-total");
 const statusFilterClearBtn = document.getElementById("status-filter-clear-btn");
@@ -318,8 +329,11 @@ function bindEvents() {
   exportExpensesCsvBtn?.addEventListener("click", handleExportExpensesCsv);
   exportFixedExpensesCsvBtn?.addEventListener("click", handleExportFixedExpensesCsv);
   exportAllCsvBtn?.addEventListener("click", handleExportAllCsv);
+  exportClientAnalysisCsvBtn?.addEventListener("click", handleExportClientAnalysisCsv);
+  exportReferralAnalysisCsvBtn?.addEventListener("click", handleExportReferralAnalysisCsv);
   csvImportForm?.addEventListener("submit", handleCsvImportSubmit);
   exportExcelBtn?.addEventListener("click", handleExportExcel);
+  exportAnalysisExcelBtn?.addEventListener("click", handleExportAnalysisExcel);
   excelImportForm?.addEventListener("submit", handleExcelImportSubmit);
   estimateAddItemBtn?.addEventListener("click", () => addEstimateItemRow());
   estimateItemsWrap?.addEventListener("input", handleEstimateItemsInput);
@@ -348,7 +362,8 @@ function bindEvents() {
 
 function handleAggregationChange(event) {
   const next = event?.target?.value;
-  state.selectedAggregation = next === "year" ? "year" : "month";
+  if (next === "all") state.selectedAggregation = "all";
+  else state.selectedAggregation = next === "year" ? "year" : "month";
   renderDashboard();
 }
 
@@ -1640,6 +1655,33 @@ function handleExportAllCsv() {
   downloadCsvFile("all_data.csv", headers, rows);
 }
 
+function handleExportClientAnalysisCsv() {
+  const { clientRows } = buildClientAndReferralAnalytics(getActiveDashboardFilter());
+  const rows = clientRows.map((row) => ({
+    client_name: row.clientName,
+    case_count: row.caseCount,
+    sales_total: row.salesTotal,
+    expense_total: row.expenseTotal,
+    profit: row.profit,
+    unpaid_total: row.unpaidTotal,
+    last_case_date: row.lastCaseDate || "",
+  }));
+  downloadCsvFile("client_analysis.csv", ["client_name", "case_count", "sales_total", "expense_total", "profit", "unpaid_total", "last_case_date"], rows);
+}
+
+function handleExportReferralAnalysisCsv() {
+  const { referralRows } = buildClientAndReferralAnalytics(getActiveDashboardFilter());
+  const rows = referralRows.map((row) => ({
+    referral_source: row.referralSource,
+    client_count: row.clientCount,
+    case_count: row.caseCount,
+    sales_total: row.salesTotal,
+    profit: row.profit,
+    unpaid_total: row.unpaidTotal,
+  }));
+  downloadCsvFile("referral_analysis.csv", ["referral_source", "client_count", "case_count", "sales_total", "profit", "unpaid_total"], rows);
+}
+
 async function handleCsvImportSubmit(event) {
   event.preventDefault();
   if (!currentUser || !csvImportForm) return;
@@ -1665,6 +1707,12 @@ async function handleCsvImportSubmit(event) {
 function handleExportExcel() {
   withLoading("帳票出力", async () => {
     exportExcel();
+  }).catch(() => {});
+}
+
+function handleExportAnalysisExcel() {
+  withLoading("分析出力", async () => {
+    exportAnalysisExcel();
   }).catch(() => {});
 }
 
@@ -1748,6 +1796,51 @@ function exportExcel() {
   } catch (error) {
     console.error("Excel出力に失敗しました。", error);
     showAppMessage("Excel出力に失敗しました。", true);
+  }
+}
+
+function exportAnalysisExcel() {
+  if (!window.XLSX) {
+    showAppMessage("Excel出力ライブラリの読み込みに失敗しました", true);
+    return;
+  }
+
+  try {
+    const filter = getActiveDashboardFilter();
+    const analytics = buildClientAndReferralAnalytics(filter);
+    const workbook = XLSX.utils.book_new();
+    const clientRows = analytics.clientRows.map((row) => ({
+      client_name: row.clientName,
+      case_count: row.caseCount,
+      sales_total: row.salesTotal,
+      expense_total: row.expenseTotal,
+      profit: row.profit,
+      unpaid_total: row.unpaidTotal,
+      last_case_date: row.lastCaseDate || "",
+    }));
+    const referralRows = analytics.referralRows.map((row) => ({
+      referral_source: row.referralSource,
+      client_count: row.clientCount,
+      case_count: row.caseCount,
+      sales_total: row.salesTotal,
+      profit: row.profit,
+      unpaid_total: row.unpaidTotal,
+    }));
+    XLSX.utils.book_append_sheet(
+      workbook,
+      createExcelSheet(clientRows, ["client_name", "case_count", "sales_total", "expense_total", "profit", "unpaid_total", "last_case_date"]),
+      "顧客別分析",
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      createExcelSheet(referralRows, ["referral_source", "client_count", "case_count", "sales_total", "profit", "unpaid_total"]),
+      "紹介元別分析",
+    );
+    XLSX.writeFile(workbook, "gyosei-analysis-export.xlsx");
+    showAppMessage("分析Excelを出力しました。", false);
+  } catch (error) {
+    console.error("分析Excel出力に失敗しました。", error);
+    showAppMessage("分析Excel出力に失敗しました。", true);
   }
 }
 
@@ -1887,7 +1980,7 @@ function renderDashboard() {
   if (!summaryGrid) return;
   state.selectedMonth = normalizeMonthKey(state.selectedMonth) || toMonthKey(new Date());
   state.selectedYear = normalizeYear(state.selectedYear) || new Date().getFullYear();
-  state.selectedAggregation = state.selectedAggregation === "year" ? "year" : "month";
+  state.selectedAggregation = ["all", "month", "year"].includes(state.selectedAggregation) ? state.selectedAggregation : "month";
 
   aggregationRadios.forEach((radio) => {
     radio.checked = radio.value === state.selectedAggregation;
@@ -1901,17 +1994,18 @@ function renderDashboard() {
   const expenseByMonth = aggregateByMonth(state.expenses, (e) => e.date, (e) => e.amount);
   const reportByMonth = aggregateByMonth(state.dailyReports, (r) => r.reportDate, (r) => r.workMinutes);
   const isYearMode = state.selectedAggregation === "year";
+  const isAllMode = state.selectedAggregation === "all";
 
-  const sales = isYearMode ? sumYearFromMonthlyMap(salesByMonth, state.selectedYear) : salesByMonth[state.selectedMonth] || 0;
-  const expenses = isYearMode ? sumYearFromMonthlyMap(expenseByMonth, state.selectedYear) : expenseByMonth[state.selectedMonth] || 0;
-  const workMinutes = isYearMode ? sumYearFromMonthlyMap(reportByMonth, state.selectedYear) : reportByMonth[state.selectedMonth] || 0;
+  const sales = isAllMode ? sumValues(salesByMonth) : (isYearMode ? sumYearFromMonthlyMap(salesByMonth, state.selectedYear) : salesByMonth[state.selectedMonth] || 0);
+  const expenses = isAllMode ? sumValues(expenseByMonth) : (isYearMode ? sumYearFromMonthlyMap(expenseByMonth, state.selectedYear) : expenseByMonth[state.selectedMonth] || 0);
+  const workMinutes = isAllMode ? sumValues(reportByMonth) : (isYearMode ? sumYearFromMonthlyMap(reportByMonth, state.selectedYear) : reportByMonth[state.selectedMonth] || 0);
   const profit = sales - expenses;
 
   summaryGrid.innerHTML = "";
-  const labelPrefix = isYearMode ? "年別" : "月別";
-  const targetLabel = isYearMode ? `${state.selectedYear}年` : monthLabel(state.selectedMonth);
+  const labelPrefix = isAllMode ? "全期間" : (isYearMode ? "年別" : "月別");
+  const targetLabel = isAllMode ? "全期間" : (isYearMode ? `${state.selectedYear}年` : monthLabel(state.selectedMonth));
   [
-    { label: isYearMode ? "対象年" : "対象月", value: targetLabel, cls: "" },
+    { label: isAllMode ? "対象期間" : (isYearMode ? "対象年" : "対象月"), value: targetLabel, cls: "" },
     { label: `${labelPrefix}売上合計`, value: formatCurrency(sales), cls: "" },
     { label: `${labelPrefix}経費合計`, value: formatCurrency(expenses), cls: "" },
     { label: `${labelPrefix}作業時間`, value: formatMinutes(workMinutes), cls: "" },
@@ -1941,6 +2035,7 @@ function renderDashboard() {
   });
   renderDashboardWorktimeSummary();
   renderUnpaidList();
+  renderAnalyticsSection();
 }
 
 function renderTodayTaskCard() {
@@ -2179,7 +2274,9 @@ function renderUnpaidAlert(filter = {}) {
   if (unpaidAlertPeriod) {
     unpaidAlertPeriod.textContent = filter.mode === "year"
       ? `対象年(${filter.year}年): ${periodCount}件 / ${formatCurrency(periodAmount)}`
-      : `対象月(${monthLabel(filter.monthKey || state.selectedMonth)}): ${periodCount}件 / ${formatCurrency(periodAmount)}`;
+      : filter.mode === "month"
+        ? `対象月(${monthLabel(filter.monthKey || state.selectedMonth)}): ${periodCount}件 / ${formatCurrency(periodAmount)}`
+        : `全期間: ${periodCount}件 / ${formatCurrency(periodAmount)}`;
   }
   if (unpaidAlertEmpty) unpaidAlertEmpty.hidden = count > 0;
   if (unpaidAlertListWrap) unpaidAlertListWrap.hidden = count === 0;
@@ -2226,6 +2323,205 @@ function renderUnpaidList() {
     `;
     tr.classList.add(getSaleRowClass(sale));
     unpaidListBody.appendChild(tr);
+  });
+}
+
+function getActiveDashboardFilter() {
+  if (state.selectedAggregation === "month") {
+    return { mode: "month", monthKey: state.selectedMonth };
+  }
+  if (state.selectedAggregation === "year") {
+    return { mode: "year", year: state.selectedYear };
+  }
+  return { mode: "all" };
+}
+
+function normalizeNameKey(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function getCaseAnalysisDate(caseEntry) {
+  return caseEntry.receivedDate || toDateString(caseEntry.createdAt);
+}
+
+function resolveClientForCase(caseEntry, clientById, clientsByNameKey) {
+  const byId = caseEntry.clientId ? clientById.get(caseEntry.clientId) : null;
+  if (byId) return byId;
+  const matched = clientsByNameKey.get(normalizeNameKey(caseEntry.customerName));
+  return matched || null;
+}
+
+function buildClientAndReferralAnalytics(filter = {}) {
+  const clientById = new Map(state.clients.map((client) => [client.id, client]));
+  const clientsByNameKey = new Map();
+  state.clients.forEach((client) => {
+    const key = normalizeNameKey(client.name);
+    if (key && !clientsByNameKey.has(key)) clientsByNameKey.set(key, client);
+  });
+  const caseById = new Map(state.cases.map((entry) => [entry.id, entry]));
+  const clientMap = new Map();
+
+  const ensureClientRow = (name) => {
+    const key = String(name || "未設定");
+    if (!clientMap.has(key)) {
+      clientMap.set(key, {
+        clientName: key,
+        referralSource: "未設定",
+        caseCount: 0,
+        salesTotal: 0,
+        expenseTotal: 0,
+        unpaidTotal: 0,
+        lastCaseDate: "",
+      });
+    }
+    return clientMap.get(key);
+  };
+
+  state.cases.forEach((entry) => {
+    const client = resolveClientForCase(entry, clientById, clientsByNameKey);
+    const clientName = client?.name || entry.customerName || "未設定";
+    const row = ensureClientRow(clientName);
+    row.referralSource = client?.referralSource || row.referralSource || "未設定";
+    const caseDate = getCaseAnalysisDate(entry);
+    if (isWithinFilterDate(caseDate, filter)) {
+      row.caseCount += 1;
+      if (!row.lastCaseDate || toSortTimestamp(caseDate) > toSortTimestamp(row.lastCaseDate)) {
+        row.lastCaseDate = caseDate;
+      }
+    }
+  });
+
+  state.sales.forEach((sale) => {
+    const linkedCase = caseById.get(sale.caseId);
+    if (!linkedCase) return;
+    if (!isWithinFilterDate(sale.paidDate || sale.createdAt, filter)) return;
+    const client = resolveClientForCase(linkedCase, clientById, clientsByNameKey);
+    const clientName = client?.name || linkedCase.customerName || "未設定";
+    const row = ensureClientRow(clientName);
+    row.referralSource = client?.referralSource || row.referralSource || "未設定";
+    row.salesTotal += sale.invoiceAmount || 0;
+    row.unpaidTotal += getRemainingAmount(sale);
+  });
+
+  state.expenses.forEach((expense) => {
+    if (!expense.caseId) return;
+    const linkedCase = caseById.get(expense.caseId);
+    if (!linkedCase) return;
+    if (!isWithinFilterDate(expense.date, filter)) return;
+    const client = resolveClientForCase(linkedCase, clientById, clientsByNameKey);
+    const clientName = client?.name || linkedCase.customerName || "未設定";
+    const row = ensureClientRow(clientName);
+    row.referralSource = client?.referralSource || row.referralSource || "未設定";
+    row.expenseTotal += expense.amount || 0;
+  });
+
+  const clientRows = Array.from(clientMap.values())
+    .map((row) => ({
+      ...row,
+      referralSource: row.referralSource || "未設定",
+      profit: row.salesTotal - row.expenseTotal,
+    }))
+    .filter((row) => row.caseCount > 0 || row.salesTotal > 0 || row.expenseTotal > 0 || row.unpaidTotal > 0)
+    .sort((a, b) => {
+      if (b.salesTotal !== a.salesTotal) return b.salesTotal - a.salesTotal;
+      return a.clientName.localeCompare(b.clientName, "ja");
+    });
+
+  const referralMap = new Map();
+  clientRows.forEach((row) => {
+    const key = row.referralSource || "未設定";
+    if (!referralMap.has(key)) {
+      referralMap.set(key, { referralSource: key, clientCount: 0, caseCount: 0, salesTotal: 0, expenseTotal: 0, unpaidTotal: 0 });
+    }
+    const current = referralMap.get(key);
+    current.clientCount += 1;
+    current.caseCount += row.caseCount;
+    current.salesTotal += row.salesTotal;
+    current.expenseTotal += row.expenseTotal;
+    current.unpaidTotal += row.unpaidTotal;
+  });
+
+  const referralRows = Array.from(referralMap.values())
+    .map((row) => ({ ...row, profit: row.salesTotal - row.expenseTotal }))
+    .sort((a, b) => b.profit - a.profit);
+
+  return { clientRows, referralRows };
+}
+
+function renderAnalyticsSection() {
+  if (!clientAnalysisBody || !referralAnalysisBody || !analyticsRankingGrid) return;
+  const filter = getActiveDashboardFilter();
+  const { clientRows, referralRows } = buildClientAndReferralAnalytics(filter);
+  if (analysisPeriodLabel) {
+    analysisPeriodLabel.textContent = `対象期間: ${filter.mode === "year" ? `${filter.year}年` : filter.mode === "month" ? monthLabel(filter.monthKey) : "全期間"}`;
+  }
+
+  clientAnalysisBody.innerHTML = "";
+  if (clientAnalysisWrap) clientAnalysisWrap.hidden = clientRows.length === 0;
+  if (clientAnalysisEmpty) clientAnalysisEmpty.hidden = clientRows.length > 0;
+  clientRows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(row.clientName)}</td>
+      <td>${row.caseCount}件</td>
+      <td>${formatCurrency(row.salesTotal)}</td>
+      <td>${formatCurrency(row.expenseTotal)}</td>
+      <td class="${row.profit < 0 ? "loss-text" : ""}">${formatCurrency(row.profit)}</td>
+      <td class="${row.unpaidTotal > 0 ? "analysis-unpaid-text" : ""}">${formatCurrency(row.unpaidTotal)}${row.unpaidTotal > 0 ? " ⚠️" : ""}</td>
+      <td>${formatDate(row.lastCaseDate)}</td>
+    `;
+    clientAnalysisBody.appendChild(tr);
+  });
+
+  referralAnalysisBody.innerHTML = "";
+  if (referralAnalysisWrap) referralAnalysisWrap.hidden = referralRows.length === 0;
+  if (referralAnalysisEmpty) referralAnalysisEmpty.hidden = referralRows.length > 0;
+  referralRows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(row.referralSource || "未設定")}</td>
+      <td>${row.clientCount}件</td>
+      <td>${row.caseCount}件</td>
+      <td>${formatCurrency(row.salesTotal)}</td>
+      <td class="${row.profit < 0 ? "loss-text" : ""}">${formatCurrency(row.profit)}</td>
+      <td class="${row.unpaidTotal > 0 ? "analysis-unpaid-text" : ""}">${formatCurrency(row.unpaidTotal)}${row.unpaidTotal > 0 ? " ⚠️" : ""}</td>
+    `;
+    referralAnalysisBody.appendChild(tr);
+  });
+
+  renderAnalyticsRankings(clientRows, referralRows);
+}
+
+function renderAnalyticsRankings(clientRows, referralRows) {
+  if (!analyticsRankingGrid) return;
+  analyticsRankingGrid.innerHTML = "";
+  const rankingDefs = [
+    { label: "売上上位顧客", rows: clientRows.slice().sort((a, b) => b.salesTotal - a.salesTotal), accessor: (row) => row.salesTotal },
+    { label: "利益上位顧客", rows: clientRows.slice().sort((a, b) => b.profit - a.profit), accessor: (row) => row.profit },
+    { label: "未入金額上位顧客", rows: clientRows.slice().sort((a, b) => b.unpaidTotal - a.unpaidTotal), accessor: (row) => row.unpaidTotal },
+    { label: "紹介元別利益ランキング", rows: referralRows.slice().sort((a, b) => b.profit - a.profit), accessor: (row) => row.profit, referral: true },
+  ];
+  rankingDefs.forEach((def) => {
+    const wrap = document.createElement("section");
+    wrap.className = "summary-card analytics-ranking-card";
+    const topRows = def.rows.filter((row) => def.accessor(row) > 0).slice(0, 5);
+    wrap.innerHTML = `<p class="label">${def.label}</p>`;
+    if (!topRows.length) {
+      wrap.innerHTML += `<p class="meta">データなし</p>`;
+    } else {
+      const ol = document.createElement("ol");
+      ol.className = "analytics-ranking-list";
+      topRows.forEach((row, idx) => {
+        const value = def.accessor(row);
+        const name = def.referral ? (row.referralSource || "未設定") : row.clientName;
+        const li = document.createElement("li");
+        li.className = value < 0 ? "loss-text" : "";
+        li.textContent = `${idx + 1}. ${name}：${formatCurrency(value)}`;
+        ol.appendChild(li);
+      });
+      wrap.appendChild(ol);
+    }
+    analyticsRankingGrid.appendChild(wrap);
   });
 }
 
@@ -3928,6 +4224,10 @@ function sumYearFromMonthlyMap(monthlyMap, year) {
     total += monthlyMap[key] || 0;
   }
   return total;
+}
+
+function sumValues(valueMap) {
+  return Object.values(valueMap || {}).reduce((sum, value) => sum + (Number(value) || 0), 0);
 }
 
 function formatCurrency(value) {

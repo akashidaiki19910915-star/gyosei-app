@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-    <script src="app.js?v=20260424-office-info-update" defer></script>
+    <script src="app.js?v=20260425-client-referral-analytics" defer></script>
   </head>
   <body>
     <div id="loading-overlay" class="loading-overlay" hidden>
@@ -91,6 +91,7 @@
               <h2>Excel出力</h2>
               <div class="csv-actions">
                 <button id="export-excel-btn" type="button">Excel出力（.xlsx）</button>
+                <button id="export-analysis-excel-btn" type="button" class="secondary-btn">分析Excel</button>
               </div>
             </section>
             <section>
@@ -241,6 +242,7 @@
           <div class="dashboard-filter-group case-dashboard-block">
             <fieldset class="aggregation-switch" aria-label="集計単位の切替">
               <legend>集計単位</legend>
+              <label><input type="radio" name="aggregation-unit" value="all" /> 全期間</label>
               <label><input type="radio" name="aggregation-unit" value="month" checked /> 月別</label>
               <label><input type="radio" name="aggregation-unit" value="year" /> 年別</label>
             </fieldset>
@@ -291,6 +293,56 @@
               <tbody id="unpaid-list-body"></tbody>
             </table>
           </div>
+          <section class="panel case-dashboard-block analytics-panel">
+            <div class="panel-title-row analytics-header-row">
+              <h3 class="subheading analytics-heading">顧客別・紹介元別分析</h3>
+              <div class="csv-actions">
+                <button id="export-client-analysis-csv-btn" type="button" class="secondary-btn">顧客別分析CSV</button>
+                <button id="export-referral-analysis-csv-btn" type="button" class="secondary-btn">紹介元別分析CSV</button>
+              </div>
+            </div>
+            <p id="analysis-period-label" class="meta">対象期間: 全期間</p>
+
+            <h4 class="subheading analytics-subheading">顧客別分析</h4>
+            <div id="client-analysis-empty" class="empty">顧客別分析データはありません。</div>
+            <div id="client-analysis-wrap" class="table-wrap" hidden>
+              <table>
+                <thead>
+                  <tr>
+                    <th>顧客名</th>
+                    <th>案件数</th>
+                    <th>売上合計</th>
+                    <th>経費合計</th>
+                    <th>利益</th>
+                    <th>未入金額</th>
+                    <th>最終案件日</th>
+                  </tr>
+                </thead>
+                <tbody id="client-analysis-body"></tbody>
+              </table>
+            </div>
+
+            <h4 class="subheading analytics-subheading">紹介元別分析</h4>
+            <div id="referral-analysis-empty" class="empty">紹介元別分析データはありません。</div>
+            <div id="referral-analysis-wrap" class="table-wrap" hidden>
+              <table>
+                <thead>
+                  <tr>
+                    <th>紹介元</th>
+                    <th>顧客数</th>
+                    <th>案件数</th>
+                    <th>売上合計</th>
+                    <th>利益</th>
+                    <th>未入金額</th>
+                  </tr>
+                </thead>
+                <tbody id="referral-analysis-body"></tbody>
+              </table>
+            </div>
+
+            <h4 class="subheading analytics-subheading">ランキング</h4>
+            <div class="analytics-ranking-grid" id="analytics-ranking-grid"></div>
+          </section>
         </section>
 
         <section id="tab-clients" class="tab-panel">
