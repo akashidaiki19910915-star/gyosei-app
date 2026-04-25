@@ -27,6 +27,7 @@ const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 
 const state = {
+  clients: [],
   cases: [],
   estimates: [],
   estimateItems: [],
@@ -49,7 +50,7 @@ const state = {
   estimateStatusFilter: "all",
   estimateExpiredFilter: "all",
 };
-const editState = { caseId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null };
+const editState = { clientId: null, caseId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null };
 
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
@@ -74,6 +75,7 @@ const tabs = Array.from(document.querySelectorAll(".tab-btn"));
 const subtabButtons = Array.from(document.querySelectorAll(".subtab-btn"));
 const subtabPanels = Array.from(document.querySelectorAll(".subtab-panel"));
 const panels = {
+  clients: document.getElementById("tab-clients"),
   cases: document.getElementById("tab-cases"),
   estimates: document.getElementById("tab-estimates"),
   sales: document.getElementById("tab-sales"),
@@ -127,6 +129,18 @@ const nextActionAlertSummary = document.getElementById("next-action-alert-summar
 const nextActionAlertBody = document.getElementById("next-action-alert-body");
 const nextActionAlertEmpty = document.getElementById("next-action-alert-empty");
 const nextActionAlertListWrap = document.getElementById("next-action-alert-list-wrap");
+const todayTaskCard = document.getElementById("today-task-card");
+const todayTaskSummary = document.getElementById("today-task-summary");
+const todayTaskBody = document.getElementById("today-task-body");
+const todayTaskEmpty = document.getElementById("today-task-empty");
+const todayTaskListWrap = document.getElementById("today-task-list-wrap");
+
+const clientForm = document.getElementById("client-form");
+const clientsList = document.getElementById("clients-list");
+const clientsEmpty = document.getElementById("clients-empty");
+const clientSubmitBtn = document.getElementById("client-submit-btn");
+const caseClientSelect = document.getElementById("case-client-id");
+const estimateClientSelect = document.getElementById("estimate-client-id");
 
 const caseForm = document.getElementById("case-form");
 const caseList = document.getElementById("case-list");
@@ -253,6 +267,7 @@ function bindEvents() {
   signupBtn.addEventListener("click", handleSignup);
   logoutBtn.addEventListener("click", handleLogout);
 
+  clientForm?.addEventListener("submit", handleClientSubmit);
   caseForm.addEventListener("submit", handleCaseSubmit);
   saleForm.addEventListener("submit", handleSaleSubmit);
   expenseForm.addEventListener("submit", handleExpenseSubmit);
@@ -261,6 +276,7 @@ function bindEvents() {
   estimateForm?.addEventListener("submit", handleEstimateSubmit);
 
   clearBtn.addEventListener("click", handleClearAll);
+  clientsList?.addEventListener("click", handleClientListAction);
   caseList.addEventListener("click", handleCaseListAction);
   salesList.addEventListener("click", handleSalesListAction);
   expensesList.addEventListener("click", handleExpensesListAction);
@@ -276,6 +292,7 @@ function bindEvents() {
   deadlineAlertSummary?.addEventListener("click", handleDeadlineAlertClick);
   deadlineAlertBody?.addEventListener("click", handleDeadlineAlertClick);
   nextActionAlertBody?.addEventListener("click", handleNextActionAlertClick);
+  todayTaskBody?.addEventListener("click", handleTodayTaskAction);
   caseSearchInput?.addEventListener("input", handleCaseSearchInput);
   caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
   caseDeadlineFilterSelect?.addEventListener("change", handleCaseDeadlineFilterChange);
@@ -306,6 +323,8 @@ function bindEvents() {
   estimateItemsWrap?.addEventListener("input", handleEstimateItemsInput);
   estimateItemsWrap?.addEventListener("click", handleEstimateItemsClick);
   estimateList?.addEventListener("click", handleEstimateListAction);
+  caseClientSelect?.addEventListener("change", syncCaseCustomerFromClient);
+  estimateClientSelect?.addEventListener("change", syncEstimateCustomerFromClient);
   estimateCustomerSearch?.addEventListener("input", (event) => {
     state.estimateCustomerQuery = String(event.target.value || "").trim().toLowerCase();
     renderEstimates();
@@ -553,7 +572,8 @@ async function handleLogout() {
 async function loadAllData() {
   if (!currentUser || isLoggingOut) return;
 
-  const [casesRes, estimatesRes, estimateItemsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes] = await Promise.all([
+  const [clientsRes, casesRes, estimatesRes, estimateItemsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes] = await Promise.all([
+    sbClient.from("clients").select("*").eq("user_id", currentUser.id),
     sbClient.from("cases").select("*").eq("user_id", currentUser.id),
     sbClient.from("estimates").select("*").eq("user_id", currentUser.id),
     sbClient.from("estimate_items").select("*").eq("user_id", currentUser.id),
@@ -563,6 +583,7 @@ async function loadAllData() {
     sbClient.from("daily_reports").select("*").eq("user_id", currentUser.id),
   ]);
 
+  if (clientsRes.error) throw clientsRes.error;
   if (casesRes.error) throw casesRes.error;
   if (estimatesRes.error) throw estimatesRes.error;
   if (estimateItemsRes.error) throw estimateItemsRes.error;
@@ -571,6 +592,7 @@ async function loadAllData() {
   if (fixedExpensesRes.error) throw fixedExpensesRes.error;
   if (dailyReportsRes.error) throw dailyReportsRes.error;
 
+  state.clients = (clientsRes.data || []).map(mapClientFromDb);
   state.cases = (casesRes.data || []).map(mapCaseFromDb);
   state.estimates = (estimatesRes.data || []).map(mapEstimateFromDb);
   state.estimateItems = (estimateItemsRes.data || []).map(mapEstimateItemFromDb);
@@ -595,6 +617,36 @@ async function refreshAfterMutation(successMessage) {
   if (successMessage) showAppMessage(successMessage, false);
 }
 
+async function handleClientSubmit(event) {
+  event.preventDefault();
+  if (!currentUser || !clientForm) return;
+  const name = asTrimmedText(clientForm.elements.clientName.value);
+  if (!name) return;
+  const payload = {
+    user_id: currentUser.id,
+    name,
+    client_type: asTrimmedText(clientForm.elements.clientType.value) || null,
+    address: asTrimmedText(clientForm.elements.clientAddress.value) || null,
+    tel: asTrimmedText(clientForm.elements.clientTel.value) || null,
+    email: asTrimmedText(clientForm.elements.clientEmail.value) || null,
+    referral_source: asTrimmedText(clientForm.elements.clientReferralSource.value) || null,
+    memo: asTrimmedText(clientForm.elements.clientMemo.value) || null,
+  };
+  await withLoading(editState.clientId ? "顧客更新" : "顧客登録", async () => {
+    if (editState.clientId) {
+      const { error } = await sbClient.from("clients").update(payload).eq("id", editState.clientId).eq("user_id", currentUser.id);
+      if (error) throw error;
+      resetClientForm();
+      await refreshAfterMutation("顧客を更新しました。");
+      return;
+    }
+    const { error } = await sbClient.from("clients").insert(payload);
+    if (error) throw error;
+    resetClientForm();
+    await refreshAfterMutation("顧客を登録しました。");
+  }, { triggerButton: event.submitter });
+}
+
 async function handleCaseSubmit(event) {
   event.preventDefault();
   if (!currentUser) return;
@@ -605,6 +657,7 @@ async function handleCaseSubmit(event) {
 
   const payload = {
     user_id: currentUser.id,
+    client_id: caseForm.elements.caseClientId.value || null,
     customer_name: customerName,
     case_name: caseName,
     estimate_amount: normalizeAmount(caseForm.elements.amount.value),
@@ -613,6 +666,9 @@ async function handleCaseSubmit(event) {
     work_memo: asTrimmedText(caseForm.elements.workMemo.value) || null,
     next_action_date: caseForm.elements.nextActionDate.value || null,
     next_action: asTrimmedText(caseForm.elements.nextAction.value) || null,
+    document_url: asTrimmedText(caseForm.elements.documentUrl.value) || null,
+    invoice_url: asTrimmedText(caseForm.elements.invoiceUrl.value) || null,
+    receipt_url: asTrimmedText(caseForm.elements.receiptUrl.value) || null,
     status: normalizeStatus(caseForm.elements.status.value),
   };
 
@@ -661,6 +717,7 @@ async function handleSaleSubmit(event) {
       return;
     }
 
+    payload.invoice_number = await getNextMonthlyNumber("sales", "invoice_number", "S");
     const { error } = await sbClient.from("sales").insert(payload);
     if (error) throw error;
     resetSaleForm();
@@ -687,6 +744,7 @@ async function handleExpenseSubmit(event) {
     payee,
     payment_method: paymentMethod,
     case_id: expenseCaseSelect.value || null,
+    receipt_url: asTrimmedText(expenseForm.elements.expenseReceiptUrl.value) || null,
   };
 
   await withLoading(editState.expenseId ? "経費更新" : "経費登録", async () => {
@@ -786,6 +844,39 @@ async function handleDailyReportSubmit(event) {
   }, { triggerButton: event.submitter });
 }
 
+async function handleClientListAction(event) {
+  const btn = event.target.closest("button");
+  if (!(btn instanceof HTMLButtonElement) || !currentUser) return;
+  const item = btn.closest(".item");
+  const id = item?.dataset.id;
+  if (!id) return;
+  if (btn.classList.contains("edit-client-btn")) {
+    const target = state.clients.find((entry) => entry.id === id);
+    if (!target || !clientForm) return;
+    activateTab("clients");
+    editState.clientId = target.id;
+    clientForm.elements.clientName.value = target.name || "";
+    clientForm.elements.clientType.value = target.clientType || "";
+    clientForm.elements.clientAddress.value = target.address || "";
+    clientForm.elements.clientTel.value = target.tel || "";
+    clientForm.elements.clientEmail.value = target.email || "";
+    clientForm.elements.clientReferralSource.value = target.referralSource || "";
+    clientForm.elements.clientMemo.value = target.memo || "";
+    if (clientSubmitBtn) clientSubmitBtn.textContent = "顧客を更新";
+    clientForm.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  if (btn.classList.contains("delete-client-btn")) {
+    if (!window.confirm("この顧客を削除しますか？案件・見積は削除されません。")) return;
+    await withLoading("顧客削除", async () => {
+      const { error } = await sbClient.from("clients").delete().eq("id", id).eq("user_id", currentUser.id);
+      if (error) throw error;
+      if (editState.clientId === id) resetClientForm();
+      await refreshAfterMutation("顧客を削除しました。");
+    });
+  }
+}
+
 async function handleCaseListAction(event) {
   const btn = event.target;
   if (!(btn instanceof HTMLButtonElement)) return;
@@ -848,6 +939,7 @@ async function startCaseEdit(caseId) {
     subtabState.cases = "entry";
     activateTab("cases");
     editState.caseId = target.id;
+    caseForm.elements.caseClientId.value = target.clientId || "";
     caseForm.elements.customerName.value = target.customerName;
     caseForm.elements.caseName.value = target.caseName;
     caseForm.elements.amount.value = target.estimateAmount ?? "";
@@ -856,6 +948,9 @@ async function startCaseEdit(caseId) {
     caseForm.elements.workMemo.value = sanitizeLegacyEstimateMemo(target.workMemo) || "";
     caseForm.elements.nextActionDate.value = target.nextActionDate || "";
     caseForm.elements.nextAction.value = target.nextAction || "";
+    caseForm.elements.documentUrl.value = target.documentUrl || "";
+    caseForm.elements.invoiceUrl.value = target.invoiceUrl || "";
+    caseForm.elements.receiptUrl.value = target.receiptUrl || "";
     caseForm.elements.status.value = normalizeStatus(target.status);
     caseSubmitBtn.textContent = "案件を更新";
     caseForm.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -918,6 +1013,21 @@ function handleUnpaidListAction(event) {
   }
 }
 
+function handleTodayTaskAction(event) {
+  const btn = event.target.closest("button");
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const taskId = btn.dataset.taskId;
+  const target = btn.dataset.taskTarget;
+  if (!taskId || !target) return;
+  if (target === "case") {
+    startCaseEdit(taskId).catch(() => {});
+    return;
+  }
+  if (target === "sale") {
+    editSale(taskId).catch(() => {});
+  }
+}
+
 function handleBillingLeakAlertAction(event) {
   const btn = event.target;
   if (!(btn instanceof HTMLButtonElement)) return;
@@ -957,6 +1067,7 @@ async function startExpenseEdit(expenseId) {
     expenseForm.elements.expensePayee.value = target.payee || "";
     expenseForm.elements.expensePaymentMethod.value = target.paymentMethod || "";
     expenseForm.elements.expenseAmount.value = target.amount;
+    expenseForm.elements.expenseReceiptUrl.value = target.receiptUrl || "";
     expenseCaseSelect.value = target.caseId || "";
     expenseSubmitBtn.textContent = "経費を更新";
     expenseForm.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1089,10 +1200,10 @@ window.editDailyReport = editDailyReport;
 
 async function handleClearAll() {
   if (!currentUser) return;
-  if (!window.confirm("見積・案件・売上・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
+  if (!window.confirm("顧客・見積・案件・売上・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
 
   await withLoading("全件削除", async () => {
-    const [estimateItemsRes, estimatesRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes] = await Promise.all([
+    const [estimateItemsRes, estimatesRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes, clientsRes] = await Promise.all([
       sbClient.from("estimate_items").delete().eq("user_id", currentUser.id),
       sbClient.from("estimates").delete().eq("user_id", currentUser.id),
       sbClient.from("sales").delete().eq("user_id", currentUser.id),
@@ -1100,6 +1211,7 @@ async function handleClearAll() {
       sbClient.from("fixed_expenses").delete().eq("user_id", currentUser.id),
       sbClient.from("daily_reports").delete().eq("user_id", currentUser.id),
       sbClient.from("cases").delete().eq("user_id", currentUser.id),
+      sbClient.from("clients").delete().eq("user_id", currentUser.id),
     ]);
 
     if (salesRes.error) throw salesRes.error;
@@ -1107,7 +1219,9 @@ async function handleClearAll() {
     if (fixedExpensesRes.error) throw fixedExpensesRes.error;
     if (dailyReportsRes.error) throw dailyReportsRes.error;
     if (casesRes.error) throw casesRes.error;
+    if (clientsRes.error) throw clientsRes.error;
 
+    resetClientForm();
     resetCaseForm();
     resetEstimateForm();
     resetSaleForm();
@@ -1120,6 +1234,7 @@ async function handleClearAll() {
 
 function handleExportCasesCsv() {
   const rows = state.cases.map((entry) => ({
+    client_id: entry.clientId || "",
     customer_name: entry.customerName,
     case_name: entry.caseName,
     estimate_amount: entry.estimateAmount ?? "",
@@ -1129,8 +1244,11 @@ function handleExportCasesCsv() {
     work_memo: sanitizeLegacyEstimateMemo(entry.workMemo) || "",
     next_action_date: entry.nextActionDate || "",
     next_action: entry.nextAction || "",
+    document_url: entry.documentUrl || "",
+    invoice_url: entry.invoiceUrl || "",
+    receipt_url: entry.receiptUrl || "",
   }));
-  downloadCsvFile("cases.csv", ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action"], rows);
+  downloadCsvFile("cases.csv", ["client_id", "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action", "document_url", "invoice_url", "receipt_url"], rows);
 }
 
 function handleExportSalesCsv() {
@@ -1138,13 +1256,14 @@ function handleExportSalesCsv() {
     const foundCase = state.cases.find((c) => c.id === entry.caseId);
     return {
       case_name: foundCase?.caseName || "",
+      invoice_number: entry.invoiceNumber || "",
       invoice_amount: entry.invoiceAmount ?? "",
       paid_amount: entry.paidAmount ?? "",
       paid_date: entry.paidDate || "",
       is_unpaid: entry.isUnpaid ? "true" : "false",
     };
   });
-  downloadCsvFile("sales.csv", ["case_name", "invoice_amount", "paid_amount", "paid_date", "is_unpaid"], rows);
+  downloadCsvFile("sales.csv", ["case_name", "invoice_number", "invoice_amount", "paid_amount", "paid_date", "is_unpaid"], rows);
 }
 
 function handleExportExpensesCsv() {
@@ -1157,9 +1276,10 @@ function handleExportExpensesCsv() {
       amount: entry.amount ?? "",
       payee: entry.payee || "",
       payment_method: entry.paymentMethod || "",
+      receipt_url: entry.receiptUrl || "",
     };
   });
-  downloadCsvFile("expenses.csv", ["case_name", "date", "content", "amount", "payee", "payment_method"], rows);
+  downloadCsvFile("expenses.csv", ["case_name", "date", "content", "amount", "payee", "payment_method", "receipt_url"], rows);
 }
 
 function handleExportFixedExpensesCsv() {
@@ -1176,16 +1296,31 @@ function handleExportFixedExpensesCsv() {
 function handleExportAllCsv() {
   const headers = [
     "data_type",
-    "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action",
-    "invoice_amount", "paid_amount", "paid_date", "is_unpaid",
+    "client_name", "client_type", "address", "tel", "email", "referral_source", "client_memo",
+    "client_id", "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action", "document_url", "invoice_url", "receipt_url",
+    "estimate_number", "invoice_number", "invoice_amount", "paid_amount", "paid_date", "is_unpaid",
     "date", "content", "amount", "payee", "payment_method",
     "day_of_month", "start_date", "active",
   ];
   const rows = [];
 
+  state.clients.forEach((entry) => {
+    rows.push({
+      data_type: "client",
+      client_name: entry.name || "",
+      client_type: entry.clientType || "",
+      address: entry.address || "",
+      tel: entry.tel || "",
+      email: entry.email || "",
+      referral_source: entry.referralSource || "",
+      client_memo: entry.memo || "",
+    });
+  });
+
   state.cases.forEach((entry) => {
     rows.push({
       data_type: "case",
+      client_id: entry.clientId || "",
       customer_name: entry.customerName,
       case_name: entry.caseName,
       estimate_amount: entry.estimateAmount ?? "",
@@ -1195,6 +1330,21 @@ function handleExportAllCsv() {
       work_memo: sanitizeLegacyEstimateMemo(entry.workMemo) || "",
       next_action_date: entry.nextActionDate || "",
       next_action: entry.nextAction || "",
+      document_url: entry.documentUrl || "",
+      invoice_url: entry.invoiceUrl || "",
+      receipt_url: entry.receiptUrl || "",
+    });
+  });
+  state.estimates.forEach((entry) => {
+    rows.push({
+      data_type: "estimate",
+      client_id: entry.clientId || "",
+      customer_name: entry.customerName || "",
+      case_name: entry.estimateTitle || "",
+      estimate_number: entry.estimateNumber || "",
+      date: entry.estimateDate || "",
+      status: entry.status || "",
+      amount: entry.total ?? "",
     });
   });
   state.sales.forEach((entry) => {
@@ -1202,6 +1352,7 @@ function handleExportAllCsv() {
     rows.push({
       data_type: "sale",
       case_name: foundCase?.caseName || "",
+      invoice_number: entry.invoiceNumber || "",
       invoice_amount: entry.invoiceAmount ?? "",
       paid_amount: entry.paidAmount ?? "",
       paid_date: entry.paidDate || "",
@@ -1218,6 +1369,7 @@ function handleExportAllCsv() {
       amount: entry.amount ?? "",
       payee: entry.payee || "",
       payment_method: entry.paymentMethod || "",
+      receipt_url: entry.receiptUrl || "",
     });
   });
   state.fixedExpenses.forEach((entry) => {
@@ -1266,11 +1418,22 @@ function exportExcel() {
 
   try {
     const workbook = XLSX.utils.book_new();
-    const caseHeaders = ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action"];
-    const saleHeaders = ["case_name", "invoice_amount", "paid_amount", "paid_date", "is_unpaid"];
-    const expenseHeaders = ["case_name", "date", "content", "amount", "payee", "payment_method"];
+    const clientHeaders = ["name", "client_type", "address", "tel", "email", "referral_source", "memo"];
+    const caseHeaders = ["client_id", "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action", "document_url", "invoice_url", "receipt_url"];
+    const saleHeaders = ["case_name", "invoice_number", "invoice_amount", "paid_amount", "paid_date", "is_unpaid"];
+    const expenseHeaders = ["case_name", "date", "content", "amount", "payee", "payment_method", "receipt_url"];
     const fixedExpenseHeaders = ["content", "amount", "day_of_month", "start_date", "active"];
+    const clientRows = state.clients.map((entry) => ({
+      name: entry.name || "",
+      client_type: entry.clientType || "",
+      address: entry.address || "",
+      tel: entry.tel || "",
+      email: entry.email || "",
+      referral_source: entry.referralSource || "",
+      memo: entry.memo || "",
+    }));
     const caseRows = state.cases.map((entry) => ({
+      client_id: entry.clientId || "",
       customer_name: entry.customerName,
       case_name: entry.caseName,
       estimate_amount: entry.estimateAmount ?? "",
@@ -1280,11 +1443,15 @@ function exportExcel() {
       work_memo: sanitizeLegacyEstimateMemo(entry.workMemo) || "",
       next_action_date: entry.nextActionDate || "",
       next_action: entry.nextAction || "",
+      document_url: entry.documentUrl || "",
+      invoice_url: entry.invoiceUrl || "",
+      receipt_url: entry.receiptUrl || "",
     }));
     const saleRows = state.sales.map((entry) => {
       const foundCase = state.cases.find((c) => c.id === entry.caseId);
       return {
         case_name: foundCase?.caseName || "",
+        invoice_number: entry.invoiceNumber || "",
         invoice_amount: entry.invoiceAmount ?? "",
         paid_amount: entry.paidAmount ?? "",
         paid_date: entry.paidDate || "",
@@ -1300,6 +1467,7 @@ function exportExcel() {
         amount: entry.amount ?? "",
         payee: entry.payee || "",
         payment_method: entry.paymentMethod || "",
+        receipt_url: entry.receiptUrl || "",
       };
     });
     const fixedExpenseRows = state.fixedExpenses.map((entry) => ({
@@ -1310,6 +1478,7 @@ function exportExcel() {
       active: entry.active ? "true" : "false",
     }));
 
+    XLSX.utils.book_append_sheet(workbook, createExcelSheet(clientRows, clientHeaders), "顧客");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(caseRows, caseHeaders), "案件");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(saleRows, saleHeaders), "売上");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(expenseRows, expenseHeaders), "経費");
@@ -1357,6 +1526,8 @@ async function handleExcelImportSubmit(event) {
 }
 
 function renderAfterDataChanged() {
+  renderClients();
+  renderClientOptions();
   renderCaseOptions();
   renderEstimates();
   renderCases();
@@ -1411,6 +1582,7 @@ function normalizeTabKey(tabKey) {
   const key = String(tabKey || "").trim();
   if (!key) return "cases";
   if (["daily-reports", "dailyReports", "report", "reports", "日報"].includes(key)) return "daily-reports";
+  if (["clients", "client", "顧客"].includes(key)) return "clients";
   if (["estimates", "estimate", "見積", "見積もり"].includes(key)) return "estimates";
   if (["cases", "案件"].includes(key)) return "cases";
   if (["sales", "売上"].includes(key)) return "sales";
@@ -1456,6 +1628,7 @@ function renderDashboard() {
     div.innerHTML = `<p class="label">${card.label}</p><p class="value">${card.value}</p>`;
     summaryGrid.appendChild(div);
   });
+  renderTodayTaskCard();
   renderNextActionAlertCard();
   renderDeadlineAlertCard();
   renderStatusSummaryCard();
@@ -1474,6 +1647,68 @@ function renderDashboard() {
   });
   renderDashboardWorktimeSummary();
   renderUnpaidList();
+}
+
+function renderTodayTaskCard() {
+  if (!todayTaskCard || !todayTaskSummary || !todayTaskBody || !todayTaskEmpty || !todayTaskListWrap) return;
+  const rows = buildTodayTasks();
+  todayTaskCard.classList.toggle("has-alert", rows.length > 0);
+  todayTaskSummary.textContent = `対象 ${rows.length}件`;
+  todayTaskBody.innerHTML = "";
+  todayTaskEmpty.hidden = rows.length > 0;
+  todayTaskListWrap.hidden = rows.length === 0;
+  if (!rows.length) return;
+  rows
+    .sort((a, b) => toSortTimestamp(a.date) - toSortTimestamp(b.date))
+    .forEach((row) => {
+      const tr = document.createElement("tr");
+      tr.className = row.urgencyClass;
+      tr.innerHTML = `
+        <td>${escapeHtml(row.type)}</td>
+        <td>${escapeHtml(row.customerName)}</td>
+        <td>${escapeHtml(row.caseName)}</td>
+        <td>${escapeHtml(row.action)}</td>
+        <td>${formatDate(row.date)}</td>
+        <td><button type="button" class="secondary-btn" data-task-target="${row.target}" data-task-id="${row.id}">編集</button></td>
+      `;
+      todayTaskBody.appendChild(tr);
+    });
+}
+
+function buildTodayTasks() {
+  const tasks = [];
+  const deadlineTargets = getDeadlineAlertTargets();
+  const nextTargets = getNextActionAlertTargets();
+  const todayLimit = getTodayTimestamp();
+  const weekLimit = todayLimit + (7 * 86400000);
+  nextTargets.forEach((entry) => {
+    tasks.push({
+      id: entry.id, target: "case", type: "次回対応", customerName: entry.customerName, caseName: entry.caseName,
+      action: entry.nextAction || "次回対応", date: entry.nextActionDate, urgencyClass: "task-overdue",
+    });
+  });
+  deadlineTargets.forEach((entry) => {
+    const dueTs = toDateOnlyTimestamp(entry.dueDate);
+    if (!(dueTs <= weekLimit)) return;
+    tasks.push({
+      id: entry.id, target: "case", type: "期限", customerName: entry.customerName, caseName: entry.caseName,
+      action: `期限対応（${entry.status}）`, date: entry.dueDate, urgencyClass: dueTs <= todayLimit ? "task-overdue" : "task-soon",
+    });
+  });
+  getUnpaidSales().forEach((sale) => {
+    const linked = state.cases.find((entry) => entry.id === sale.caseId);
+    tasks.push({
+      id: sale.id, target: "sale", type: "未入金", customerName: linked?.customerName || "（削除済み顧客）", caseName: linked?.caseName || "（削除済み案件）",
+      action: `未入金 ${formatCurrency(getUnpaidAmount(sale))}`, date: sale.paidDate || toDateString(sale.createdAt), urgencyClass: "task-overdue",
+    });
+  });
+  getBillingLeakCandidates().forEach((entry) => {
+    tasks.push({
+      id: entry.id, target: "case", type: "請求漏れ", customerName: entry.customerName, caseName: entry.caseName,
+      action: "売上登録が未実施", date: entry.updatedAt ? toDateString(entry.updatedAt) : toDateString(new Date()), urgencyClass: "task-soon",
+    });
+  });
+  return tasks;
 }
 
 function renderDeadlineAlertCard() {
@@ -1755,6 +1990,51 @@ function renderCaseOptions() {
   reportCaseSelect.innerHTML = `<option value="">案件なし</option>${options}`;
 }
 
+function renderClientOptions() {
+  const options = state.clients
+    .slice()
+    .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
+    .map((client) => `<option value="${client.id}">${escapeHtml(client.name)}${client.clientType ? `（${escapeHtml(client.clientType)}）` : ""}</option>`)
+    .join("");
+  if (caseClientSelect) caseClientSelect.innerHTML = `<option value="">選択しない</option>${options}`;
+  if (estimateClientSelect) estimateClientSelect.innerHTML = `<option value="">選択しない</option>${options}`;
+}
+
+function syncCaseCustomerFromClient() {
+  const clientId = caseClientSelect?.value;
+  if (!clientId || !caseForm?.elements?.customerName) return;
+  const found = state.clients.find((entry) => entry.id === clientId);
+  if (found) caseForm.elements.customerName.value = found.name;
+}
+
+function syncEstimateCustomerFromClient() {
+  const clientId = estimateClientSelect?.value;
+  if (!clientId || !estimateForm?.elements?.customerName) return;
+  const found = state.clients.find((entry) => entry.id === clientId);
+  if (found) estimateForm.elements.customerName.value = found.name;
+}
+
+function renderClients() {
+  if (!clientsList || !clientsEmpty) return;
+  clientsList.innerHTML = "";
+  const sorted = state.clients.slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+  sorted.forEach((client) => {
+    const li = document.createElement("li");
+    li.className = "item";
+    li.dataset.id = client.id;
+    li.innerHTML = `
+      <div>
+        <p class="title">${escapeHtml(client.name)}${client.clientType ? `（${escapeHtml(client.clientType)}）` : ""}</p>
+        <p class="meta">住所: ${escapeHtml(client.address || "未設定")} / 電話: ${escapeHtml(client.tel || "未設定")} / メール: ${escapeHtml(client.email || "未設定")}</p>
+        <p class="meta">紹介元: ${escapeHtml(client.referralSource || "未設定")} / メモ: ${escapeHtml(truncateText(client.memo || "未設定", 60))}</p>
+      </div>
+      <div class="row-actions"><button type="button" class="secondary-btn edit-client-btn">編集</button><button type="button" class="danger-btn delete-client-btn">削除</button></div>
+    `;
+    clientsList.appendChild(li);
+  });
+  clientsEmpty.hidden = sorted.length > 0;
+}
+
 function renderDailyReports() {
   if (!dailyReportsBody || !dailyReportsEmpty || !dailyReportsListWrap || !dailyReportSummaryList) return;
   const sorted = state.dailyReports.slice().sort((a, b) => toSortTimestamp(b.reportDate) - toSortTimestamp(a.reportDate));
@@ -1916,6 +2196,7 @@ async function handleEstimateSubmit(event) {
   const items = getEstimateItemsFromForm();
   const payload = {
     user_id: currentUser.id,
+    client_id: estimateForm.elements.clientId.value || null,
     customer_name: customerName,
     estimate_title: estimateTitle,
     estimate_date: estimateDate,
@@ -1937,6 +2218,7 @@ async function handleEstimateSubmit(event) {
       const oldItemsDeleteRes = await sbClient.from("estimate_items").delete().eq("estimate_id", estimateId).eq("user_id", currentUser.id);
       if (oldItemsDeleteRes.error) throw oldItemsDeleteRes.error;
     } else {
+      payload.estimate_number = await getNextMonthlyNumber("estimates", "estimate_number", "M", estimateDate);
       const res = await sbClient.from("estimates").insert(payload).select("id").single();
       if (res.error) throw res.error;
       estimateId = res.data.id;
@@ -1988,6 +2270,7 @@ function renderEstimates() {
         <p class="title estimate-card-title">${escapeHtml(entry.estimateTitle)}</p>
         <div class="estimate-card-grid">
           <p class="meta"><span>顧客名:</span> ${escapeHtml(entry.customerName)}</p>
+          <p class="meta"><span>見積番号:</span> ${escapeHtml(entry.estimateNumber || "未採番")}</p>
           <p class="meta"><span>見積日:</span> ${formatDate(entry.estimateDate)}</p>
           <p class="meta"><span>有効期限:</span> ${formatDate(entry.validUntil)}</p>
           <p class="meta"><span>ステータス:</span> ${escapeHtml(entry.status)}</p>
@@ -2081,7 +2364,12 @@ function renderCases() {
 
     item.dataset.id = entry.id;
     title.textContent = `${entry.customerName}｜${entry.caseName}`;
-    meta.textContent = `見積: ${formatCurrency(entry.estimateAmount)} / ステータス: ${entry.status} / 受付日: ${formatDate(entry.receivedDate)} / 期限日: ${formatDate(entry.dueDate)} / 次回対応日: ${formatDate(entry.nextActionDate)} / 次回対応内容: ${entry.nextAction || "未設定"}`;
+    const urlLinks = [
+      entry.documentUrl ? `<a href="${escapeHtml(entry.documentUrl)}" target="_blank" rel="noopener noreferrer">関連書類を開く</a>` : "",
+      entry.invoiceUrl ? `<a href="${escapeHtml(entry.invoiceUrl)}" target="_blank" rel="noopener noreferrer">請求書を開く</a>` : "",
+      entry.receiptUrl ? `<a href="${escapeHtml(entry.receiptUrl)}" target="_blank" rel="noopener noreferrer">領収書を開く</a>` : "",
+    ].filter(Boolean).join(" / ");
+    meta.innerHTML = `見積: ${formatCurrency(entry.estimateAmount)} / ステータス: ${escapeHtml(entry.status)} / 受付日: ${formatDate(entry.receivedDate)} / 期限日: ${formatDate(entry.dueDate)} / 次回対応日: ${formatDate(entry.nextActionDate)} / 次回対応内容: ${escapeHtml(entry.nextAction || "未設定")}${urlLinks ? ` / ${urlLinks}` : ""}`;
     if (caseWorkMeta) {
       caseWorkMeta.textContent = `作業メモ: ${truncateText(sanitizeLegacyEstimateMemo(entry.workMemo) || "未設定", 60)}`;
       caseWorkMeta.classList.remove("next-action-overdue", "next-action-within3", "next-action-within7");
@@ -2222,7 +2510,7 @@ function renderSales() {
     const meta = node.querySelector(".meta");
 
     item.dataset.id = sale.id;
-    title.textContent = `${resolveCaseName(sale.caseId)}｜請求: ${formatCurrency(sale.invoiceAmount)}`;
+    title.textContent = `${resolveCaseName(sale.caseId)}｜請求: ${formatCurrency(sale.invoiceAmount)}｜請求番号: ${sale.invoiceNumber || "未採番"}`;
     meta.textContent = `入金: ${formatCurrency(sale.paidAmount)} / 入金日: ${formatDate(sale.paidDate)} / 未入金: ${sale.isUnpaid ? "はい" : "いいえ"}`;
     salesList.appendChild(node);
   });
@@ -2254,7 +2542,7 @@ function renderExpenses() {
 
     item.dataset.id = expense.id;
     title.textContent = `日付: ${formatDate(expense.date)}｜内容: ${expense.content}｜金額: ${formatCurrency(expense.amount)}`;
-    meta.textContent = `支払先: ${payeeLabel} / 支払方法: ${paymentMethodLabel} / 紐付け案件: ${expense.caseId ? resolveCaseName(expense.caseId) : "なし"}`;
+    meta.innerHTML = `支払先: ${escapeHtml(payeeLabel)} / 支払方法: ${escapeHtml(paymentMethodLabel)} / 紐付け案件: ${escapeHtml(expense.caseId ? resolveCaseName(expense.caseId) : "なし")}${expense.receiptUrl ? ` / <a href="${escapeHtml(expense.receiptUrl)}" target="_blank" rel="noopener noreferrer">領収書を開く</a>` : ""}`;
     expensesList.appendChild(node);
   });
 
@@ -2306,6 +2594,7 @@ async function startEstimateEdit(estimateId) {
     subtabState.estimates = "create";
     activateTab("estimates");
     editState.estimateId = target.id;
+    if (estimateForm.elements.clientId) estimateForm.elements.clientId.value = target.clientId || "";
     estimateForm.elements.customerName.value = target.customerName;
     estimateForm.elements.estimateTitle.value = target.estimateTitle;
     estimateForm.elements.estimateDate.value = target.estimateDate || "";
@@ -2325,6 +2614,7 @@ async function startEstimateEdit(estimateId) {
 function resetEstimateForm() {
   resetEditMode("estimate");
   estimateForm?.reset();
+  if (estimateForm?.elements?.clientId) estimateForm.elements.clientId.value = "";
   if (estimateForm?.elements?.estimateDate) estimateForm.elements.estimateDate.value = toDateString(new Date());
   if (estimateForm?.elements?.status) estimateForm.elements.status.value = "作成中";
   if (estimateItemsWrap) {
@@ -2335,9 +2625,16 @@ function resetEstimateForm() {
   recalcEstimateTotals();
 }
 
+function resetClientForm() {
+  resetEditMode("client");
+  clientForm?.reset();
+  if (clientSubmitBtn) clientSubmitBtn.textContent = "顧客を登録";
+}
+
 function resetCaseForm() {
   resetEditMode("case");
   caseForm.reset();
+  if (caseForm?.elements?.caseClientId) caseForm.elements.caseClientId.value = "";
   caseForm.elements.status.value = "未着手";
   caseSubmitBtn.textContent = "案件を追加";
 }
@@ -2369,6 +2666,7 @@ function resetDailyReportForm() {
 }
 
 function resetEditMode(target) {
+  if (target === "client") editState.clientId = null;
   if (target === "case") editState.caseId = null;
   if (target === "sale") editState.saleId = null;
   if (target === "expense") editState.expenseId = null;
@@ -2387,6 +2685,7 @@ async function ensureCaseFromEstimate(estimateId, force = false) {
   if (estimate.caseId) return estimate.caseId;
   const payload = {
     user_id: currentUser.id,
+    client_id: estimate.clientId || null,
     customer_name: estimate.customerName,
     case_name: estimate.estimateTitle,
     estimate_amount: estimate.total,
@@ -2439,17 +2738,14 @@ function buildInvoiceRowsFromEstimate(estimate) {
 function buildInvoiceDocumentFromEstimate(estimate, noteOverride = null) {
   const rows = buildInvoiceRowsFromEstimate(estimate);
   const invoiceDate = toDateString(new Date());
+  const linkedSale = estimate.caseId
+    ? state.sales.find((sale) => sale.caseId === estimate.caseId)
+    : null;
   return {
     customerName: estimate.customerName || "顧客名未設定",
     subject: estimate.estimateTitle || "請求内容",
     invoiceDate,
-    invoiceNumber: generateDocumentNumber({
-      prefix: "S",
-      issueDate: invoiceDate,
-      sourceId: estimate.id,
-      candidates: state.estimates,
-      dateField: "estimateDate",
-    }),
+    invoiceNumber: linkedSale?.invoiceNumber || "未採番",
     companyName: OFFICE_INFO.name,
     companyZip: OFFICE_INFO.zip,
     companyAddress: OFFICE_INFO.address,
@@ -2485,16 +2781,12 @@ function buildInvoiceDocumentFromCase(foundCase, noteOverride = null) {
   const tax = Math.floor(subtotal * 0.1);
   const total = subtotal + tax;
   const invoiceDate = toDateString(new Date());
+  const linkedSale = state.sales.find((sale) => sale.caseId === foundCase.id);
   return {
     customerName: foundCase.customerName || "顧客名未設定",
     subject: foundCase.caseName || "請求内容",
     invoiceDate,
-    invoiceNumber: generateDocumentNumber({
-      prefix: "S",
-      issueDate: invoiceDate,
-      sourceId: foundCase.id,
-      candidates: state.cases,
-    }),
+    invoiceNumber: linkedSale?.invoiceNumber || "未採番",
     companyName: OFFICE_INFO.name,
     companyZip: OFFICE_INFO.zip,
     companyAddress: OFFICE_INFO.address,
@@ -2638,13 +2930,7 @@ function buildEstimateDocumentFromEstimate(estimate) {
     customerName: estimate.customerName || "顧客名未設定",
     subject: estimate.estimateTitle || "見積内容",
     estimateDate,
-    estimateNumber: generateDocumentNumber({
-      prefix: "M",
-      issueDate: estimateDate,
-      sourceId: estimate.id,
-      candidates: state.estimates,
-      dateField: "estimateDate",
-    }),
+    estimateNumber: estimate.estimateNumber || "未採番",
     validUntil: estimate.validUntil || "",
     companyName: OFFICE_INFO.name,
     companyZip: OFFICE_INFO.zip,
@@ -3119,30 +3405,23 @@ function sanitizeFileNamePart(value) {
     .slice(0, 40) || "customer";
 }
 
-function toCompactDateString(value) {
-  return String(value || "")
-    .replaceAll("-", "")
-    .replace(/[^\d]/g, "")
-    .slice(0, 8);
-}
-
-function generateDocumentNumber({ prefix, issueDate, sourceId, candidates = [], dateField = "" }) {
-  const compactDate = toCompactDateString(issueDate) || toCompactDateString(toDateString(new Date()));
-  const sequence = resolveDailySequence(sourceId, candidates, issueDate, dateField);
-  return `${prefix}-${compactDate}-${String(sequence).padStart(3, "0")}`;
-}
-
-function resolveDailySequence(sourceId, candidates = [], issueDate = "", dateField = "") {
-  if (!sourceId) return 1;
-  const targetDate = String(issueDate || "");
-  const ordered = [...candidates]
-    .filter((entry) => {
-      if (!targetDate || !dateField) return true;
-      return String(entry[dateField] || "") === targetDate;
-    })
-    .sort((a, b) => toSortTimestamp(a.createdAt) - toSortTimestamp(b.createdAt));
-  const index = ordered.findIndex((entry) => entry.id === sourceId);
-  return index >= 0 ? index + 1 : 1;
+async function getNextMonthlyNumber(tableName, columnName, prefix, issueDate = toDateString(new Date())) {
+  const monthKey = toMonthKey(issueDate) || toMonthKey(new Date());
+  const yyyymm = monthKey.replace("-", "");
+  const searchPrefix = `${prefix}-${yyyymm}-`;
+  const { data, error } = await sbClient
+    .from(tableName)
+    .select(columnName)
+    .eq("user_id", currentUser.id)
+    .like(columnName, `${searchPrefix}%`);
+  if (error) throw error;
+  const maxSeq = (data || []).reduce((max, row) => {
+    const value = String(row?.[columnName] || "");
+    const matched = value.match(new RegExp(`^${prefix}-${yyyymm}-(\\d{3})$`));
+    if (!matched) return max;
+    return Math.max(max, Number(matched[1]));
+  }, 0);
+  return `${prefix}-${yyyymm}-${String(maxSeq + 1).padStart(3, "0")}`;
 }
 
 async function registerSaleFromEstimate(estimateId) {
@@ -3152,6 +3431,7 @@ async function registerSaleFromEstimate(estimateId) {
   const payload = {
     user_id: currentUser.id,
     case_id: caseId || null,
+    invoice_number: await getNextMonthlyNumber("sales", "invoice_number", "S"),
     invoice_amount: estimate.total,
     paid_amount: 0,
     paid_date: null,
@@ -3711,6 +3991,7 @@ async function importRowsByType(importType, tableData) {
         }
         payloads.push({
           user_id: currentUser.id,
+          client_id: asTrimmedText(row.client_id) || null,
           customer_name: customerName,
           case_name: caseName,
           estimate_amount: parseFlexibleAmount(row.estimate_amount),
@@ -3720,6 +4001,9 @@ async function importRowsByType(importType, tableData) {
           work_memo: asTrimmedText(row.work_memo) || null,
           next_action_date: parseFlexibleDate(row.next_action_date),
           next_action: asTrimmedText(row.next_action) || null,
+          document_url: asTrimmedText(row.document_url) || null,
+          invoice_url: asTrimmedText(row.invoice_url) || null,
+          receipt_url: asTrimmedText(row.receipt_url) || null,
         });
       } catch (_error) {
         result.errorCount += 1;
@@ -3754,6 +4038,7 @@ async function importRowsByType(importType, tableData) {
         payloads.push({
           user_id: currentUser.id,
           case_id: caseId,
+          invoice_number: asTrimmedText(row.invoice_number) || null,
           invoice_amount: invoiceAmount,
           paid_amount: paidAmount,
           paid_date: parseFlexibleDate(row.paid_date),
@@ -3794,6 +4079,7 @@ async function importRowsByType(importType, tableData) {
           amount,
           payee: asTrimmedText(row.payee) || null,
           payment_method: normalizeExpensePaymentMethod(row.payment_method),
+          receipt_url: asTrimmedText(row.receipt_url) || null,
         });
       } catch (_error) {
         result.errorCount += 1;
@@ -3864,6 +4150,7 @@ function escapeHtml(text) {
 function mapCaseFromDb(row) {
   return {
     id: row.id,
+    clientId: row.client_id || null,
     customerName: row.customer_name || "",
     caseName: row.case_name || "",
     estimateAmount: normalizeAmount(row.estimate_amount),
@@ -3873,6 +4160,24 @@ function mapCaseFromDb(row) {
     workMemo: row.work_memo || "",
     nextActionDate: row.next_action_date || "",
     nextAction: row.next_action || "",
+    documentUrl: row.document_url || "",
+    invoiceUrl: row.invoice_url || "",
+    receiptUrl: row.receipt_url || "",
+    createdAt: Date.parse(row.created_at) || Date.now(),
+    updatedAt: Date.parse(row.updated_at) || Date.now(),
+  };
+}
+
+function mapClientFromDb(row) {
+  return {
+    id: row.id,
+    name: row.name || "",
+    clientType: row.client_type || "",
+    address: row.address || "",
+    tel: row.tel || "",
+    email: row.email || "",
+    referralSource: row.referral_source || "",
+    memo: row.memo || "",
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
   };
@@ -3901,7 +4206,9 @@ async function cleanupLegacyEstimateMemoMarkers() {
 function mapEstimateFromDb(row) {
   return {
     id: row.id,
+    clientId: row.client_id || null,
     customerName: row.customer_name || "",
+    estimateNumber: row.estimate_number || "",
     estimateTitle: row.estimate_title || "",
     estimateDate: row.estimate_date || "",
     validUntil: row.valid_until || "",
@@ -3935,6 +4242,7 @@ function mapSaleFromDb(row) {
   return {
     id: row.id,
     caseId: row.case_id,
+    invoiceNumber: row.invoice_number || "",
     invoiceAmount,
     paidAmount,
     paidDate: row.paid_date || "",
@@ -3952,6 +4260,7 @@ function mapExpenseFromDb(row) {
     amount: normalizeAmount(row.amount) ?? 0,
     payee: row.payee || "",
     paymentMethod: row.payment_method || "",
+    receiptUrl: row.receipt_url || "",
     caseId: row.case_id || null,
     fixedExpenseId: row.fixed_expense_id || null,
     createdAt: Date.parse(row.created_at) || Date.now(),
@@ -4117,6 +4426,7 @@ function clearAppMessage() {
 
 function clearAppState() {
   currentUser = null;
+  state.clients = [];
   state.cases = [];
   state.estimates = [];
   state.estimateItems = [];
@@ -4124,6 +4434,7 @@ function clearAppState() {
   state.expenses = [];
   state.fixedExpenses = [];
   state.dailyReports = [];
+  resetClientForm();
   resetCaseForm();
   resetEstimateForm();
   resetSaleForm();

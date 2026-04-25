@@ -107,6 +107,7 @@
         </section>
 
         <nav class="tabs" aria-label="メイン機能">
+          <button type="button" class="tab-btn" data-tab="clients">顧客</button>
           <button type="button" class="tab-btn" data-tab="estimates">見積</button>
           <button type="button" class="tab-btn active" data-tab="cases">案件</button>
           <button type="button" class="tab-btn" data-tab="sales">売上</button>
@@ -116,6 +117,28 @@
 
         <section id="cases-dashboard-panel" class="dashboard panel subtab-panel active" data-parent-tab="cases" data-subtab="dashboard">
           <h2>ダッシュボード</h2>
+          <section id="today-task-card" class="today-task-card case-alert-block" aria-live="polite">
+            <div class="today-task-header">
+              <h3>今日やること</h3>
+              <p id="today-task-summary" class="today-task-summary">対象 0件</p>
+            </div>
+            <div id="today-task-empty" class="empty">今日対応が必要な項目はありません。</div>
+            <div id="today-task-list-wrap" class="table-wrap" hidden>
+              <table class="today-task-table">
+                <thead>
+                  <tr>
+                    <th>種別</th>
+                    <th>顧客名</th>
+                    <th>案件名</th>
+                    <th>対応内容</th>
+                    <th>日付</th>
+                    <th>編集</th>
+                  </tr>
+                </thead>
+                <tbody id="today-task-body"></tbody>
+              </table>
+            </div>
+          </section>
           <section id="next-action-alert-card" class="next-action-alert-card case-alert-block" aria-live="polite">
             <div class="next-action-alert-header">
               <h3>次回対応アラート</h3>
@@ -268,6 +291,35 @@
           </div>
         </section>
 
+        <section id="tab-clients" class="tab-panel">
+          <div class="layout two-col">
+            <section class="panel">
+              <h2>顧客登録</h2>
+              <form id="client-form" class="form">
+                <label>顧客名 <span class="required">必須</span><input id="client-name" name="clientName" type="text" maxlength="120" required /></label>
+                <label>種別
+                  <select id="client-type" name="clientType">
+                    <option value="">未設定</option>
+                    <option value="個人">個人</option>
+                    <option value="法人">法人</option>
+                  </select>
+                </label>
+                <label>住所<input id="client-address" name="clientAddress" type="text" maxlength="200" /></label>
+                <label>電話番号<input id="client-tel" name="clientTel" type="text" maxlength="40" /></label>
+                <label>メール<input id="client-email" name="clientEmail" type="email" maxlength="120" /></label>
+                <label>紹介元<input id="client-referral-source" name="clientReferralSource" type="text" maxlength="120" /></label>
+                <label>メモ<textarea id="client-memo" name="clientMemo" rows="3" maxlength="2000"></textarea></label>
+                <button id="client-submit-btn" type="submit">顧客を登録</button>
+              </form>
+            </section>
+            <section class="panel">
+              <h2>顧客一覧</h2>
+              <div id="clients-empty" class="empty">顧客データはまだありません。</div>
+              <ul id="clients-list" class="item-list"></ul>
+            </section>
+          </div>
+        </section>
+
         <section id="tab-cases" class="tab-panel active">
           <nav class="subtabs" aria-label="案件サブタブ">
             <button type="button" class="subtab-btn active" data-parent-tab="cases" data-subtab="dashboard">ダッシュボード</button>
@@ -279,6 +331,10 @@
             <section class="panel subtab-panel" data-parent-tab="cases" data-subtab="entry" hidden>
               <h2>新規案件登録</h2>
               <form id="case-form" class="form">
+                <label>
+                  顧客台帳から選択
+                  <select id="case-client-id" name="caseClientId"></select>
+                </label>
                 <label>
                   顧客名 <span class="required">必須</span>
                   <input id="customer-name" name="customerName" type="text" required maxlength="80" />
@@ -315,6 +371,18 @@
                     <input id="next-action" name="nextAction" type="text" maxlength="200" placeholder="次回やること" />
                   </label>
                 </div>
+                <label>
+                  関連書類URL
+                  <input id="case-document-url" name="documentUrl" type="url" maxlength="2000" placeholder="https://..." />
+                </label>
+                <label>
+                  請求書URL
+                  <input id="case-invoice-url" name="invoiceUrl" type="url" maxlength="2000" placeholder="https://..." />
+                </label>
+                <label>
+                  領収書URL
+                  <input id="case-receipt-url" name="receiptUrl" type="url" maxlength="2000" placeholder="https://..." />
+                </label>
                 <label>
                   ステータス
                   <select id="status" name="status">
@@ -375,6 +443,7 @@
             <section class="panel subtab-panel" data-parent-tab="estimates" data-subtab="create">
               <h2>見積作成</h2>
               <form id="estimate-form" class="form">
+                <label>顧客台帳から選択<select id="estimate-client-id" name="clientId"></select></label>
                 <label>顧客名 <span class="required">必須</span><input id="estimate-customer-name" name="customerName" type="text" required maxlength="80" /></label>
                 <label>見積件名 <span class="required">必須</span><input id="estimate-title" name="estimateTitle" type="text" required maxlength="120" /></label>
                 <div class="date-grid">
@@ -469,6 +538,7 @@
                   請求書備考（出力用）
                   <textarea id="sale-invoice-memo" name="invoiceMemo" rows="2" maxlength="2000" placeholder="請求書出力時に使用する備考"></textarea>
                 </label>
+                <p class="meta">請求番号は登録時に自動採番されます（形式: S-YYYYMM-001）。</p>
                 <button type="submit">売上を登録</button>
               </form>
             </section>
@@ -536,6 +606,10 @@
                 <label>
                   金額（円） <span class="required">必須</span>
                   <input id="expense-amount" name="expenseAmount" type="number" min="0" step="1" required />
+                </label>
+                <label>
+                  領収書URL
+                  <input id="expense-receipt-url" name="expenseReceiptUrl" type="url" maxlength="2000" placeholder="https://..." />
                 </label>
                 <button type="submit">経費を登録</button>
               </form>

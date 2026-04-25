@@ -321,6 +321,28 @@ button:hover { background: var(--primary-dark); }
   margin-bottom: 0.75rem;
 }
 
+.today-task-card {
+  border: 1px solid #fdba74;
+  background: #fff7ed;
+  border-radius: 10px;
+  padding: 0.8rem;
+}
+
+.today-task-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.task-overdue {
+  background: #fff1f2;
+}
+
+.task-soon {
+  background: #fff7ed;
+}
+
 .next-action-alert-card.has-alert {
   border-color: #ef4444;
   box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.12);
