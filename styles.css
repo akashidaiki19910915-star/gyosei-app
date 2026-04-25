@@ -598,6 +598,30 @@ button:hover { background: var(--primary-dark); }
   background: #fde8e8;
 }
 
+.sale-row-overdue td {
+  background: #fef2f2;
+}
+
+.sale-row-partial td {
+  background: #fff7ed;
+}
+
+.sale-status-overdue,
+.sale-status-unpaid {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.sale-status-partial {
+  color: #c2410c;
+  font-weight: 700;
+}
+
+.sale-status-paid {
+  color: #166534;
+  font-weight: 600;
+}
+
 .billing-leak-alert-table thead th {
   background: #ffedd5;
 }

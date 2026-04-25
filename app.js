@@ -3,6 +3,7 @@ const SUPABASE_KEY = "sb_publishable_0DrKsieUcCyEZN_HRg8LhQ_QqFTPMtp";
 const STATUS_ORDER = ["未着手", "進行中", "完了"];
 const STATUS_FILTER_KEYS = [...STATUS_ORDER, "その他"];
 const DEADLINE_FILTER_KEYS = ["all", "overdue", "within7", "within30"];
+const SALES_PAYMENT_STATUSES = ["未入金", "一部入金", "入金済"];
 const ESTIMATE_STATUS_ORDER = ["作成中", "提出済", "受注", "失注"];
 const EXPENSE_PAYMENT_METHODS = ["現金", "クレジットカード", "銀行振込", "電子マネー", "口座振替", "その他"];
 const OFFICE_INFO = {
@@ -714,14 +715,18 @@ async function handleSaleSubmit(event) {
   const paidAmount = normalizeAmount(saleForm.elements.paidAmount.value);
   const caseId = saleCaseSelect.value;
   if (!caseId) return;
+  const normalizedPaidAmount = paidAmount ?? 0;
+  const paymentStatus = getSalePaymentStatus(invoiceAmount, normalizedPaidAmount);
 
   const payload = {
     user_id: currentUser.id,
     case_id: caseId,
     invoice_amount: invoiceAmount,
-    paid_amount: paidAmount,
+    paid_amount: normalizedPaidAmount,
     paid_date: saleForm.elements.paidDate.value || null,
-    is_unpaid: saleForm.elements.isUnpaid.checked || (paidAmount ?? 0) < invoiceAmount,
+    due_date: saleForm.elements.dueDate.value || null,
+    payment_status: paymentStatus,
+    is_unpaid: paymentStatus !== "入金済",
   };
 
   const taskName = editState.saleId ? "売上更新" : "売上登録";
@@ -1041,7 +1046,7 @@ async function startSaleEdit(saleId) {
     saleForm.elements.invoiceAmount.value = target.invoiceAmount;
     saleForm.elements.paidAmount.value = target.paidAmount ?? "";
     saleForm.elements.paidDate.value = target.paidDate || "";
-    saleForm.elements.isUnpaid.checked = Boolean(target.isUnpaid);
+    saleForm.elements.dueDate.value = target.dueDate || "";
     saleSubmitBtn.textContent = "売上を更新";
     saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -1074,7 +1079,7 @@ function openSaleFormForCase(caseId) {
   saleForm.elements.invoiceAmount.value = targetCase.estimateAmount ?? "";
   saleForm.elements.paidAmount.value = "";
   saleForm.elements.paidDate.value = "";
-  saleForm.elements.isUnpaid.checked = true;
+  saleForm.elements.dueDate.value = "";
   saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -1466,10 +1471,12 @@ function handleExportSalesCsv() {
       invoice_amount: entry.invoiceAmount ?? "",
       paid_amount: entry.paidAmount ?? "",
       paid_date: entry.paidDate || "",
-      is_unpaid: entry.isUnpaid ? "true" : "false",
+      due_date: entry.dueDate || "",
+      payment_status: entry.paymentStatus || "",
+      is_unpaid: entry.paymentStatus !== "入金済" ? "true" : "false",
     };
   });
-  downloadCsvFile("sales.csv", ["case_name", "invoice_number", "invoice_amount", "paid_amount", "paid_date", "is_unpaid"], rows);
+  downloadCsvFile("sales.csv", ["case_name", "invoice_number", "invoice_amount", "paid_amount", "paid_date", "due_date", "payment_status", "is_unpaid"], rows);
 }
 
 function handleExportExpensesCsv() {
@@ -1504,7 +1511,7 @@ function handleExportAllCsv() {
     "data_type",
     "client_name", "client_type", "address", "tel", "email", "referral_source", "client_memo",
     "client_id", "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action", "document_url", "invoice_url", "receipt_url",
-    "estimate_number", "invoice_number", "invoice_amount", "paid_amount", "paid_date", "is_unpaid",
+    "estimate_number", "invoice_number", "invoice_amount", "paid_amount", "paid_date", "due_date", "payment_status", "is_unpaid",
     "date", "content", "amount", "payee", "payment_method",
     "day_of_month", "start_date", "active",
   ];
@@ -1562,7 +1569,9 @@ function handleExportAllCsv() {
       invoice_amount: entry.invoiceAmount ?? "",
       paid_amount: entry.paidAmount ?? "",
       paid_date: entry.paidDate || "",
-      is_unpaid: entry.isUnpaid ? "true" : "false",
+      due_date: entry.dueDate || "",
+      payment_status: entry.paymentStatus || "",
+      is_unpaid: entry.paymentStatus !== "入金済" ? "true" : "false",
     });
   });
   state.expenses.forEach((entry) => {
@@ -1626,7 +1635,7 @@ function exportExcel() {
     const workbook = XLSX.utils.book_new();
     const clientHeaders = ["name", "client_type", "address", "tel", "email", "referral_source", "memo"];
     const caseHeaders = ["client_id", "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action", "document_url", "invoice_url", "receipt_url"];
-    const saleHeaders = ["case_name", "invoice_number", "invoice_amount", "paid_amount", "paid_date", "is_unpaid"];
+    const saleHeaders = ["case_name", "invoice_number", "invoice_amount", "paid_amount", "paid_date", "due_date", "payment_status", "is_unpaid"];
     const expenseHeaders = ["case_name", "date", "content", "amount", "payee", "payment_method", "receipt_url"];
     const fixedExpenseHeaders = ["content", "amount", "day_of_month", "start_date", "active"];
     const clientRows = state.clients.map((entry) => ({
@@ -1661,7 +1670,9 @@ function exportExcel() {
         invoice_amount: entry.invoiceAmount ?? "",
         paid_amount: entry.paidAmount ?? "",
         paid_date: entry.paidDate || "",
-        is_unpaid: entry.isUnpaid ? "true" : "false",
+        due_date: entry.dueDate || "",
+        payment_status: entry.paymentStatus || "",
+        is_unpaid: entry.paymentStatus !== "入金済" ? "true" : "false",
       };
     });
     const expenseRows = state.expenses.map((entry) => {
@@ -1903,11 +1914,11 @@ function buildTodayTasks() {
       action: `期限対応（${entry.status}）`, date: entry.dueDate, urgencyClass: dueTs <= todayLimit ? "task-overdue" : "task-soon",
     });
   });
-  getUnpaidSales().forEach((sale) => {
+  getCollectionTargetSales().forEach((sale) => {
     const linked = state.cases.find((entry) => entry.id === sale.caseId);
     tasks.push({
       id: sale.id, target: "sale", type: "未入金", customerName: linked?.customerName || "（削除済み顧客）", caseName: linked?.caseName || "（削除済み案件）",
-      action: `未入金 ${formatCurrency(getUnpaidAmount(sale))}`, date: sale.paidDate || toDateString(sale.createdAt), urgencyClass: "task-overdue",
+      action: `${sale.paymentStatus} ${formatCurrency(getRemainingAmount(sale))}`, date: sale.dueDate || sale.paidDate || toDateString(sale.createdAt), urgencyClass: isSaleOverdue(sale) ? "task-overdue" : "task-soon",
     });
   });
   getBillingLeakCandidates().forEach((entry) => {
@@ -2074,18 +2085,21 @@ function renderStatusSummaryCard() {
 }
 
 function renderUnpaidAlert(filter = {}) {
-  const unpaidSales = getUnpaidSales();
+  const unpaidSales = getCollectionTargetSales();
   const count = unpaidSales.length;
-  const totalUnpaidAmount = unpaidSales.reduce((sum, sale) => sum + getUnpaidAmount(sale), 0);
+  const totalUnpaidAmount = unpaidSales.reduce((sum, sale) => sum + getRemainingAmount(sale), 0);
+  const unpaidCount = unpaidSales.filter((sale) => sale.paymentStatus === "未入金").length;
+  const partialCount = unpaidSales.filter((sale) => sale.paymentStatus === "一部入金").length;
+  const overdueCount = unpaidSales.filter((sale) => isSaleOverdue(sale)).length;
   const filteredUnpaid = unpaidSales.filter((sale) => isWithinFilterDate(sale.paidDate || sale.createdAt, filter));
   const periodCount = filteredUnpaid.length;
-  const periodAmount = filteredUnpaid.reduce((sum, sale) => sum + getUnpaidAmount(sale), 0);
+  const periodAmount = filteredUnpaid.reduce((sum, sale) => sum + getRemainingAmount(sale), 0);
 
   if (unpaidAlertCard) unpaidAlertCard.classList.toggle("has-unpaid", count > 0);
   if (unpaidAlertSummary) {
     unpaidAlertSummary.textContent = count > 0
-      ? `未入金 ${count}件 / 未入金合計 ${formatCurrency(totalUnpaidAmount)}`
-      : "未入金はありません。";
+      ? `未入金 ${unpaidCount}件 / 一部入金 ${partialCount}件 / 期限超過 ${overdueCount}件 / 未回収合計 ${formatCurrency(totalUnpaidAmount)}`
+      : "要対応の入金はありません。";
   }
   if (unpaidAlertPeriod) {
     unpaidAlertPeriod.textContent = filter.mode === "year"
@@ -2106,15 +2120,17 @@ function renderUnpaidAlert(filter = {}) {
         <td>${escapeHtml(resolveCaseName(sale.caseId))}</td>
         <td>${formatCurrency(sale.invoiceAmount)}</td>
         <td>${formatCurrency(sale.paidAmount)}</td>
-        <td>${formatCurrency(getUnpaidAmount(sale))}</td>
-        <td>${formatDate(sale.paidDate || toDateString(sale.createdAt))}</td>
+        <td>${formatCurrency(getRemainingAmount(sale))}</td>
+        <td><span class="${getSaleStatusClass(sale)}">${escapeHtml(sale.paymentStatus)}</span></td>
+        <td>${formatDate(sale.dueDate)}</td>
       `;
+      tr.classList.add(getSaleRowClass(sale));
       unpaidAlertBody.appendChild(tr);
     });
 }
 
 function renderUnpaidList() {
-  const unpaidSales = getUnpaidSales().slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+  const unpaidSales = getCollectionTargetSales().slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
   if (!unpaidListBody || !unpaidListEmpty || !unpaidListWrap) return;
   unpaidListBody.innerHTML = "";
   unpaidListEmpty.hidden = unpaidSales.length > 0;
@@ -2128,10 +2144,12 @@ function renderUnpaidList() {
       <td>${escapeHtml(linkedCase?.caseName || "（削除済み案件）")}</td>
       <td>${formatCurrency(sale.invoiceAmount)}</td>
       <td>${formatCurrency(sale.paidAmount)}</td>
-      <td>${formatCurrency(getUnpaidAmount(sale))}</td>
-      <td>${formatDate(sale.paidDate)}</td>
+      <td>${formatCurrency(getRemainingAmount(sale))}</td>
+      <td><span class="${getSaleStatusClass(sale)}">${escapeHtml(sale.paymentStatus)}</span></td>
+      <td>${formatDate(sale.dueDate)}</td>
       <td><button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button></td>
     `;
+    tr.classList.add(getSaleRowClass(sale));
     unpaidListBody.appendChild(tr);
   });
 }
@@ -2173,15 +2191,13 @@ function getBillingLeakCandidates() {
   });
 }
 
-function getUnpaidSales() {
+function getCollectionTargetSales() {
   return state.sales.filter((sale) => {
-    const invoiceAmount = sale.invoiceAmount ?? 0;
-    const paidAmount = sale.paidAmount ?? 0;
-    return Boolean(sale.isUnpaid) || paidAmount < invoiceAmount || !sale.paidDate;
+    return sale.paymentStatus !== "入金済";
   });
 }
 
-function getUnpaidAmount(sale) {
+function getRemainingAmount(sale) {
   return Math.max((sale.invoiceAmount ?? 0) - (sale.paidAmount ?? 0), 0);
 }
 
@@ -2761,8 +2777,8 @@ function renderSales() {
     const meta = node.querySelector(".meta");
 
     item.dataset.id = sale.id;
-    title.textContent = `${resolveCaseName(sale.caseId)}｜請求: ${formatCurrency(sale.invoiceAmount)}｜請求番号: ${sale.invoiceNumber || "未採番"}`;
-    meta.textContent = `入金: ${formatCurrency(sale.paidAmount)} / 入金日: ${formatDate(sale.paidDate)} / 未入金: ${sale.isUnpaid ? "はい" : "いいえ"}`;
+    title.textContent = `${resolveCaseName(sale.caseId)}｜請求: ${formatCurrency(sale.invoiceAmount)}｜残額: ${formatCurrency(getRemainingAmount(sale))}｜請求番号: ${sale.invoiceNumber || "未採番"}`;
+    meta.innerHTML = `入金: ${formatCurrency(sale.paidAmount)} / 入金日: ${formatDate(sale.paidDate)} / 支払期限: ${formatDate(sale.dueDate)} / ステータス: <span class="${getSaleStatusClass(sale)}">${escapeHtml(sale.paymentStatus)}</span>`;
     salesList.appendChild(node);
   });
 
@@ -3688,6 +3704,8 @@ async function registerSaleFromEstimate(estimateId) {
     invoice_amount: estimate.total,
     paid_amount: 0,
     paid_date: null,
+    due_date: null,
+    payment_status: "未入金",
     is_unpaid: true,
   };
   const { data, error } = await sbClient.from("sales").insert(payload).select().single();
@@ -3921,13 +3939,42 @@ function formatRemainingDays(remainingDays) {
   return `残り${remainingDays}日`;
 }
 
+function getSalePaymentStatus(invoiceAmount, paidAmount) {
+  const normalizedInvoice = Math.max(Number(invoiceAmount) || 0, 0);
+  const normalizedPaid = Math.max(Number(paidAmount) || 0, 0);
+  if (normalizedPaid === 0) return "未入金";
+  if (normalizedPaid < normalizedInvoice) return "一部入金";
+  return "入金済";
+}
+
+function normalizeSalePaymentStatus(value, invoiceAmount, paidAmount) {
+  if (SALES_PAYMENT_STATUSES.includes(value)) return value;
+  return getSalePaymentStatus(invoiceAmount, paidAmount);
+}
+
+function isSaleOverdue(sale) {
+  if (!sale?.dueDate || sale.paymentStatus === "入金済") return false;
+  const dueTimestamp = toDateOnlyTimestamp(sale.dueDate);
+  const todayTimestamp = toDateOnlyTimestamp(new Date());
+  if (!Number.isFinite(dueTimestamp) || !Number.isFinite(todayTimestamp)) return false;
+  return dueTimestamp < todayTimestamp;
+}
+
+function getSaleStatusClass(sale) {
+  if (isSaleOverdue(sale)) return "sale-status-overdue";
+  if (sale.paymentStatus === "一部入金") return "sale-status-partial";
+  if (sale.paymentStatus === "入金済") return "sale-status-paid";
+  return "sale-status-unpaid";
+}
+
+function getSaleRowClass(sale) {
+  if (isSaleOverdue(sale)) return "sale-row-overdue";
+  if (sale.paymentStatus === "一部入金") return "sale-row-partial";
+  return "";
+}
+
 function getSalesPaymentLabel(sale) {
-  if (sale.isUnpaid) return "未入金";
-  const invoiceAmount = sale.invoiceAmount ?? 0;
-  const paidAmount = sale.paidAmount ?? 0;
-  if (paidAmount >= invoiceAmount && invoiceAmount > 0) return "入金済み";
-  if (paidAmount > 0) return "一部入金";
-  return "未入金";
+  return sale.paymentStatus || getSalePaymentStatus(sale.invoiceAmount ?? 0, sale.paidAmount ?? 0);
 }
 
 function matchesSalesSearch(sale, query) {
@@ -4272,7 +4319,7 @@ async function importRowsByType(importType, tableData) {
   }
 
   if (importType === "sales") {
-    validateRequiredHeaders(headers, ["case_name", "invoice_amount", "paid_amount", "paid_date", "is_unpaid"]);
+    validateRequiredHeaders(headers, ["case_name", "invoice_amount", "paid_amount"]);
     const caseMap = new Map(state.cases.map((c) => [c.caseName, c.id]));
     const payloads = [];
     rows.forEach((row) => {
@@ -4289,14 +4336,22 @@ async function importRowsByType(importType, tableData) {
           return;
         }
         const paidAmount = parseFlexibleAmount(row.paid_amount);
+        const normalizedPaidAmount = paidAmount ?? 0;
+        const paymentStatus = normalizeSalePaymentStatus(
+          asTrimmedText(row.payment_status),
+          invoiceAmount,
+          normalizedPaidAmount,
+        );
         payloads.push({
           user_id: currentUser.id,
           case_id: caseId,
           invoice_number: asTrimmedText(row.invoice_number) || null,
           invoice_amount: invoiceAmount,
-          paid_amount: paidAmount,
+          paid_amount: normalizedPaidAmount,
           paid_date: parseFlexibleDate(row.paid_date),
-          is_unpaid: parseBooleanLike(row.is_unpaid) || (paidAmount ?? 0) < invoiceAmount,
+          due_date: parseFlexibleDate(row.due_date),
+          payment_status: paymentStatus,
+          is_unpaid: parseBooleanLike(row.is_unpaid) || paymentStatus !== "入金済",
         });
       } catch (_error) {
         result.errorCount += 1;
@@ -4492,7 +4547,8 @@ function mapEstimateItemFromDb(row) {
 
 function mapSaleFromDb(row) {
   const invoiceAmount = normalizeAmount(row.invoice_amount) ?? 0;
-  const paidAmount = normalizeAmount(row.paid_amount);
+  const paidAmount = normalizeAmount(row.paid_amount) ?? 0;
+  const paymentStatus = normalizeSalePaymentStatus(row.payment_status, invoiceAmount, paidAmount);
   return {
     id: row.id,
     caseId: row.case_id,
@@ -4500,7 +4556,9 @@ function mapSaleFromDb(row) {
     invoiceAmount,
     paidAmount,
     paidDate: row.paid_date || "",
-    isUnpaid: Boolean(row.is_unpaid) || (paidAmount ?? 0) < invoiceAmount,
+    dueDate: row.due_date || "",
+    paymentStatus,
+    isUnpaid: paymentStatus !== "入金済",
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
   };
