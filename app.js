@@ -603,6 +603,7 @@ async function loadAllData() {
   state.expenses = (expensesRes.data || []).map(mapExpenseFromDb);
   state.fixedExpenses = (fixedExpensesRes.data || []).map(mapFixedExpenseFromDb);
   state.dailyReports = (dailyReportsRes.data || []).map(mapDailyReportFromDb);
+  console.log("LOAD ALL DATA DONE");
   await cleanupLegacyEstimateMemoMarkers();
 
   const createdCount = await ensureMonthlyFixedExpenses();
@@ -617,6 +618,7 @@ async function loadAllData() {
 async function refreshAfterMutation(message) {
   await loadAllData();
   renderAfterDataChanged();
+  console.log("RENDER DONE");
   if (message) showAppMessage(message, false);
 }
 
@@ -636,23 +638,27 @@ async function handleClientSubmit(event) {
     memo: asTrimmedText(clientForm.elements.clientMemo.value) || null,
   };
   const taskName = editState.clientId ? "顧客更新" : "顧客登録";
-  await withLoading(taskName, async () => {
-    if (editState.clientId) {
-      const { data, error } = await sbClient.from("clients").update(payload).eq("id", editState.clientId).eq("user_id", currentUser.id).select().single();
+  try {
+    await withLoading(taskName, async () => {
+      if (editState.clientId) {
+        const { data, error } = await sbClient.from("clients").update(payload).eq("id", editState.clientId).eq("user_id", currentUser.id).select().single();
+        if (error) throw error;
+        if (!data) throw new Error("更新結果を取得できませんでした。");
+        console.log("DB success", taskName);
+        await refreshAfterMutation("顧客を更新しました。");
+        resetClientForm();
+        return;
+      }
+      const { data, error } = await sbClient.from("clients").insert(payload).select().single();
       if (error) throw error;
-      if (!data) throw new Error("更新結果を取得できませんでした。");
+      if (!data) throw new Error("登録結果を取得できませんでした。");
       console.log("DB success", taskName);
-      await refreshAfterMutation("顧客を更新しました。", taskName);
+      await refreshAfterMutation("顧客を登録しました。");
       resetClientForm();
-      return;
-    }
-    const { data, error } = await sbClient.from("clients").insert(payload).select().single();
-    if (error) throw error;
-    if (!data) throw new Error("登録結果を取得できませんでした。");
-    console.log("DB success", taskName);
-    await refreshAfterMutation("顧客を登録しました。", taskName);
-    resetClientForm();
-  }, { triggerButton: event.submitter });
+    }, { triggerButton: event.submitter });
+  } finally {
+    forceHideLoading();
+  }
 }
 
 async function handleCaseSubmit(event) {
@@ -683,30 +689,35 @@ async function handleCaseSubmit(event) {
   };
 
   const taskName = editState.caseId ? "案件更新" : "案件登録";
-  await withLoading(taskName, async () => {
-    if (editState.caseId) {
-      const { data, error } = await sbClient.from("cases").update(payload).eq("id", editState.caseId).eq("user_id", currentUser.id).select().single();
+  try {
+    await withLoading(taskName, async () => {
+      if (editState.caseId) {
+        const { data, error } = await sbClient.from("cases").update(payload).eq("id", editState.caseId).eq("user_id", currentUser.id).select().single();
+        if (error) throw error;
+        if (!data) throw new Error("更新結果を取得できませんでした。");
+        console.log("DB success", taskName);
+        await refreshAfterMutation("案件を更新しました。");
+        subtabState.cases = "list";
+        resetCaseForm();
+        return;
+      }
+
+      const { data, error } = await sbClient.from("cases").insert(payload).select().single();
       if (error) throw error;
-      if (!data) throw new Error("更新結果を取得できませんでした。");
+      if (!data) throw new Error("登録結果を取得できませんでした。");
       console.log("DB success", taskName);
-      await refreshAfterMutation("案件を更新しました。", taskName);
+      await refreshAfterMutation("案件を登録しました。");
       subtabState.cases = "list";
       resetCaseForm();
-      return;
-    }
-
-    const { data, error } = await sbClient.from("cases").insert(payload).select().single();
-    if (error) throw error;
-    if (!data) throw new Error("登録結果を取得できませんでした。");
-    console.log("DB success", taskName);
-    await refreshAfterMutation("案件を登録しました。", taskName);
-    subtabState.cases = "list";
-    resetCaseForm();
-  }, { triggerButton: event.submitter });
+    }, { triggerButton: event.submitter });
+  } finally {
+    forceHideLoading();
+  }
 }
 
 async function handleSaleSubmit(event) {
   event.preventDefault();
+  console.log("SALE SUBMIT START");
   if (!currentUser || !state.cases.length) return;
 
   const invoiceAmount = normalizeAmount(saleForm.elements.invoiceAmount.value);
@@ -718,6 +729,9 @@ async function handleSaleSubmit(event) {
   const normalizedPaidAmount = paidAmount ?? 0;
   const paymentStatus = getSalePaymentStatus(invoiceAmount, normalizedPaidAmount);
 
+  const invoiceNumber = editState.saleId
+    ? (state.sales.find((entry) => entry.id === editState.saleId)?.invoiceNumber || null)
+    : await getNextMonthlyNumber("sales", "invoice_number", "S");
   const payload = {
     user_id: currentUser.id,
     case_id: caseId,
@@ -727,28 +741,37 @@ async function handleSaleSubmit(event) {
     due_date: saleForm.elements.dueDate.value || null,
     payment_status: paymentStatus,
     is_unpaid: paymentStatus !== "入金済",
+    invoice_number: invoiceNumber,
   };
+  console.log("SALE PAYLOAD", payload);
 
   const taskName = editState.saleId ? "売上更新" : "売上登録";
-  await withLoading(taskName, async () => {
-    if (editState.saleId) {
-      const { data, error } = await sbClient.from("sales").update(payload).eq("id", editState.saleId).eq("user_id", currentUser.id).select().single();
-      if (error) throw error;
-      if (!data) throw new Error("更新結果を取得できませんでした。");
-      console.log("DB success", taskName);
-      await refreshAfterMutation("売上を更新しました。", taskName);
-      resetSaleForm();
-      return;
-    }
+  try {
+    await withLoading(taskName, async () => {
+      if (editState.saleId) {
+        const { data, error } = await sbClient.from("sales").update(payload).eq("id", editState.saleId).eq("user_id", currentUser.id).select().single();
+        if (error) throw error;
+        if (!data) throw new Error("更新結果を取得できませんでした。");
+        console.log("SALE INSERT SUCCESS", data);
+        await refreshAfterMutation("売上を更新しました。");
+        resetSaleForm();
+        subtabState.sales = "list";
+        activateTab("sales");
+        return;
+      }
 
-    payload.invoice_number = await getNextMonthlyNumber("sales", "invoice_number", "S");
-    const { data, error } = await sbClient.from("sales").insert(payload).select().single();
-    if (error) throw error;
-    if (!data) throw new Error("登録結果を取得できませんでした。");
-    console.log("DB success", taskName);
-    await refreshAfterMutation("売上を登録しました。", taskName);
-    resetSaleForm();
-  }, { triggerButton: event.submitter });
+      const { data, error } = await sbClient.from("sales").insert(payload).select().single();
+      if (error) throw error;
+      if (!data) throw new Error("売上登録結果を取得できませんでした。");
+      console.log("SALE INSERT SUCCESS", data);
+      await refreshAfterMutation("売上を登録しました。");
+      resetSaleForm();
+      subtabState.sales = "list";
+      activateTab("sales");
+    }, { triggerButton: event.submitter });
+  } finally {
+    forceHideLoading();
+  }
 }
 
 async function handleExpenseSubmit(event) {
@@ -774,7 +797,8 @@ async function handleExpenseSubmit(event) {
   };
 
   const taskName = editState.expenseId ? "経費更新" : "経費登録";
-  await withLoading(taskName, async () => {
+  try {
+    await withLoading(taskName, async () => {
     if (editState.expenseId) {
       const currentExpense = state.expenses.find((entry) => entry.id === editState.expenseId);
       const updatePayload = { ...payload };
@@ -786,7 +810,7 @@ async function handleExpenseSubmit(event) {
       }
       if (!data) throw new Error("更新結果を取得できませんでした。");
       console.log("DB success", taskName);
-      await refreshAfterMutation("経費を更新しました。", taskName);
+      await refreshAfterMutation("経費を更新しました。");
       resetExpenseForm();
       return;
     }
@@ -798,9 +822,12 @@ async function handleExpenseSubmit(event) {
     }
     if (!data) throw new Error("登録結果を取得できませんでした。");
     console.log("DB success", taskName);
-    await refreshAfterMutation("経費を登録しました。", taskName);
+    await refreshAfterMutation("経費を登録しました。");
     resetExpenseForm();
-  }, { triggerButton: event.submitter });
+    }, { triggerButton: event.submitter });
+  } finally {
+    forceHideLoading();
+  }
 }
 
 async function handleFixedExpenseSubmit(event) {
@@ -823,7 +850,8 @@ async function handleFixedExpenseSubmit(event) {
   };
 
   const taskName = editState.fixedExpenseId ? "固定費更新" : "固定費登録";
-  await withLoading(taskName, async () => {
+  try {
+    await withLoading(taskName, async () => {
     if (editState.fixedExpenseId) {
       const { data, error } = await sbClient
         .from("fixed_expenses")
@@ -835,7 +863,7 @@ async function handleFixedExpenseSubmit(event) {
       if (error) throw error;
       if (!data) throw new Error("更新結果を取得できませんでした。");
       console.log("DB success", taskName);
-      await refreshAfterMutation("固定費を更新しました。", taskName);
+      await refreshAfterMutation("固定費を更新しました。");
       resetFixedExpenseForm();
       return;
     }
@@ -844,9 +872,12 @@ async function handleFixedExpenseSubmit(event) {
     if (error) throw error;
     if (!data) throw new Error("登録結果を取得できませんでした。");
     console.log("DB success", taskName);
-    await refreshAfterMutation("固定費を登録しました。", taskName);
+    await refreshAfterMutation("固定費を登録しました。");
     resetFixedExpenseForm();
-  }, { triggerButton: event.submitter });
+    }, { triggerButton: event.submitter });
+  } finally {
+    forceHideLoading();
+  }
 }
 
 async function handleDailyReportSubmit(event) {
@@ -868,13 +899,14 @@ async function handleDailyReportSubmit(event) {
   };
 
   const taskName = editState.dailyReportId ? "日報更新" : "日報登録";
-  await withLoading(taskName, async () => {
+  try {
+    await withLoading(taskName, async () => {
     if (editState.dailyReportId) {
       const { data, error } = await sbClient.from("daily_reports").update(payload).eq("id", editState.dailyReportId).eq("user_id", currentUser.id).select().single();
       if (error) throw error;
       if (!data) throw new Error("更新結果を取得できませんでした。");
       console.log("DB success", taskName);
-      await refreshAfterMutation("日報を更新しました。", taskName);
+      await refreshAfterMutation("日報を更新しました。");
       resetDailyReportForm();
       return;
     }
@@ -882,9 +914,12 @@ async function handleDailyReportSubmit(event) {
     if (error) throw error;
     if (!data) throw new Error("登録結果を取得できませんでした。");
     console.log("DB success", taskName);
-    await refreshAfterMutation("日報を登録しました。", taskName);
+    await refreshAfterMutation("日報を登録しました。");
     resetDailyReportForm();
-  }, { triggerButton: event.submitter });
+    }, { triggerButton: event.submitter });
+  } finally {
+    forceHideLoading();
+  }
 }
 
 async function handleClientListAction(event) {
@@ -1114,19 +1149,23 @@ async function handleFixedExpensesListAction(event) {
     const target = state.fixedExpenses.find((entry) => entry.id === id);
     if (!target) return;
 
-    await withLoading("固定費更新", async () => {
-      const { data, error } = await sbClient
-        .from("fixed_expenses")
-        .update({ active: !target.active })
-        .eq("id", id)
-        .eq("user_id", currentUser.id)
-        .select()
-        .single();
-      if (error) throw error;
-      if (!data) throw new Error("更新結果を取得できませんでした。");
-      console.log("DB success", "固定費更新");
-      await refreshAfterMutation("固定費の有効/無効を更新しました。", "固定費更新");
-    });
+    try {
+      await withLoading("固定費更新", async () => {
+        const { data, error } = await sbClient
+          .from("fixed_expenses")
+          .update({ active: !target.active })
+          .eq("id", id)
+          .eq("user_id", currentUser.id)
+          .select()
+          .single();
+        if (error) throw error;
+        if (!data) throw new Error("更新結果を取得できませんでした。");
+        console.log("DB success", "固定費更新");
+        await refreshAfterMutation("固定費の有効/無効を更新しました。");
+      });
+    } finally {
+      forceHideLoading();
+    }
     return;
   }
 
@@ -1609,14 +1648,18 @@ async function handleCsvImportSubmit(event) {
   if (!file) return;
   if (!window.confirm(`「${file.name}」を${importTypeToLabel(importType)}として取り込みます。よろしいですか？`)) return;
 
-  await withLoading("CSV取込", async () => {
-    const text = await readCsvFileTextWithEncodingFallback(file);
-    const result = await importCsvByType(importType, text);
-    console.log("DB success", "CSV取込");
-    await refreshAfterMutation(`CSV取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`);
-    if (result.errorCount > 0) showAppMessage(`CSV取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, true);
-    csvImportForm.reset();
-  }, { triggerButton: event.submitter });
+  try {
+    await withLoading("CSV取込", async () => {
+      const text = await readCsvFileTextWithEncodingFallback(file);
+      const result = await importCsvByType(importType, text);
+      console.log("DB success", "CSV取込");
+      await refreshAfterMutation(`CSV取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`);
+      if (result.errorCount > 0) showAppMessage(`CSV取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, true);
+      csvImportForm.reset();
+    }, { triggerButton: event.submitter });
+  } finally {
+    forceHideLoading();
+  }
 }
 
 function handleExportExcel() {
@@ -1731,29 +1774,61 @@ async function handleExcelImportSubmit(event) {
   if (!file) return;
   if (!window.confirm(`「${file.name}」をExcelとして取り込みます。よろしいですか？`)) return;
 
-  await withLoading("Excel取込", async () => {
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
-    const result = await importWorkbookBySheet(workbook);
-    console.log("DB success", "Excel取込");
-    await refreshAfterMutation(`Excel取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`);
-    if (result.errorCount > 0) showAppMessage(`Excel取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, true);
-    excelImportForm.reset();
-  }, { triggerButton: event.submitter });
+  try {
+    await withLoading("Excel取込", async () => {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
+      const result = await importWorkbookBySheet(workbook);
+      console.log("DB success", "Excel取込");
+      await refreshAfterMutation(`Excel取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`);
+      if (result.errorCount > 0) showAppMessage(`Excel取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, true);
+      excelImportForm.reset();
+    }, { triggerButton: event.submitter });
+  } finally {
+    forceHideLoading();
+  }
 }
 
 function renderAfterDataChanged() {
   renderClients();
   renderClientOptions();
   renderCaseOptions();
-  renderEstimates();
   renderCases();
+  renderEstimates();
   renderSales();
   renderExpenses();
   renderFixedExpenses();
   renderDailyReports();
   renderDashboard();
+  renderTodayTasks();
+  renderUnpaidAlerts();
+  renderBillingLeakAlerts();
+  renderDeadlineAlerts();
+  renderNextActionAlerts();
+}
+
+function renderTodayTasks() {
   renderTodayTaskCard();
+}
+
+function renderUnpaidAlerts() {
+  renderUnpaidAlert({
+    mode: state.selectedAggregation,
+    monthKey: state.selectedMonth,
+    year: state.selectedYear,
+  });
+}
+
+function renderBillingLeakAlerts() {
+  renderBillingLeakAlert();
+}
+
+function renderDeadlineAlerts() {
+  renderDeadlineAlertCard();
+}
+
+function renderNextActionAlerts() {
+  renderNextActionAlertCard();
 }
 
 function activateTab(tabKey) {
@@ -2434,44 +2509,48 @@ async function handleEstimateSubmit(event) {
   };
 
   const taskName = editState.estimateId ? "見積更新" : "見積登録";
-  await withLoading(taskName, async () => {
-    clearAppMessage();
-    let estimateId = editState.estimateId;
-    const isUpdate = Boolean(estimateId);
-    if (estimateId) {
-      const { data, error } = await sbClient.from("estimates").update(payload).eq("id", estimateId).eq("user_id", currentUser.id).select().single();
-      if (error) throw error;
-      if (!data) throw new Error("更新結果を取得できませんでした。");
-      const oldItemsDeleteRes = await sbClient.from("estimate_items").delete().eq("estimate_id", estimateId).eq("user_id", currentUser.id);
-      if (oldItemsDeleteRes.error) throw oldItemsDeleteRes.error;
-    } else {
-      payload.estimate_number = await getNextMonthlyNumber("estimates", "estimate_number", "M", estimateDate);
-      const res = await sbClient.from("estimates").insert(payload).select("id").single();
-      if (res.error) throw res.error;
-      if (!res.data?.id) throw new Error("登録結果を取得できませんでした。");
-      estimateId = res.data.id;
-    }
-    if (items.length) {
-      const { data, error } = await sbClient.from("estimate_items").insert(items.map((item) => ({
-        user_id: currentUser.id,
-        estimate_id: estimateId,
-        item_name: item.itemName,
-        quantity: item.quantity,
-        unit_price: item.unitPrice,
-        amount: item.amount,
-        sort_order: item.sortOrder,
-      }))).select("id");
-      if (error) throw error;
-      if (!data) throw new Error("明細登録結果を取得できませんでした。");
-    }
-    if (payload.status === "受注") await ensureCaseFromEstimate(estimateId);
-    console.log("DB success", taskName);
-    await refreshAfterMutation(isUpdate ? "見積を更新しました。" : "見積を登録しました。", taskName);
-    resetEstimateForm();
-    editState.estimateId = null;
-    subtabState.estimates = "list";
-    activateTab("estimates");
-  }, { triggerButton: event.submitter });
+  try {
+    await withLoading(taskName, async () => {
+      clearAppMessage();
+      let estimateId = editState.estimateId;
+      const isUpdate = Boolean(estimateId);
+      if (estimateId) {
+        const { data, error } = await sbClient.from("estimates").update(payload).eq("id", estimateId).eq("user_id", currentUser.id).select().single();
+        if (error) throw error;
+        if (!data) throw new Error("更新結果を取得できませんでした。");
+        const oldItemsDeleteRes = await sbClient.from("estimate_items").delete().eq("estimate_id", estimateId).eq("user_id", currentUser.id);
+        if (oldItemsDeleteRes.error) throw oldItemsDeleteRes.error;
+      } else {
+        payload.estimate_number = await getNextMonthlyNumber("estimates", "estimate_number", "M", estimateDate);
+        const res = await sbClient.from("estimates").insert(payload).select("id").single();
+        if (res.error) throw res.error;
+        if (!res.data?.id) throw new Error("登録結果を取得できませんでした。");
+        estimateId = res.data.id;
+      }
+      if (items.length) {
+        const { data, error } = await sbClient.from("estimate_items").insert(items.map((item) => ({
+          user_id: currentUser.id,
+          estimate_id: estimateId,
+          item_name: item.itemName,
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          amount: item.amount,
+          sort_order: item.sortOrder,
+        }))).select("id");
+        if (error) throw error;
+        if (!data) throw new Error("明細登録結果を取得できませんでした。");
+      }
+      if (payload.status === "受注") await ensureCaseFromEstimate(estimateId);
+      console.log("DB success", taskName);
+      await refreshAfterMutation(isUpdate ? "見積を更新しました。" : "見積を登録しました。");
+      resetEstimateForm();
+      editState.estimateId = null;
+      subtabState.estimates = "list";
+      activateTab("estimates");
+    }, { triggerButton: event.submitter });
+  } finally {
+    forceHideLoading();
+  }
 }
 
 function renderEstimates() {
@@ -2539,25 +2618,37 @@ async function handleEstimateListAction(event) {
     await deleteEstimate(estimateId);
     return;
   }
-  if (btn.classList.contains("estimate-case-btn")) return withLoading("見積案件化", async () => {
-    const estimate = state.estimates.find((entry) => entry.id === estimateId);
-    if (estimate?.caseId) {
-      showAppMessage("この見積はすでに案件化済みです。", true);
-      return;
+  if (btn.classList.contains("estimate-case-btn")) {
+    try {
+      return await withLoading("見積案件化", async () => {
+        const estimate = state.estimates.find((entry) => entry.id === estimateId);
+        if (estimate?.caseId) {
+          showAppMessage("この見積はすでに案件化済みです。", true);
+          return;
+        }
+        await ensureCaseFromEstimate(estimateId, true);
+        console.log("DB success", "見積案件化");
+        await refreshAfterMutation("案件化しました。");
+      });
+    } finally {
+      forceHideLoading();
     }
-    await ensureCaseFromEstimate(estimateId, true);
-    console.log("DB success", "見積案件化");
-    await refreshAfterMutation("案件化しました。", "見積案件化");
-  });
+  }
   if (btn.classList.contains("estimate-estimate-print-btn")) return withLoading("帳票出力", async () => openEstimatePrintPreview(estimateId));
   if (btn.classList.contains("estimate-print-btn")) return withLoading("帳票出力", async () => openInvoicePrintPreviewFromEstimate(estimateId));
   if (btn.classList.contains("estimate-estimate-xlsx-btn")) return withLoading("帳票出力", async () => exportEstimateDataForEstimate(estimateId));
   if (btn.classList.contains("estimate-xlsx-btn")) return withLoading("帳票出力", async () => exportInvoiceDataForEstimate(estimateId));
-  if (btn.classList.contains("estimate-sale-btn")) return withLoading("見積から売上登録", async () => {
-    await registerSaleFromEstimate(estimateId);
-    console.log("DB success", "見積から売上登録");
-    await refreshAfterMutation("売上を登録しました。", "見積から売上登録");
-  });
+  if (btn.classList.contains("estimate-sale-btn")) {
+    try {
+      return await withLoading("見積から売上登録", async () => {
+        await registerSaleFromEstimate(estimateId);
+        console.log("DB success", "見積から売上登録");
+        await refreshAfterMutation("売上を登録しました。");
+      });
+    } finally {
+      forceHideLoading();
+    }
+  }
 }
 
 async function deleteEstimate(id) {
@@ -4675,7 +4766,7 @@ function startLoading(taskName) {
   updateLoadingOverlay();
   if (loadingTimeoutId) window.clearTimeout(loadingTimeoutId);
   loadingTimeoutId = window.setTimeout(() => {
-    console.warn("LOADING TIMEOUT FORCE HIDE");
+    console.warn("LOADING TIMEOUT FORCE HIDE", taskName);
     forceHideLoading();
     showAppMessage("読み込みが長時間継続したため自動解除しました。", true);
   }, 10000);
