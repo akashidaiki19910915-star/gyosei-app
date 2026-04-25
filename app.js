@@ -905,14 +905,7 @@ async function handleClientListAction(event) {
     return;
   }
   if (btn.classList.contains("delete-client-btn")) {
-    if (!window.confirm("この顧客を削除しますか？案件・見積は削除されません。")) return;
-    await withLoading("顧客削除", async () => {
-      const { error } = await sbClient.from("clients").delete().eq("id", id).eq("user_id", currentUser.id);
-      if (error) throw error;
-      console.log("DB success", "顧客削除");
-      if (editState.clientId === id) resetClientForm();
-      await refreshAfterMutation("顧客を削除しました。", "顧客削除");
-    });
+    await deleteClient(id);
   }
 }
 
@@ -941,34 +934,7 @@ async function handleCaseListAction(event) {
   }
 
   if (btn.classList.contains("delete-btn")) {
-    if (!window.confirm("この案件を削除しますか？関連する売上・経費も削除されます。")) return;
-
-    await withLoading("案件削除", async () => {
-      const salesDeleteRes = await sbClient
-        .from("sales")
-        .delete()
-        .eq("case_id", id)
-        .eq("user_id", currentUser.id);
-      if (salesDeleteRes.error) throw salesDeleteRes.error;
-
-      const expensesDeleteRes = await sbClient
-        .from("expenses")
-        .delete()
-        .eq("case_id", id)
-        .eq("user_id", currentUser.id);
-      if (expensesDeleteRes.error) throw expensesDeleteRes.error;
-
-      const caseDeleteRes = await sbClient
-        .from("cases")
-        .delete()
-        .eq("id", id)
-        .eq("user_id", currentUser.id);
-      if (caseDeleteRes.error) throw caseDeleteRes.error;
-
-      console.log("DB success", "案件削除");
-      if (editState.caseId === id) resetCaseForm();
-      await refreshAfterMutation("案件を削除しました。", "案件削除");
-    });
+    await deleteCase(id);
   }
 }
 
@@ -1009,14 +975,7 @@ async function handleSalesListAction(event) {
   }
 
   if (btn.classList.contains("delete-btn")) {
-    if (!window.confirm("この売上を削除しますか？")) return;
-    await withLoading("売上削除", async () => {
-      const { error } = await sbClient.from("sales").delete().eq("id", id).eq("user_id", currentUser.id);
-      if (error) throw error;
-      console.log("DB success", "売上削除");
-      if (editState.saleId === id) resetSaleForm();
-      await refreshAfterMutation("売上を削除しました。", "売上削除");
-    });
+    await deleteSale(id);
   }
 }
 
@@ -1033,14 +992,7 @@ async function handleExpensesListAction(event) {
   }
 
   if (btn.classList.contains("delete-btn")) {
-    if (!window.confirm("この経費を削除しますか？")) return;
-    await withLoading("経費削除", async () => {
-      const { error } = await sbClient.from("expenses").delete().eq("id", id).eq("user_id", currentUser.id);
-      if (error) throw error;
-      console.log("DB success", "経費削除");
-      if (editState.expenseId === id) resetExpenseForm();
-      await refreshAfterMutation("経費を削除しました。", "経費削除");
-    });
+    await deleteExpense(id);
   }
 }
 
@@ -1174,14 +1126,7 @@ async function handleFixedExpensesListAction(event) {
   }
 
   if (btn.classList.contains("delete-btn")) {
-    if (!window.confirm("この固定費を削除しますか？")) return;
-    await withLoading("固定費削除", async () => {
-      const { error } = await sbClient.from("fixed_expenses").delete().eq("id", id).eq("user_id", currentUser.id);
-      if (error) throw error;
-      console.log("DB success", "固定費削除");
-      if (editState.fixedExpenseId === id) resetFixedExpenseForm();
-      await refreshAfterMutation("固定費を削除しました。", "固定費削除");
-    });
+    await deleteFixedExpense(id);
   }
 }
 
@@ -1197,14 +1142,7 @@ async function handleDailyReportsListAction(event) {
   }
 
   if (btn.classList.contains("delete-daily-report-btn")) {
-    if (!window.confirm("この日報を削除しますか？")) return;
-    await withLoading("日報削除", async () => {
-      const { error } = await sbClient.from("daily_reports").delete().eq("id", id).eq("user_id", currentUser.id);
-      if (error) throw error;
-      console.log("DB success", "日報削除");
-      if (editState.dailyReportId === id) resetDailyReportForm();
-      await refreshAfterMutation("日報を削除しました。", "日報削除");
-    });
+    await deleteDailyReport(id);
   }
 }
 
@@ -1242,10 +1180,223 @@ window.editExpense = editExpense;
 window.editDailyReport = editDailyReport;
 
 async function handleClearAll() {
+  await deleteAllData();
+}
+
+async function deleteClient(id) {
+  if (!currentUser) return;
+  if (!window.confirm("この顧客を削除しますか？案件・見積は削除されません。")) return;
+  const taskName = "顧客削除";
+  startLoading(taskName);
+  try {
+    clearAppMessage();
+    console.log("DELETE START", taskName, id);
+
+    const casesUpdateRes = await sbClient
+      .from("cases")
+      .update({ client_id: null })
+      .eq("client_id", id)
+      .eq("user_id", currentUser.id);
+    if (casesUpdateRes.error) throw casesUpdateRes.error;
+
+    const estimatesUpdateRes = await sbClient
+      .from("estimates")
+      .update({ client_id: null })
+      .eq("client_id", id)
+      .eq("user_id", currentUser.id);
+    if (estimatesUpdateRes.error) throw estimatesUpdateRes.error;
+
+    const clientDeleteRes = await sbClient
+      .from("clients")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", currentUser.id);
+    if (clientDeleteRes.error) throw clientDeleteRes.error;
+    console.log("DELETE DB DONE", taskName, id);
+
+    if (editState.clientId === id) {
+      editState.clientId = null;
+      resetClientForm();
+    }
+
+    await loadAllData();
+    console.log("DELETE LOAD DONE", taskName, id);
+    renderAfterDataChanged();
+    console.log("DELETE RENDER DONE", taskName, id);
+    showAppMessage("削除しました。", false);
+  } catch (error) {
+    console.error("削除に失敗しました。", error);
+    showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
+  } finally {
+    console.log("DELETE FINALLY", taskName, id);
+    forceHideLoading();
+  }
+}
+
+async function deleteCase(id) {
+  if (!currentUser) return;
+  if (!window.confirm("この案件を削除しますか？関連する売上・経費も削除されます。")) return;
+  const taskName = "案件削除";
+  startLoading(taskName);
+  try {
+    clearAppMessage();
+    console.log("DELETE START", taskName, id);
+
+    const salesDeleteRes = await sbClient.from("sales").delete().eq("case_id", id).eq("user_id", currentUser.id);
+    if (salesDeleteRes.error) throw salesDeleteRes.error;
+    const expensesDeleteRes = await sbClient.from("expenses").delete().eq("case_id", id).eq("user_id", currentUser.id);
+    if (expensesDeleteRes.error) throw expensesDeleteRes.error;
+    const caseDeleteRes = await sbClient.from("cases").delete().eq("id", id).eq("user_id", currentUser.id);
+    if (caseDeleteRes.error) throw caseDeleteRes.error;
+    console.log("DELETE DB DONE", taskName, id);
+
+    if (editState.caseId === id) {
+      editState.caseId = null;
+      resetCaseForm();
+    }
+
+    await loadAllData();
+    console.log("DELETE LOAD DONE", taskName, id);
+    renderAfterDataChanged();
+    console.log("DELETE RENDER DONE", taskName, id);
+    showAppMessage("削除しました。", false);
+  } catch (error) {
+    console.error("削除に失敗しました。", error);
+    showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
+  } finally {
+    console.log("DELETE FINALLY", taskName, id);
+    forceHideLoading();
+  }
+}
+
+async function deleteSale(id) {
+  if (!currentUser) return;
+  if (!window.confirm("この売上を削除しますか？")) return;
+  const taskName = "売上削除";
+  startLoading(taskName);
+  try {
+    clearAppMessage();
+    console.log("DELETE START", taskName, id);
+    const { error } = await sbClient.from("sales").delete().eq("id", id).eq("user_id", currentUser.id);
+    if (error) throw error;
+    console.log("DELETE DB DONE", taskName, id);
+
+    if (editState.saleId === id) {
+      editState.saleId = null;
+      resetSaleForm();
+    }
+    await loadAllData();
+    console.log("DELETE LOAD DONE", taskName, id);
+    renderAfterDataChanged();
+    console.log("DELETE RENDER DONE", taskName, id);
+    showAppMessage("削除しました。", false);
+  } catch (error) {
+    console.error("削除に失敗しました。", error);
+    showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
+  } finally {
+    console.log("DELETE FINALLY", taskName, id);
+    forceHideLoading();
+  }
+}
+
+async function deleteExpense(id) {
+  if (!currentUser) return;
+  if (!window.confirm("この経費を削除しますか？")) return;
+  const taskName = "経費削除";
+  startLoading(taskName);
+  try {
+    clearAppMessage();
+    console.log("DELETE START", taskName, id);
+    const { error } = await sbClient.from("expenses").delete().eq("id", id).eq("user_id", currentUser.id);
+    if (error) throw error;
+    console.log("DELETE DB DONE", taskName, id);
+
+    if (editState.expenseId === id) {
+      editState.expenseId = null;
+      resetExpenseForm();
+    }
+    await loadAllData();
+    console.log("DELETE LOAD DONE", taskName, id);
+    renderAfterDataChanged();
+    console.log("DELETE RENDER DONE", taskName, id);
+    showAppMessage("削除しました。", false);
+  } catch (error) {
+    console.error("削除に失敗しました。", error);
+    showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
+  } finally {
+    console.log("DELETE FINALLY", taskName, id);
+    forceHideLoading();
+  }
+}
+
+async function deleteFixedExpense(id) {
+  if (!currentUser) return;
+  if (!window.confirm("この固定費を削除しますか？")) return;
+  const taskName = "固定費削除";
+  startLoading(taskName);
+  try {
+    clearAppMessage();
+    console.log("DELETE START", taskName, id);
+    const { error } = await sbClient.from("fixed_expenses").delete().eq("id", id).eq("user_id", currentUser.id);
+    if (error) throw error;
+    console.log("DELETE DB DONE", taskName, id);
+
+    if (editState.fixedExpenseId === id) {
+      editState.fixedExpenseId = null;
+      resetFixedExpenseForm();
+    }
+    await loadAllData();
+    console.log("DELETE LOAD DONE", taskName, id);
+    renderAfterDataChanged();
+    console.log("DELETE RENDER DONE", taskName, id);
+    showAppMessage("削除しました。", false);
+  } catch (error) {
+    console.error("削除に失敗しました。", error);
+    showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
+  } finally {
+    console.log("DELETE FINALLY", taskName, id);
+    forceHideLoading();
+  }
+}
+
+async function deleteDailyReport(id) {
+  if (!currentUser) return;
+  if (!window.confirm("この日報を削除しますか？")) return;
+  const taskName = "日報削除";
+  startLoading(taskName);
+  try {
+    clearAppMessage();
+    console.log("DELETE START", taskName, id);
+    const { error } = await sbClient.from("daily_reports").delete().eq("id", id).eq("user_id", currentUser.id);
+    if (error) throw error;
+    console.log("DELETE DB DONE", taskName, id);
+
+    if (editState.dailyReportId === id) {
+      editState.dailyReportId = null;
+      resetDailyReportForm();
+    }
+    await loadAllData();
+    console.log("DELETE LOAD DONE", taskName, id);
+    renderAfterDataChanged();
+    console.log("DELETE RENDER DONE", taskName, id);
+    showAppMessage("削除しました。", false);
+  } catch (error) {
+    console.error("削除に失敗しました。", error);
+    showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
+  } finally {
+    console.log("DELETE FINALLY", taskName, id);
+    forceHideLoading();
+  }
+}
+
+async function deleteAllData() {
   if (!currentUser) return;
   if (!window.confirm("顧客・見積・案件・売上・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
-
-  await withLoading("全件削除", async () => {
+  const taskName = "全件削除";
+  startLoading(taskName);
+  try {
+    clearAppMessage();
+    console.log("DELETE START", taskName, "all");
     const [estimateItemsRes, estimatesRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes, clientsRes] = await Promise.all([
       sbClient.from("estimate_items").delete().eq("user_id", currentUser.id),
       sbClient.from("estimates").delete().eq("user_id", currentUser.id),
@@ -1259,12 +1410,13 @@ async function handleClearAll() {
 
     if (salesRes.error) throw salesRes.error;
     if (expensesRes.error) throw expensesRes.error;
+    if (estimateItemsRes.error) throw estimateItemsRes.error;
+    if (estimatesRes.error) throw estimatesRes.error;
     if (fixedExpensesRes.error) throw fixedExpensesRes.error;
     if (dailyReportsRes.error) throw dailyReportsRes.error;
     if (casesRes.error) throw casesRes.error;
     if (clientsRes.error) throw clientsRes.error;
-
-    console.log("DB success", "全件削除");
+    console.log("DELETE DB DONE", taskName, "all");
     resetClientForm();
     resetCaseForm();
     resetEstimateForm();
@@ -1272,8 +1424,18 @@ async function handleClearAll() {
     resetExpenseForm();
     resetFixedExpenseForm();
     resetDailyReportForm();
-    await refreshAfterMutation("全データを削除しました。", "全件削除");
-  });
+    await loadAllData();
+    console.log("DELETE LOAD DONE", taskName, "all");
+    renderAfterDataChanged();
+    console.log("DELETE RENDER DONE", taskName, "all");
+    showAppMessage("削除しました。", false);
+  } catch (error) {
+    console.error("削除に失敗しました。", error);
+    showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
+  } finally {
+    console.log("DELETE FINALLY", taskName, "all");
+    forceHideLoading();
+  }
 }
 
 function handleExportCasesCsv() {
@@ -1636,6 +1798,7 @@ function normalizeTabKey(tabKey) {
 }
 
 function renderDashboard() {
+  if (!summaryGrid) return;
   state.selectedMonth = normalizeMonthKey(state.selectedMonth) || toMonthKey(new Date());
   state.selectedYear = normalizeYear(state.selectedYear) || new Date().getFullYear();
   state.selectedAggregation = state.selectedAggregation === "year" ? "year" : "month";
@@ -2023,6 +2186,7 @@ function getUnpaidAmount(sale) {
 }
 
 function renderCaseOptions() {
+  if (!saleCaseSelect || !expenseCaseSelect || !reportCaseSelect) return;
   const options = state.cases
     .slice()
     .sort((a, b) => a.createdAt - b.createdAt)
@@ -2356,15 +2520,7 @@ async function handleEstimateListAction(event) {
   if (!estimateId) return;
   if (btn.classList.contains("estimate-edit-btn")) return startEstimateEdit(estimateId);
   if (btn.classList.contains("estimate-delete-btn")) {
-    if (!window.confirm("この見積を削除しますか？")) return;
-    await withLoading("見積削除", async () => {
-      await sbClient.from("estimate_items").delete().eq("estimate_id", estimateId).eq("user_id", currentUser.id);
-      const { error } = await sbClient.from("estimates").delete().eq("id", estimateId).eq("user_id", currentUser.id);
-      if (error) throw error;
-      console.log("DB success", "見積削除");
-      if (editState.estimateId === estimateId) resetEstimateForm();
-      await refreshAfterMutation("見積を削除しました。", "見積削除");
-    });
+    await deleteEstimate(estimateId);
     return;
   }
   if (btn.classList.contains("estimate-case-btn")) return withLoading("見積案件化", async () => {
@@ -2388,8 +2544,51 @@ async function handleEstimateListAction(event) {
   });
 }
 
+async function deleteEstimate(id) {
+  if (!currentUser) return;
+  if (!window.confirm("この見積を削除しますか？")) return;
+  const taskName = "見積削除";
+  startLoading(taskName);
+  try {
+    clearAppMessage();
+    console.log("DELETE START", taskName, id);
+
+    const estimateItemsRes = await sbClient
+      .from("estimate_items")
+      .delete()
+      .eq("estimate_id", id)
+      .eq("user_id", currentUser.id);
+    if (estimateItemsRes.error) throw estimateItemsRes.error;
+
+    const estimateDeleteRes = await sbClient
+      .from("estimates")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", currentUser.id);
+    if (estimateDeleteRes.error) throw estimateDeleteRes.error;
+    console.log("DELETE DB DONE", taskName, id);
+
+    if (editState.estimateId === id) {
+      editState.estimateId = null;
+      resetEstimateForm();
+    }
+    await loadAllData();
+    console.log("DELETE LOAD DONE", taskName, id);
+    renderAfterDataChanged();
+    console.log("DELETE RENDER DONE", taskName, id);
+    showAppMessage("削除しました。", false);
+  } catch (error) {
+    console.error("削除に失敗しました。", error);
+    showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
+  } finally {
+    console.log("DELETE FINALLY", taskName, id);
+    forceHideLoading();
+  }
+}
+
 
 function renderCases() {
+  if (!caseList || !caseEmpty || !caseItemTemplate) return;
   caseList.innerHTML = "";
   const sorted = state.cases.slice().sort(sortCases);
   const statusFilteredCases = state.caseStatusFilter === "all"
@@ -2547,6 +2746,7 @@ function renderYearlyBreakdown(salesByMonth, expenseByMonth) {
 }
 
 function renderSales() {
+  if (!salesList || !salesEmpty || !saleItemTemplate) return;
   salesList.innerHTML = "";
   const sorted = state.sales.slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
   const filteredSales = sorted.filter((sale) => {
@@ -2576,6 +2776,7 @@ function renderSales() {
 }
 
 function renderExpenses() {
+  if (!expensesList || !expensesEmpty || !expenseItemTemplate) return;
   expensesList.innerHTML = "";
   const sorted = state.expenses.slice().sort((a, b) => toSortTimestamp(b.date) - toSortTimestamp(a.date));
   const filteredExpenses = sorted.filter((expense) => {
@@ -2607,6 +2808,7 @@ function renderExpenses() {
 }
 
 function renderFixedExpenses() {
+  if (!fixedExpensesList || !fixedExpensesEmpty || !fixedExpenseItemTemplate) return;
   fixedExpensesList.innerHTML = "";
   const sorted = state.fixedExpenses.slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
 
