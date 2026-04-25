@@ -676,6 +676,46 @@ tbody tr:last-child td {
 .dashboard-worktime-card h3 {
   margin: 0 0 0.5rem;
 }
+
+.analytics-panel {
+  margin-top: 1rem;
+}
+
+.analytics-header-row {
+  margin-bottom: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.analytics-heading,
+.analytics-subheading {
+  margin: 0;
+}
+
+.analytics-subheading {
+  margin-top: 0.8rem;
+  margin-bottom: 0.45rem;
+}
+
+.analytics-ranking-grid {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.analytics-ranking-list {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.analytics-ranking-list li + li {
+  margin-top: 0.25rem;
+}
+
+.analysis-unpaid-text {
+  color: #92400e;
+  font-weight: 700;
+}
+
 .dashboard.alerts-only .case-dashboard-block {
   display: none;
 }
