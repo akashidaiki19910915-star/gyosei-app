@@ -70,6 +70,16 @@ alter table expenses add column if not exists payee text;
 alter table expenses add column if not exists payment_method text;
 ```
 
+## 売上（請求）入金管理強化のための追加SQL
+
+`sales` テーブルに未入金・一部入金・入金済を管理するカラムを追加します。
+
+```sql
+alter table sales add column if not exists paid_amount bigint default 0;
+alter table sales add column if not exists payment_status text;
+alter table sales add column if not exists due_date date;
+```
+
 ## 複数端末で同じデータを閲覧する条件
 
 同じ公開 URL（GitHub Pages）を複数端末で開き、**同じ Supabase アカウントでログイン**すれば、同じ Supabase テーブル上のデータを参照するため同一データが表示されます。
