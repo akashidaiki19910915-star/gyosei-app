@@ -168,3 +168,39 @@ for all
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 ```
+
+## 顧客台帳・採番・証憑URL対応の追加SQL
+
+```sql
+create table if not exists clients (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  name text not null,
+  client_type text,
+  address text,
+  tel text,
+  email text,
+  referral_source text,
+  memo text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table clients enable row level security;
+
+create policy "clients_own" on clients
+for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+alter table cases add column if not exists client_id uuid;
+alter table estimates add column if not exists client_id uuid;
+
+alter table estimates add column if not exists estimate_number text;
+alter table sales add column if not exists invoice_number text;
+
+alter table cases add column if not exists document_url text;
+alter table cases add column if not exists invoice_url text;
+alter table cases add column if not exists receipt_url text;
+alter table expenses add column if not exists receipt_url text;
+```
