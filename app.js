@@ -2811,10 +2811,10 @@ function buildBusinessDocumentHtml(documentData, options = { type: "invoice" }) 
   const isInvoice = options.type === "invoice";
   const title = isInvoice ? "請求書" : "見積書";
   const description = isInvoice ? "下記のとおりご請求申し上げます。" : "下記のとおり、お見積もり申し上げます。";
-  const emphasizedLabel = isInvoice ? "請求金額" : "合計金額（税込）";
+  const emphasizedLabel = isInvoice ? "ご請求金額（税込）" : "お見積金額（税込）";
   const numberLabel = isInvoice ? "請求書番号" : "見積番号";
   const numberValue = isInvoice ? documentData.invoiceNumber : documentData.estimateNumber;
-  const dateLabel = isInvoice ? "請求日" : "見積日";
+  const dateLabel = isInvoice ? "日付" : "日付";
   const dateValue = isInvoice ? documentData.invoiceDate : documentData.estimateDate;
   const hasCompanyZip = Boolean(asTrimmedText(documentData.companyZip || ""));
   const hasCompanyAddress = Boolean(asTrimmedText(documentData.companyAddress || ""));
@@ -2834,21 +2834,17 @@ function buildBusinessDocumentHtml(documentData, options = { type: "invoice" }) 
     documentData.companyEmail ? `Email: ${escapeHtml(documentData.companyEmail)}` : "",
   ].filter(Boolean).join("<br />");
   const transferSectionHtml = hasTransferInfo
-    ? `<div>
-        <strong>振込先</strong>
-        <div class="note-box">${escapeHtml(documentData.transferInfo || "")}</div>
-      </div>`
+    ? `<section class="info-section transfer-section"><h3>振込先</h3><div class="note-box">${escapeHtml(documentData.transferInfo || "")}</div></section>`
     : "";
   const tableHeader = isInvoice
     ? "<tr><th>品名</th><th>単価</th><th>数量</th><th>金額</th></tr>"
     : "<tr><th>摘要</th><th>数量</th><th>単位</th><th>単価</th><th>金額</th></tr>";
   const detailRows = (documentData.details || []).map((row) => {
     if (isInvoice) {
-      return `<tr><td>${escapeHtml(row.itemName || "")}</td><td class="align-right">${formatCurrencyCompact(row.unitPrice)}</td><td class="align-right">${escapeHtml(String(row.quantity || ""))}</td><td class="align-right">${formatCurrencyCompact(row.amount)}</td></tr>`;
+      return `<tr><td class="item-name">${escapeHtml(row.itemName || "")}</td><td class="align-right">${formatCurrencyCompact(row.unitPrice)}</td><td class="align-center">${escapeHtml(String(row.quantity || ""))}</td><td class="align-right">${formatCurrencyCompact(row.amount)}</td></tr>`;
     }
-    return `<tr><td>${escapeHtml(row.itemName || "")}</td><td class="align-right">${escapeHtml(String(row.quantity || ""))}</td><td>${escapeHtml(row.unit || "式")}</td><td class="align-right">${formatCurrencyCompact(row.unitPrice)}</td><td class="align-right">${formatCurrencyCompact(row.amount)}</td></tr>`;
+    return `<tr><td class="item-name">${escapeHtml(row.itemName || "")}</td><td class="align-center">${escapeHtml(String(row.quantity || ""))}</td><td class="align-center">${escapeHtml(row.unit || "式")}</td><td class="align-right">${formatCurrencyCompact(row.unitPrice)}</td><td class="align-right">${formatCurrencyCompact(row.amount)}</td></tr>`;
   }).join("");
-  const headerToneClass = isInvoice ? "tone-dark" : "tone-blue";
 
   return `<!DOCTYPE html>
 <html lang="ja">
@@ -2857,46 +2853,209 @@ function buildBusinessDocumentHtml(documentData, options = { type: "invoice" }) 
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>${title}</title>
 <style>
-@page { size: A4 portrait; margin: 10mm; }
-body { margin: 0; background: #fff; color: #111827; font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif; }
-.print-toolbar { max-width: 210mm; margin: 10px auto 0; display: flex; justify-content: flex-end; }
-.print-btn { border: 0; background: #1f2937; color: #fff; border-radius: 8px; padding: 8px 16px; cursor: pointer; }
-.sheet { width: 190mm; min-height: 267mm; margin: 10px auto; padding: 12mm; border: 1px solid #d1d5db; background: #fff; }
-.title { text-align: center; font-size: 34px; letter-spacing: 0.2em; margin: 0 0 20px; font-weight: 700; }
-.header-grid { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 10px; }
-.left-block { flex: 1; }
-.recipient { font-size: 21px; margin-top: 6px; border-bottom: 1px solid #111827; display: inline-block; padding-bottom: 4px; }
-.right-block { width: 320px; font-size: 13px; }
-.kv-row { display: grid; grid-template-columns: 96px 1fr; padding: 2px 0; }
-.office-block { margin: 16px 0 10px auto; width: 320px; font-size: 13px; line-height: 1.7; }
-.intro { margin: 14px 0; font-size: 14px; }
-.emphasis { border: 2px solid #111827; padding: 10px 14px; margin: 12px 0 14px; display: inline-flex; gap: 16px; align-items: baseline; }
-.emphasis-label { font-size: 14px; font-weight: 700; }
-.emphasis-value { font-size: 30px; font-weight: 800; }
-.details-table { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: fixed; font-size: 13px; }
-.details-table th, .details-table td { border: 1px solid #374151; padding: 7px 8px; }
-.details-table th { color: #fff; }
-.details-table.tone-blue th { background: #1d4ed8; }
-.details-table.tone-dark th { background: #111827; }
+@page {
+  size: A4 portrait;
+  margin: 12mm;
+}
+body {
+  margin: 0;
+  background: #fff;
+  color: #111111;
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+}
+.print-toolbar {
+  max-width: 180mm;
+  margin: 10px auto 0;
+  display: flex;
+  justify-content: flex-end;
+}
+.print-btn {
+  border: 0;
+  background: #1f3a5f;
+  color: #fff;
+  border-radius: 7px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+.sheet {
+  width: 100%;
+  max-width: 180mm;
+  min-height: 273mm;
+  margin: 8px auto 12px;
+  padding: 0;
+  background: #fff;
+}
+.title {
+  margin: 4px 0 8px;
+  text-align: center;
+  font-size: 36px;
+  letter-spacing: 0.32em;
+  color: #1f3a5f;
+  font-weight: 700;
+}
+.title-divider {
+  height: 1.5px;
+  background: #1f3a5f;
+  margin-bottom: 18px;
+}
+.header-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+  margin-bottom: 6px;
+}
+.left-block { min-width: 0; }
+.left-label {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #334155;
+}
+.recipient {
+  display: inline-block;
+  font-size: 21px;
+  margin: 0;
+  padding-bottom: 5px;
+  border-bottom: 1px solid #1f3a5f;
+}
+.right-block {
+  font-size: 13px;
+  background: #f7f9fc;
+  border: 1px solid #9aa8b8;
+  padding: 10px;
+}
+.kv-row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 8px;
+  padding: 2px 0;
+}
+.kv-row strong { color: #0f172a; }
+.office-block {
+  margin: 0 0 16px auto;
+  width: 320px;
+  border: 1px solid #9aa8b8;
+  background: #f7f9fc;
+  padding: 9px 10px;
+  font-size: 12px;
+  line-height: 1.65;
+}
+.intro {
+  margin: 10px 0 12px;
+  font-size: 14px;
+}
+.amount-box {
+  border: 1px solid #9aa8b8;
+  margin: 0 0 14px;
+}
+.amount-header {
+  margin: 0;
+  padding: 5px 10px;
+  font-size: 13px;
+  color: #fff;
+  background: #1f3a5f;
+}
+.amount-value {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 34px;
+  font-weight: 800;
+  color: #0f172a;
+  text-align: right;
+  letter-spacing: 0.03em;
+}
+.details-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+.details-table th, .details-table td {
+  border: 1px solid #9aa8b8;
+  padding: 8px;
+}
+.details-table th {
+  background: #1f3a5f;
+  color: #fff;
+  text-align: center;
+  font-weight: 700;
+}
+.details-table td {
+  vertical-align: top;
+  background: #fff;
+}
+.details-table .item-name {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
 .align-right { text-align: right; }
-.totals { width: 260px; margin: 12px 0 0 auto; border-collapse: collapse; font-size: 13px; }
-.totals th, .totals td { border: 1px solid #374151; padding: 7px 8px; }
-.totals th { background: #f3f4f6; text-align: left; }
-.totals .total-row th, .totals .total-row td { font-weight: 700; font-size: 15px; }
-.footer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 16px; font-size: 13px; }
-.note-box { border: 1px solid #9ca3af; min-height: 64px; padding: 8px; white-space: pre-wrap; line-height: 1.6; }
+.align-center { text-align: center; }
+.totals {
+  width: 280px;
+  margin: 12px 0 0 auto;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.totals th, .totals td {
+  border: 1px solid #9aa8b8;
+  padding: 7px 8px;
+}
+.totals th {
+  text-align: left;
+  background: #e8eef6;
+  color: #0f172a;
+}
+.totals td {
+  text-align: right;
+  background: #fff;
+}
+.totals .total-row th,
+.totals .total-row td {
+  font-weight: 700;
+  font-size: 15px;
+}
+.totals .total-row th { background: #1f3a5f; color: #fff; }
+.document-footer {
+  margin-top: 16px;
+  display: grid;
+  gap: 12px;
+}
+.info-section h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: #0f172a;
+}
+.note-box {
+  border: 1px solid #9aa8b8;
+  background: #f7f9fc;
+  min-height: 62px;
+  padding: 8px;
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
 @media print {
-  .print-toolbar { display: none; }
-  .sheet { margin: 0 auto; border: 0; width: 100%; min-height: auto; padding: 0; }
+  .no-print {
+    display: none !important;
+  }
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .sheet {
+    margin: 0 auto;
+    min-height: auto;
+  }
 }
 </style>
 </head>
 <body>
-  <div class="print-toolbar"><button class="print-btn" onclick="window.print()">印刷 / PDF保存</button></div>
+  <div class="print-toolbar no-print"><button class="print-btn" onclick="window.print()">印刷 / PDF保存</button></div>
   <main class="sheet">
     <h1 class="title">${title}</h1>
+    <div class="title-divider" aria-hidden="true"></div>
     <section class="header-grid">
       <div class="left-block">
+        <p class="left-label">${isInvoice ? "請求先" : "宛先"}</p>
         <p class="recipient">${escapeHtml(documentData.customerName || "顧客名未設定")} 御中</p>
       </div>
       <div class="right-block">
@@ -2909,8 +3068,11 @@ body { margin: 0; background: #fff; color: #111827; font-family: "Hiragino Kaku 
       ${officeLines}
     </section>
     <p class="intro">${description}</p>
-    <div class="emphasis"><span class="emphasis-label">${emphasizedLabel}</span><span class="emphasis-value">${formatCurrencyCompact(documentData.total)}</span></div>
-    <table class="details-table ${headerToneClass}">
+    <section class="amount-box">
+      <h2 class="amount-header">${emphasizedLabel}</h2>
+      <p class="amount-value">${formatCurrencyCompact(documentData.total)}</p>
+    </section>
+    <table class="details-table">
       <thead>${tableHeader}</thead>
       <tbody>${detailRows || (isInvoice ? "<tr><td colspan='4'>明細なし</td></tr>" : "<tr><td colspan='5'>明細なし</td></tr>")}</tbody>
     </table>
@@ -2919,12 +3081,12 @@ body { margin: 0; background: #fff; color: #111827; font-family: "Hiragino Kaku 
       <tr><th>消費税10%</th><td class="align-right">${formatCurrencyCompact(documentData.tax)}</td></tr>
       <tr class="total-row"><th>合計</th><td class="align-right">${formatCurrencyCompact(documentData.total)}</td></tr>
     </table>
-    <section class="footer-grid">
-      ${isInvoice ? transferSectionHtml : `<div><strong>備考</strong><div class="note-box">${escapeHtml(documentData.note || "")}</div></div>`}
-      <div>
-        <strong>${isInvoice ? "備考" : "支払条件 / 有効期限"}</strong>
-        <div class="note-box">${escapeHtml(isInvoice ? (documentData.note || "") : `${documentData.paymentTerms || "支払条件: 記載なし"}\n有効期限: ${documentData.validUntil || "記載なし"}`)}</div>
-      </div>
+    <section class="document-footer">
+      ${isInvoice ? transferSectionHtml : ""}
+      <section class="info-section">
+        <h3>${isInvoice ? "備考" : "備考"}</h3>
+        <div class="note-box">${escapeHtml(isInvoice ? (documentData.note || "") : `${documentData.note || ""}\n${documentData.paymentTerms || "支払条件: 記載なし"}\n有効期限: ${documentData.validUntil || "記載なし"}`.trim())}</div>
+      </section>
     </section>
   </main>
 </body>
