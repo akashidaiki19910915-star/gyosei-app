@@ -4,6 +4,7 @@ const STATUS_ORDER = ["未着手", "進行中", "完了"];
 const STATUS_FILTER_KEYS = [...STATUS_ORDER, "その他"];
 const DEADLINE_FILTER_KEYS = ["all", "overdue", "within7", "within30"];
 const ESTIMATE_STATUS_ORDER = ["作成中", "提出済", "受注", "失注"];
+const EXPENSE_PAYMENT_METHODS = ["現金", "クレジットカード", "銀行振込", "電子マネー", "口座振替", "その他"];
 const OFFICE_INFO = {
   name: "あかし行政書士事務所",
   zip: "574-0044",
@@ -672,6 +673,8 @@ async function handleExpenseSubmit(event) {
 
   const date = expenseForm.elements.expenseDate.value;
   const content = expenseForm.elements.expenseContent.value.trim();
+  const payee = asTrimmedText(expenseForm.elements.expensePayee.value) || null;
+  const paymentMethod = normalizeExpensePaymentMethod(expenseForm.elements.expensePaymentMethod.value);
   const amount = normalizeAmount(expenseForm.elements.expenseAmount.value);
   if (!date || !content || amount === null) return;
 
@@ -680,6 +683,8 @@ async function handleExpenseSubmit(event) {
     date,
     content,
     amount,
+    payee,
+    payment_method: paymentMethod,
     case_id: expenseCaseSelect.value || null,
   };
 
@@ -951,6 +956,8 @@ async function startExpenseEdit(expenseId) {
     editState.expenseId = target.id;
     expenseForm.elements.expenseDate.value = target.date;
     expenseForm.elements.expenseContent.value = target.content;
+    expenseForm.elements.expensePayee.value = target.payee || "";
+    expenseForm.elements.expensePaymentMethod.value = target.paymentMethod || "";
     expenseForm.elements.expenseAmount.value = target.amount;
     expenseCaseSelect.value = target.caseId || "";
     expenseSubmitBtn.textContent = "経費を更新";
@@ -1167,9 +1174,11 @@ function handleExportExpensesCsv() {
       date: entry.date || "",
       content: entry.content || "",
       amount: entry.amount ?? "",
+      payee: entry.payee || "",
+      payment_method: entry.paymentMethod || "",
     };
   });
-  downloadCsvFile("expenses.csv", ["case_name", "date", "content", "amount"], rows);
+  downloadCsvFile("expenses.csv", ["case_name", "date", "content", "amount", "payee", "payment_method"], rows);
 }
 
 function handleExportFixedExpensesCsv() {
@@ -1188,7 +1197,7 @@ function handleExportAllCsv() {
     "data_type",
     "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action",
     "invoice_amount", "paid_amount", "paid_date", "is_unpaid",
-    "date", "content", "amount",
+    "date", "content", "amount", "payee", "payment_method",
     "day_of_month", "start_date", "active",
   ];
   const rows = [];
@@ -1226,6 +1235,8 @@ function handleExportAllCsv() {
       date: entry.date || "",
       content: entry.content || "",
       amount: entry.amount ?? "",
+      payee: entry.payee || "",
+      payment_method: entry.paymentMethod || "",
     });
   });
   state.fixedExpenses.forEach((entry) => {
@@ -1274,7 +1285,7 @@ function exportExcel() {
     const workbook = XLSX.utils.book_new();
     const caseHeaders = ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action"];
     const saleHeaders = ["case_name", "invoice_amount", "paid_amount", "paid_date", "is_unpaid"];
-    const expenseHeaders = ["case_name", "date", "content", "amount"];
+    const expenseHeaders = ["case_name", "date", "content", "amount", "payee", "payment_method"];
     const fixedExpenseHeaders = ["content", "amount", "day_of_month", "start_date", "active"];
     const caseRows = state.cases.map((entry) => ({
       customer_name: entry.customerName,
@@ -1304,6 +1315,8 @@ function exportExcel() {
         date: entry.date || "",
         content: entry.content || "",
         amount: entry.amount ?? "",
+        payee: entry.payee || "",
+        payment_method: entry.paymentMethod || "",
       };
     });
     const fixedExpenseRows = state.fixedExpenses.map((entry) => ({
@@ -2259,10 +2272,12 @@ function renderExpenses() {
     const item = node.querySelector(".item");
     const title = node.querySelector(".title");
     const meta = node.querySelector(".meta");
+    const payeeLabel = expense.payee || "未設定";
+    const paymentMethodLabel = expense.paymentMethod || "未設定";
 
     item.dataset.id = expense.id;
-    title.textContent = `${formatDate(expense.date)}｜${expense.content}`;
-    meta.textContent = `金額: ${formatCurrency(expense.amount)} / 紐付け: ${expense.caseId ? resolveCaseName(expense.caseId) : "なし"}`;
+    title.textContent = `日付: ${formatDate(expense.date)}｜内容: ${expense.content}｜金額: ${formatCurrency(expense.amount)}`;
+    meta.textContent = `支払先: ${payeeLabel} / 支払方法: ${paymentMethodLabel} / 紐付け案件: ${expense.caseId ? resolveCaseName(expense.caseId) : "なし"}`;
     expensesList.appendChild(node);
   });
 
@@ -3431,6 +3446,8 @@ function matchesExpensesSearch(expense, query) {
   const relatedCase = state.cases.find((entry) => entry.id === expense.caseId);
   const haystack = [
     expense.content,
+    expense.payee,
+    expense.paymentMethod,
     relatedCase?.caseName,
     expense.amount,
   ]
@@ -3450,6 +3467,12 @@ function normalizeDayOfMonth(raw) {
   const value = Number(raw);
   if (!Number.isInteger(value) || value < 1 || value > 31) return null;
   return value;
+}
+
+function normalizeExpensePaymentMethod(raw) {
+  const value = asTrimmedText(raw);
+  if (!value) return null;
+  return EXPENSE_PAYMENT_METHODS.includes(value) ? value : "その他";
 }
 
 function importTypeToLabel(type) {
@@ -3798,6 +3821,8 @@ async function importRowsByType(importType, tableData) {
           date,
           content,
           amount,
+          payee: asTrimmedText(row.payee) || null,
+          payment_method: normalizeExpensePaymentMethod(row.payment_method),
         });
       } catch (_error) {
         result.errorCount += 1;
@@ -3954,6 +3979,8 @@ function mapExpenseFromDb(row) {
     date: row.date || "",
     content: row.content || "",
     amount: normalizeAmount(row.amount) ?? 0,
+    payee: row.payee || "",
+    paymentMethod: row.payment_method || "",
     caseId: row.case_id || null,
     fixedExpenseId: row.fixed_expense_id || null,
     createdAt: Date.parse(row.created_at) || Date.now(),
