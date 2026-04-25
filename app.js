@@ -54,6 +54,7 @@ const editState = { caseId: null, saleId: null, expenseId: null, fixedExpenseId:
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
 const loadingOverlay = document.getElementById("loading-overlay");
+const loadingForceCloseBtn = document.getElementById("loading-force-close-btn");
 const authForm = document.getElementById("auth-form");
 const authMessage = document.getElementById("auth-message");
 const signupBtn = document.getElementById("signup-btn");
@@ -191,9 +192,9 @@ const estimateStatusFilter = document.getElementById("estimate-status-filter");
 const estimateExpiredFilter = document.getElementById("estimate-expired-filter");
 
 let currentUser = null;
-let loadingCount = 0;
 let isResuming = false;
 let isLoggingOut = false;
+let loadingTimerId = null;
 
 initialize();
 
@@ -289,6 +290,10 @@ function bindEvents() {
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("focus", handleWindowFocus);
   window.addEventListener("pageshow", handlePageShow);
+  loadingForceCloseBtn?.addEventListener("click", () => {
+    showLoading(false);
+    showAppMessage("読み込みを強制解除しました。必要なら再操作してください。", true);
+  });
   exportCasesCsvBtn?.addEventListener("click", handleExportCasesCsv);
   exportSalesCsvBtn?.addEventListener("click", handleExportSalesCsv);
   exportExpensesCsvBtn?.addEventListener("click", handleExportExpensesCsv);
@@ -449,17 +454,17 @@ function clearDailyReportFilters() {
 
 async function handleVisibilityChange() {
   if (document.hidden) return;
-  clearLoadingState();
+  showLoading(false);
   await handleResumeRefresh("visibilitychange");
 }
 
 async function handleWindowFocus() {
-  clearLoadingState();
+  showLoading(false);
   await handleResumeRefresh("focus");
 }
 
 async function handlePageShow() {
-  clearLoadingState();
+  showLoading(false);
   await handleResumeRefresh("pageshow");
 }
 
@@ -467,16 +472,15 @@ async function handleResumeRefresh(trigger) {
   if (!currentUser || isResuming || isLoggingOut) return;
 
   isResuming = true;
-  showLoading(true);
   try {
-    await loadAllData();
-    renderAfterDataChanged();
+    await withLoading("画面復帰時の再読み込み", async () => {
+      await loadAllData();
+      renderAfterDataChanged();
+    });
   } catch (error) {
     console.error(`画面復帰時の再読み込みに失敗しました。(${trigger})`, error);
-    showAppMessage("画面復帰時のデータ更新に失敗しました。", true);
   } finally {
     isResuming = false;
-    showLoading(false);
   }
 }
 
@@ -490,7 +494,7 @@ async function applyAuthState() {
   appView.hidden = false;
   userLabel.textContent = currentUser.email || "ログイン中";
 
-  await withLoading(async () => {
+  await withLoading("データの読み込み", async () => {
     await loadAllData();
     resetCaseForm();
     resetEstimateForm();
@@ -499,7 +503,7 @@ async function applyAuthState() {
     resetFixedExpenseForm();
     resetDailyReportForm();
     renderAfterDataChanged();
-  }, "データの読み込みに失敗しました。テーブル設定を確認してください。");
+  });
 }
 
 async function handleLogin(event) {
@@ -508,11 +512,11 @@ async function handleLogin(event) {
   const password = authForm.elements.password.value;
   if (!email || !password) return;
 
-  await withLoading(async () => {
+  await withLoading("ログイン", async () => {
     const { error } = await sbClient.auth.signInWithPassword({ email, password });
     if (error) throw error;
     showAuthMessage("ログインしました。", false);
-  }, "ログインに失敗しました。メールアドレスまたはパスワードを確認してください。", true);
+  }, { messageTarget: "auth", triggerButton: event.submitter });
 }
 
 async function handleSignup() {
@@ -523,29 +527,26 @@ async function handleSignup() {
     return;
   }
 
-  await withLoading(async () => {
+  await withLoading("新規登録", async () => {
     const { error } = await sbClient.auth.signUp({ email, password });
     if (error) throw error;
     showAuthMessage("新規登録が完了しました。確認メールを確認してください。", false);
-  }, "新規登録に失敗しました。入力内容を確認してください。", true);
+  }, { messageTarget: "auth", triggerButton: signupBtn });
 }
 
 async function handleLogout() {
-  showLoading(true);
   isLoggingOut = true;
   try {
-    currentUser = null;
-    const { error } = await sbClient.auth.signOut();
-    if (error) throw error;
-    clearAppState();
-    showAuthMessage("ログアウトしました。", false);
-    authForm.reset();
-  } catch (error) {
-    console.error("ログアウトに失敗しました。", error);
-    showAuthMessage(`ログアウトに失敗しました。\n詳細: ${error?.message || error}`, true);
+    await withLoading("ログアウト", async () => {
+      currentUser = null;
+      const { error } = await sbClient.auth.signOut();
+      if (error) throw error;
+      clearAppState();
+      showAuthMessage("ログアウトしました。", false);
+      authForm.reset();
+    }, { messageTarget: "auth", triggerButton: logoutBtn });
   } finally {
     isLoggingOut = false;
-    showLoading(false);
   }
 }
 
@@ -615,7 +616,7 @@ async function handleCaseSubmit(event) {
     status: normalizeStatus(caseForm.elements.status.value),
   };
 
-  await withLoading(async () => {
+  await withLoading(editState.caseId ? "案件更新" : "案件登録", async () => {
     if (editState.caseId) {
       const { error } = await sbClient.from("cases").update(payload).eq("id", editState.caseId).eq("user_id", currentUser.id);
       if (error) throw error;
@@ -628,7 +629,7 @@ async function handleCaseSubmit(event) {
     if (error) throw error;
     resetCaseForm();
     await refreshAfterMutation("案件を登録しました。");
-  }, "案件の保存に失敗しました。入力内容を確認してください。");
+  }, { triggerButton: event.submitter });
 }
 
 async function handleSaleSubmit(event) {
@@ -651,7 +652,7 @@ async function handleSaleSubmit(event) {
     is_unpaid: saleForm.elements.isUnpaid.checked || (paidAmount ?? 0) < invoiceAmount,
   };
 
-  await withLoading(async () => {
+  await withLoading(editState.saleId ? "売上更新" : "売上登録", async () => {
     if (editState.saleId) {
       const { error } = await sbClient.from("sales").update(payload).eq("id", editState.saleId).eq("user_id", currentUser.id);
       if (error) throw error;
@@ -664,23 +665,23 @@ async function handleSaleSubmit(event) {
     if (error) throw error;
     resetSaleForm();
     await refreshAfterMutation("売上を登録しました。");
-  }, "売上の保存に失敗しました。入力内容を確認してください。");
+  }, { triggerButton: event.submitter });
 }
 
 async function handleExpenseSubmit(event) {
   event.preventDefault();
   if (!currentUser) return;
 
-  const date = expenseForm.elements.expenseDate.value;
+  const expenseDate = expenseForm.elements.expenseDate.value;
   const content = expenseForm.elements.expenseContent.value.trim();
   const payee = asTrimmedText(expenseForm.elements.expensePayee.value) || null;
   const paymentMethod = normalizeExpensePaymentMethod(expenseForm.elements.expensePaymentMethod.value);
   const amount = normalizeAmount(expenseForm.elements.expenseAmount.value);
-  if (!date || !content || amount === null) return;
+  if (!expenseDate || !content || amount === null) return;
 
   const payload = {
     user_id: currentUser.id,
-    date,
+    date: expenseDate,
     content,
     amount,
     payee,
@@ -688,23 +689,29 @@ async function handleExpenseSubmit(event) {
     case_id: expenseCaseSelect.value || null,
   };
 
-  await withLoading(async () => {
+  await withLoading(editState.expenseId ? "経費更新" : "経費登録", async () => {
     if (editState.expenseId) {
       const currentExpense = state.expenses.find((entry) => entry.id === editState.expenseId);
       const updatePayload = { ...payload };
       if (currentExpense?.fixedExpenseId) updatePayload.fixed_expense_id = currentExpense.fixedExpenseId;
       const { error } = await sbClient.from("expenses").update(updatePayload).eq("id", editState.expenseId).eq("user_id", currentUser.id);
-      if (error) throw error;
+      if (error) {
+        showAppMessage(`経費更新に失敗しました。\n詳細: ${error.message || error}`, true);
+        throw error;
+      }
       resetExpenseForm();
       await refreshAfterMutation("経費を更新しました。");
       return;
     }
 
     const { error } = await sbClient.from("expenses").insert(payload);
-    if (error) throw error;
+    if (error) {
+      showAppMessage(`経費登録に失敗しました。\n詳細: ${error.message || error}`, true);
+      throw error;
+    }
     resetExpenseForm();
     await refreshAfterMutation("経費を登録しました。");
-  }, "経費の保存に失敗しました。入力内容を確認してください。");
+  }, { triggerButton: event.submitter });
 }
 
 async function handleFixedExpenseSubmit(event) {
@@ -726,7 +733,7 @@ async function handleFixedExpenseSubmit(event) {
     active: Boolean(fixedExpenseForm.elements.fixedExpenseActive.checked),
   };
 
-  await withLoading(async () => {
+  await withLoading(editState.fixedExpenseId ? "固定費更新" : "固定費登録", async () => {
     if (editState.fixedExpenseId) {
       const { error } = await sbClient
         .from("fixed_expenses")
@@ -743,7 +750,7 @@ async function handleFixedExpenseSubmit(event) {
     if (error) throw error;
     resetFixedExpenseForm();
     await refreshAfterMutation("固定費を登録しました。");
-  }, "固定費の保存に失敗しました。入力内容を確認してください。");
+  }, { triggerButton: event.submitter });
 }
 
 async function handleDailyReportSubmit(event) {
@@ -764,7 +771,7 @@ async function handleDailyReportSubmit(event) {
     memo: asTrimmedText(dailyReportForm.elements.reportMemo.value) || null,
   };
 
-  await withLoading(async () => {
+  await withLoading(editState.dailyReportId ? "日報更新" : "日報登録", async () => {
     if (editState.dailyReportId) {
       const { error } = await sbClient.from("daily_reports").update(payload).eq("id", editState.dailyReportId).eq("user_id", currentUser.id);
       if (error) throw error;
@@ -776,7 +783,7 @@ async function handleDailyReportSubmit(event) {
     if (error) throw error;
     resetDailyReportForm();
     await refreshAfterMutation("日報を登録しました。");
-  }, "日報の保存に失敗しました。入力内容を確認してください。");
+  }, { triggerButton: event.submitter });
 }
 
 async function handleCaseListAction(event) {
@@ -787,22 +794,26 @@ async function handleCaseListAction(event) {
   const id = item.dataset.id;
 
   if (btn.classList.contains("edit-btn")) {
-    startCaseEdit(id);
+    await startCaseEdit(id);
     return;
   }
   if (btn.classList.contains("case-print-btn")) {
-    openInvoicePrintPreviewFromCase(id);
+    await withLoading("帳票出力", async () => {
+      openInvoicePrintPreviewFromCase(id);
+    });
     return;
   }
   if (btn.classList.contains("case-xlsx-btn")) {
-    exportInvoiceDataForCase(id);
+    await withLoading("帳票出力", async () => {
+      exportInvoiceDataForCase(id);
+    });
     return;
   }
 
   if (btn.classList.contains("delete-btn")) {
     if (!window.confirm("この案件を削除しますか？関連する売上・経費も削除されます。")) return;
 
-    await withLoading(async () => {
+    await withLoading("案件削除", async () => {
       const salesDeleteRes = await sbClient
         .from("sales")
         .delete()
@@ -826,13 +837,12 @@ async function handleCaseListAction(event) {
 
       if (editState.caseId === id) resetCaseForm();
       await refreshAfterMutation("案件を削除しました。");
-    }, "案件と関連データの削除に失敗しました。");
+    });
   }
 }
 
 async function startCaseEdit(caseId) {
-  showLoading(true);
-  try {
+  await withLoading("編集ボタン処理", async () => {
     const target = state.cases.find((entry) => entry.id === caseId);
     if (!target) return;
     subtabState.cases = "entry";
@@ -849,12 +859,7 @@ async function startCaseEdit(caseId) {
     caseForm.elements.status.value = normalizeStatus(target.status);
     caseSubmitBtn.textContent = "案件を更新";
     caseForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (error) {
-    console.error("案件編集の開始に失敗しました。", error);
-    showAppMessage(`案件編集の開始に失敗しました。\n詳細: ${error?.message || error}`, true);
-  } finally {
-    showLoading(false);
-  }
+  });
 }
 
 async function handleSalesListAction(event) {
@@ -865,18 +870,18 @@ async function handleSalesListAction(event) {
   const id = item.dataset.id;
 
   if (btn.classList.contains("edit-btn")) {
-    editSale(id);
+    await editSale(id);
     return;
   }
 
   if (btn.classList.contains("delete-btn")) {
     if (!window.confirm("この売上を削除しますか？")) return;
-    await withLoading(async () => {
+    await withLoading("売上削除", async () => {
       const { error } = await sbClient.from("sales").delete().eq("id", id).eq("user_id", currentUser.id);
       if (error) throw error;
       if (editState.saleId === id) resetSaleForm();
       await refreshAfterMutation("売上を削除しました。");
-    }, "売上の削除に失敗しました。");
+    });
   }
 }
 
@@ -894,12 +899,12 @@ async function handleExpensesListAction(event) {
 
   if (btn.classList.contains("delete-btn")) {
     if (!window.confirm("この経費を削除しますか？")) return;
-    await withLoading(async () => {
+    await withLoading("経費削除", async () => {
       const { error } = await sbClient.from("expenses").delete().eq("id", id).eq("user_id", currentUser.id);
       if (error) throw error;
       if (editState.expenseId === id) resetExpenseForm();
       await refreshAfterMutation("経費を削除しました。");
-    }, "経費の削除に失敗しました。");
+    });
   }
 }
 
@@ -909,7 +914,7 @@ function handleUnpaidListAction(event) {
   const saleId = btn.dataset.saleId;
   if (!saleId) return;
   if (btn.classList.contains("edit-sale-btn")) {
-    editSale(saleId);
+    editSale(saleId).catch(() => {});
   }
 }
 
@@ -924,8 +929,7 @@ function handleBillingLeakAlertAction(event) {
 }
 
 async function startSaleEdit(saleId) {
-  showLoading(true);
-  try {
+  await withLoading("編集ボタン処理", async () => {
     const target = state.sales.find((entry) => entry.id === saleId);
     if (!target) return;
     subtabState.sales = "entry";
@@ -938,17 +942,11 @@ async function startSaleEdit(saleId) {
     saleForm.elements.isUnpaid.checked = Boolean(target.isUnpaid);
     saleSubmitBtn.textContent = "売上を更新";
     saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (error) {
-    console.error("売上編集の開始に失敗しました。", error);
-    showAppMessage(`売上編集の開始に失敗しました。\n詳細: ${error?.message || error}`, true);
-  } finally {
-    showLoading(false);
-  }
+  });
 }
 
 async function startExpenseEdit(expenseId) {
-  showLoading(true);
-  try {
+  await withLoading("編集ボタン処理", async () => {
     const target = state.expenses.find((entry) => entry.id === expenseId);
     if (!target) return;
     subtabState.expenses = "entry";
@@ -962,12 +960,7 @@ async function startExpenseEdit(expenseId) {
     expenseCaseSelect.value = target.caseId || "";
     expenseSubmitBtn.textContent = "経費を更新";
     expenseForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (error) {
-    console.error("経費編集の開始に失敗しました。", error);
-    showAppMessage(`経費編集の開始に失敗しました。\n詳細: ${error?.message || error}`, true);
-  } finally {
-    showLoading(false);
-  }
+  });
 }
 
 function openSaleFormForCase(caseId) {
@@ -984,8 +977,7 @@ function openSaleFormForCase(caseId) {
 }
 
 async function startFixedExpenseEdit(fixedExpenseId) {
-  showLoading(true);
-  try {
+  await withLoading("編集ボタン処理", async () => {
     const target = state.fixedExpenses.find((entry) => entry.id === fixedExpenseId);
     if (!target) return;
     activateTab("expenses");
@@ -997,12 +989,7 @@ async function startFixedExpenseEdit(fixedExpenseId) {
     fixedExpenseForm.elements.fixedExpenseActive.checked = Boolean(target.active);
     fixedExpenseSubmitBtn.textContent = "固定費を更新";
     fixedExpenseForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (error) {
-    console.error("固定費編集の開始に失敗しました。", error);
-    showAppMessage(`固定費編集の開始に失敗しました。\n詳細: ${error?.message || error}`, true);
-  } finally {
-    showLoading(false);
-  }
+  });
 }
 
 async function handleFixedExpensesListAction(event) {
@@ -1021,7 +1008,7 @@ async function handleFixedExpensesListAction(event) {
     const target = state.fixedExpenses.find((entry) => entry.id === id);
     if (!target) return;
 
-    await withLoading(async () => {
+    await withLoading("固定費更新", async () => {
       const { error } = await sbClient
         .from("fixed_expenses")
         .update({ active: !target.active })
@@ -1029,18 +1016,18 @@ async function handleFixedExpensesListAction(event) {
         .eq("user_id", currentUser.id);
       if (error) throw error;
       await refreshAfterMutation("固定費の有効/無効を更新しました。");
-    }, "固定費の有効/無効更新に失敗しました。");
+    });
     return;
   }
 
   if (btn.classList.contains("delete-btn")) {
     if (!window.confirm("この固定費を削除しますか？")) return;
-    await withLoading(async () => {
+    await withLoading("固定費削除", async () => {
       const { error } = await sbClient.from("fixed_expenses").delete().eq("id", id).eq("user_id", currentUser.id);
       if (error) throw error;
       if (editState.fixedExpenseId === id) resetFixedExpenseForm();
       await refreshAfterMutation("固定費を削除しました。");
-    }, "固定費の削除に失敗しました。");
+    });
   }
 }
 
@@ -1057,18 +1044,17 @@ async function handleDailyReportsListAction(event) {
 
   if (btn.classList.contains("delete-daily-report-btn")) {
     if (!window.confirm("この日報を削除しますか？")) return;
-    await withLoading(async () => {
+    await withLoading("日報削除", async () => {
       const { error } = await sbClient.from("daily_reports").delete().eq("id", id).eq("user_id", currentUser.id);
       if (error) throw error;
       if (editState.dailyReportId === id) resetDailyReportForm();
       await refreshAfterMutation("日報を削除しました。");
-    }, "日報の削除に失敗しました。");
+    });
   }
 }
 
 async function startDailyReportEdit(dailyReportId) {
-  showLoading(true);
-  try {
+  await withLoading("編集ボタン処理", async () => {
     const target = state.dailyReports.find((entry) => entry.id === dailyReportId);
     if (!target) return;
     subtabState["daily-reports"] = "entry";
@@ -1082,12 +1068,7 @@ async function startDailyReportEdit(dailyReportId) {
     dailyReportForm.elements.reportMemo.value = target.memo || "";
     dailyReportSubmitBtn.textContent = "日報を更新";
     dailyReportForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (error) {
-    console.error("日報編集の開始に失敗しました。", error);
-    showAppMessage(`日報編集の開始に失敗しました。\n詳細: ${error?.message || error}`, true);
-  } finally {
-    showLoading(false);
-  }
+  });
 }
 
 async function editSale(saleId) {
@@ -1110,7 +1091,7 @@ async function handleClearAll() {
   if (!currentUser) return;
   if (!window.confirm("見積・案件・売上・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
 
-  await withLoading(async () => {
+  await withLoading("全件削除", async () => {
     const [estimateItemsRes, estimatesRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes] = await Promise.all([
       sbClient.from("estimate_items").delete().eq("user_id", currentUser.id),
       sbClient.from("estimates").delete().eq("user_id", currentUser.id),
@@ -1134,7 +1115,7 @@ async function handleClearAll() {
     resetFixedExpenseForm();
     resetDailyReportForm();
     await refreshAfterMutation("全データを削除しました。");
-  }, "全件削除に失敗しました。");
+  });
 }
 
 function handleExportCasesCsv() {
@@ -1261,18 +1242,20 @@ async function handleCsvImportSubmit(event) {
   if (!file) return;
   if (!window.confirm(`「${file.name}」を${importTypeToLabel(importType)}として取り込みます。よろしいですか？`)) return;
 
-  await withLoading(async () => {
+  await withLoading("CSV取込", async () => {
     const text = await readCsvFileTextWithEncodingFallback(file);
     const result = await importCsvByType(importType, text);
     await loadAllData();
     renderAfterDataChanged();
     showAppMessage(`CSV取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, result.errorCount > 0);
     csvImportForm.reset();
-  }, "CSV取込に失敗しました。");
+  }, { triggerButton: event.submitter });
 }
 
 function handleExportExcel() {
-  exportExcel();
+  withLoading("帳票出力", async () => {
+    exportExcel();
+  }).catch(() => {});
 }
 
 function exportExcel() {
@@ -1362,7 +1345,7 @@ async function handleExcelImportSubmit(event) {
   if (!file) return;
   if (!window.confirm(`「${file.name}」をExcelとして取り込みます。よろしいですか？`)) return;
 
-  await withLoading(async () => {
+  await withLoading("Excel取込", async () => {
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
     const result = await importWorkbookBySheet(workbook);
@@ -1370,7 +1353,7 @@ async function handleExcelImportSubmit(event) {
     renderAfterDataChanged();
     showAppMessage(`Excel取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, result.errorCount > 0);
     excelImportForm.reset();
-  }, "Excel取込に失敗しました。");
+  }, { triggerButton: event.submitter });
 }
 
 function renderAfterDataChanged() {
@@ -1944,8 +1927,7 @@ async function handleEstimateSubmit(event) {
     total: totals.total,
   };
 
-  showLoading(true);
-  try {
+  await withLoading(editState.estimateId ? "見積更新" : "見積登録", async () => {
     clearAppMessage();
     let estimateId = editState.estimateId;
     const isUpdate = Boolean(estimateId);
@@ -1979,12 +1961,7 @@ async function handleEstimateSubmit(event) {
     renderAfterDataChanged();
     activateTab("estimates");
     showAppMessage(isUpdate ? "見積を更新しました。" : "見積を登録しました。", false);
-  } catch (error) {
-    console.error("見積の保存に失敗しました。", error);
-    showAppMessage(`見積の保存に失敗しました。\n詳細: ${error?.message || error}`, true);
-  } finally {
-    showLoading(false);
-  }
+  }, { triggerButton: event.submitter });
 }
 
 function renderEstimates() {
@@ -2049,16 +2026,16 @@ async function handleEstimateListAction(event) {
   if (btn.classList.contains("estimate-edit-btn")) return startEstimateEdit(estimateId);
   if (btn.classList.contains("estimate-delete-btn")) {
     if (!window.confirm("この見積を削除しますか？")) return;
-    await withLoading(async () => {
+    await withLoading("見積削除", async () => {
       await sbClient.from("estimate_items").delete().eq("estimate_id", estimateId).eq("user_id", currentUser.id);
       const { error } = await sbClient.from("estimates").delete().eq("id", estimateId).eq("user_id", currentUser.id);
       if (error) throw error;
       if (editState.estimateId === estimateId) resetEstimateForm();
       await refreshAfterMutation("見積を削除しました。");
-    }, "見積の削除に失敗しました。");
+    });
     return;
   }
-  if (btn.classList.contains("estimate-case-btn")) return withLoading(async () => {
+  if (btn.classList.contains("estimate-case-btn")) return withLoading("見積案件化", async () => {
     const estimate = state.estimates.find((entry) => entry.id === estimateId);
     if (estimate?.caseId) {
       showAppMessage("この見積はすでに案件化済みです。", true);
@@ -2066,15 +2043,15 @@ async function handleEstimateListAction(event) {
     }
     await ensureCaseFromEstimate(estimateId, true);
     await refreshAfterMutation("案件化しました。");
-  }, "案件化に失敗しました。");
-  if (btn.classList.contains("estimate-estimate-print-btn")) return openEstimatePrintPreview(estimateId);
-  if (btn.classList.contains("estimate-print-btn")) return openInvoicePrintPreviewFromEstimate(estimateId);
-  if (btn.classList.contains("estimate-estimate-xlsx-btn")) return exportEstimateDataForEstimate(estimateId);
-  if (btn.classList.contains("estimate-xlsx-btn")) return exportInvoiceDataForEstimate(estimateId);
-  if (btn.classList.contains("estimate-sale-btn")) return withLoading(async () => {
+  });
+  if (btn.classList.contains("estimate-estimate-print-btn")) return withLoading("帳票出力", async () => openEstimatePrintPreview(estimateId));
+  if (btn.classList.contains("estimate-print-btn")) return withLoading("帳票出力", async () => openInvoicePrintPreviewFromEstimate(estimateId));
+  if (btn.classList.contains("estimate-estimate-xlsx-btn")) return withLoading("帳票出力", async () => exportEstimateDataForEstimate(estimateId));
+  if (btn.classList.contains("estimate-xlsx-btn")) return withLoading("帳票出力", async () => exportInvoiceDataForEstimate(estimateId));
+  if (btn.classList.contains("estimate-sale-btn")) return withLoading("見積から売上登録", async () => {
     await registerSaleFromEstimate(estimateId);
     await refreshAfterMutation("売上を登録しました。");
-  }, "売上登録に失敗しました。");
+  });
 }
 
 
@@ -2323,8 +2300,7 @@ function resolveDailyReportCaseName(caseId) {
 }
 
 async function startEstimateEdit(estimateId) {
-  showLoading(true);
-  try {
+  await withLoading("編集ボタン処理", async () => {
     const target = state.estimates.find((entry) => entry.id === estimateId);
     if (!target || !estimateForm) return;
     subtabState.estimates = "create";
@@ -2343,12 +2319,7 @@ async function startEstimateEdit(estimateId) {
     recalcEstimateTotals();
     estimateSubmitBtn.textContent = "見積を更新";
     estimateForm.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (error) {
-    console.error("見積編集の開始に失敗しました。", error);
-    showAppMessage(`見積編集の開始に失敗しました。\n詳細: ${error?.message || error}`, true);
-  } finally {
-    showLoading(false);
-  }
+  });
 }
 
 function resetEstimateForm() {
@@ -4064,36 +4035,56 @@ async function ensureMonthlyFixedExpenses() {
   return toInsert.length;
 }
 
-async function withLoading(task, fallbackMessage, authArea = false) {
+function setSubmitButtonsDisabled(disabled) {
+  document.querySelectorAll('button[type="submit"]').forEach((button) => {
+    button.disabled = disabled;
+  });
+}
+
+async function withLoading(taskName, asyncFn, options = {}) {
+  const { messageTarget = "app", triggerButton = null } = options;
+  console.log("START", taskName);
   showLoading(true);
+  setSubmitButtonsDisabled(true);
+  if (triggerButton instanceof HTMLButtonElement) triggerButton.disabled = true;
   try {
     clearAppMessage();
-    if (authArea) showAuthMessage("", false);
-    await task();
+    if (messageTarget === "auth") showAuthMessage("", false);
+    return await asyncFn();
   } catch (error) {
-    console.error("処理に失敗しました。", error);
-    const message = error?.message ? String(error.message) : fallbackMessage;
-    if (authArea) {
-      showAuthMessage(`${fallbackMessage}\n詳細: ${message}`, true);
+    console.error("ERROR", taskName, error);
+    const detail = error?.message ? String(error.message) : "";
+    const message = `${taskName}に失敗しました。${detail}`;
+    if (messageTarget === "auth") {
+      showAuthMessage(message, true);
     } else {
-      showAppMessage(`${fallbackMessage}\n詳細: ${message}`, true);
+      showAppMessage(message, true);
     }
+    throw error;
   } finally {
+    setSubmitButtonsDisabled(false);
+    if (triggerButton instanceof HTMLButtonElement) triggerButton.disabled = false;
     showLoading(false);
+    console.log("END", taskName);
   }
 }
 
-function showLoading(isLoading) {
+function showLoading(show) {
   if (!loadingOverlay) return;
-
-  if (isLoading) {
-    loadingCount += 1;
-    loadingOverlay.hidden = false;
-    return;
+  if (loadingTimerId) {
+    window.clearTimeout(loadingTimerId);
+    loadingTimerId = null;
   }
 
-  loadingCount = Math.max(0, loadingCount - 1);
-  loadingOverlay.hidden = true;
+  loadingOverlay.hidden = !show;
+  loadingOverlay.style.display = show ? "grid" : "none";
+
+  if (show) {
+    loadingTimerId = window.setTimeout(() => {
+      showLoading(false);
+      showAppMessage("読み込みが長時間継続したため自動解除しました。", true);
+    }, 10000);
+  }
 }
 
 function setLoading(isLoading) {
@@ -4101,9 +4092,7 @@ function setLoading(isLoading) {
 }
 
 function clearLoadingState() {
-  loadingCount = 0;
-  if (!loadingOverlay) return;
-  loadingOverlay.hidden = true;
+  showLoading(false);
 }
 
 function setAuthControlsDisabled(disabled) {
