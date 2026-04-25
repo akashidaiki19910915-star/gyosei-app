@@ -611,9 +611,11 @@ async function loadAllData() {
   }
 }
 
-async function refreshAfterMutation(successMessage) {
+async function refreshAfterMutation(successMessage, taskName = "") {
   await loadAllData();
+  console.log("loadAllData done", taskName);
   renderAfterDataChanged();
+  console.log("render done", taskName);
   if (successMessage) showAppMessage(successMessage, false);
 }
 
@@ -632,18 +634,23 @@ async function handleClientSubmit(event) {
     referral_source: asTrimmedText(clientForm.elements.clientReferralSource.value) || null,
     memo: asTrimmedText(clientForm.elements.clientMemo.value) || null,
   };
-  await withLoading(editState.clientId ? "顧客更新" : "顧客登録", async () => {
+  const taskName = editState.clientId ? "顧客更新" : "顧客登録";
+  await withLoading(taskName, async () => {
     if (editState.clientId) {
-      const { error } = await sbClient.from("clients").update(payload).eq("id", editState.clientId).eq("user_id", currentUser.id);
+      const { data, error } = await sbClient.from("clients").update(payload).eq("id", editState.clientId).eq("user_id", currentUser.id).select().single();
       if (error) throw error;
+      if (!data) throw new Error("更新結果を取得できませんでした。");
+      console.log("DB success", taskName);
+      await refreshAfterMutation("顧客を更新しました。", taskName);
       resetClientForm();
-      await refreshAfterMutation("顧客を更新しました。");
       return;
     }
-    const { error } = await sbClient.from("clients").insert(payload);
+    const { data, error } = await sbClient.from("clients").insert(payload).select().single();
     if (error) throw error;
+    if (!data) throw new Error("登録結果を取得できませんでした。");
+    console.log("DB success", taskName);
+    await refreshAfterMutation("顧客を登録しました。", taskName);
     resetClientForm();
-    await refreshAfterMutation("顧客を登録しました。");
   }, { triggerButton: event.submitter });
 }
 
@@ -655,10 +662,12 @@ async function handleCaseSubmit(event) {
   const caseName = caseForm.elements.caseName.value.trim();
   if (!customerName || !caseName) return;
 
+  const selectedClientId = caseForm.elements.caseClientId.value || null;
+  const selectedClient = selectedClientId ? state.clients.find((entry) => entry.id === selectedClientId) : null;
   const payload = {
     user_id: currentUser.id,
-    client_id: caseForm.elements.caseClientId.value || null,
-    customer_name: customerName,
+    client_id: selectedClientId,
+    customer_name: selectedClient?.name || customerName,
     case_name: caseName,
     estimate_amount: normalizeAmount(caseForm.elements.amount.value),
     received_date: caseForm.elements.receivedDate.value || null,
@@ -672,19 +681,26 @@ async function handleCaseSubmit(event) {
     status: normalizeStatus(caseForm.elements.status.value),
   };
 
-  await withLoading(editState.caseId ? "案件更新" : "案件登録", async () => {
+  const taskName = editState.caseId ? "案件更新" : "案件登録";
+  await withLoading(taskName, async () => {
     if (editState.caseId) {
-      const { error } = await sbClient.from("cases").update(payload).eq("id", editState.caseId).eq("user_id", currentUser.id);
+      const { data, error } = await sbClient.from("cases").update(payload).eq("id", editState.caseId).eq("user_id", currentUser.id).select().single();
       if (error) throw error;
+      if (!data) throw new Error("更新結果を取得できませんでした。");
+      console.log("DB success", taskName);
+      await refreshAfterMutation("案件を更新しました。", taskName);
+      subtabState.cases = "list";
       resetCaseForm();
-      await refreshAfterMutation("案件を更新しました。");
       return;
     }
 
-    const { error } = await sbClient.from("cases").insert(payload);
+    const { data, error } = await sbClient.from("cases").insert(payload).select().single();
     if (error) throw error;
+    if (!data) throw new Error("登録結果を取得できませんでした。");
+    console.log("DB success", taskName);
+    await refreshAfterMutation("案件を登録しました。", taskName);
+    subtabState.cases = "list";
     resetCaseForm();
-    await refreshAfterMutation("案件を登録しました。");
   }, { triggerButton: event.submitter });
 }
 
@@ -708,20 +724,25 @@ async function handleSaleSubmit(event) {
     is_unpaid: saleForm.elements.isUnpaid.checked || (paidAmount ?? 0) < invoiceAmount,
   };
 
-  await withLoading(editState.saleId ? "売上更新" : "売上登録", async () => {
+  const taskName = editState.saleId ? "売上更新" : "売上登録";
+  await withLoading(taskName, async () => {
     if (editState.saleId) {
-      const { error } = await sbClient.from("sales").update(payload).eq("id", editState.saleId).eq("user_id", currentUser.id);
+      const { data, error } = await sbClient.from("sales").update(payload).eq("id", editState.saleId).eq("user_id", currentUser.id).select().single();
       if (error) throw error;
+      if (!data) throw new Error("更新結果を取得できませんでした。");
+      console.log("DB success", taskName);
+      await refreshAfterMutation("売上を更新しました。", taskName);
       resetSaleForm();
-      await refreshAfterMutation("売上を更新しました。");
       return;
     }
 
     payload.invoice_number = await getNextMonthlyNumber("sales", "invoice_number", "S");
-    const { error } = await sbClient.from("sales").insert(payload);
+    const { data, error } = await sbClient.from("sales").insert(payload).select().single();
     if (error) throw error;
+    if (!data) throw new Error("登録結果を取得できませんでした。");
+    console.log("DB success", taskName);
+    await refreshAfterMutation("売上を登録しました。", taskName);
     resetSaleForm();
-    await refreshAfterMutation("売上を登録しました。");
   }, { triggerButton: event.submitter });
 }
 
@@ -747,28 +768,33 @@ async function handleExpenseSubmit(event) {
     receipt_url: asTrimmedText(expenseForm.elements.expenseReceiptUrl.value) || null,
   };
 
-  await withLoading(editState.expenseId ? "経費更新" : "経費登録", async () => {
+  const taskName = editState.expenseId ? "経費更新" : "経費登録";
+  await withLoading(taskName, async () => {
     if (editState.expenseId) {
       const currentExpense = state.expenses.find((entry) => entry.id === editState.expenseId);
       const updatePayload = { ...payload };
       if (currentExpense?.fixedExpenseId) updatePayload.fixed_expense_id = currentExpense.fixedExpenseId;
-      const { error } = await sbClient.from("expenses").update(updatePayload).eq("id", editState.expenseId).eq("user_id", currentUser.id);
+      const { data, error } = await sbClient.from("expenses").update(updatePayload).eq("id", editState.expenseId).eq("user_id", currentUser.id).select().single();
       if (error) {
         showAppMessage(`経費更新に失敗しました。\n詳細: ${error.message || error}`, true);
         throw error;
       }
+      if (!data) throw new Error("更新結果を取得できませんでした。");
+      console.log("DB success", taskName);
+      await refreshAfterMutation("経費を更新しました。", taskName);
       resetExpenseForm();
-      await refreshAfterMutation("経費を更新しました。");
       return;
     }
 
-    const { error } = await sbClient.from("expenses").insert(payload);
+    const { data, error } = await sbClient.from("expenses").insert(payload).select().single();
     if (error) {
       showAppMessage(`経費登録に失敗しました。\n詳細: ${error.message || error}`, true);
       throw error;
     }
+    if (!data) throw new Error("登録結果を取得できませんでした。");
+    console.log("DB success", taskName);
+    await refreshAfterMutation("経費を登録しました。", taskName);
     resetExpenseForm();
-    await refreshAfterMutation("経費を登録しました。");
   }, { triggerButton: event.submitter });
 }
 
@@ -791,23 +817,30 @@ async function handleFixedExpenseSubmit(event) {
     active: Boolean(fixedExpenseForm.elements.fixedExpenseActive.checked),
   };
 
-  await withLoading(editState.fixedExpenseId ? "固定費更新" : "固定費登録", async () => {
+  const taskName = editState.fixedExpenseId ? "固定費更新" : "固定費登録";
+  await withLoading(taskName, async () => {
     if (editState.fixedExpenseId) {
-      const { error } = await sbClient
+      const { data, error } = await sbClient
         .from("fixed_expenses")
         .update(payload)
         .eq("id", editState.fixedExpenseId)
-        .eq("user_id", currentUser.id);
+        .eq("user_id", currentUser.id)
+        .select()
+        .single();
       if (error) throw error;
+      if (!data) throw new Error("更新結果を取得できませんでした。");
+      console.log("DB success", taskName);
+      await refreshAfterMutation("固定費を更新しました。", taskName);
       resetFixedExpenseForm();
-      await refreshAfterMutation("固定費を更新しました。");
       return;
     }
 
-    const { error } = await sbClient.from("fixed_expenses").insert(payload);
+    const { data, error } = await sbClient.from("fixed_expenses").insert(payload).select().single();
     if (error) throw error;
+    if (!data) throw new Error("登録結果を取得できませんでした。");
+    console.log("DB success", taskName);
+    await refreshAfterMutation("固定費を登録しました。", taskName);
     resetFixedExpenseForm();
-    await refreshAfterMutation("固定費を登録しました。");
   }, { triggerButton: event.submitter });
 }
 
@@ -829,18 +862,23 @@ async function handleDailyReportSubmit(event) {
     memo: asTrimmedText(dailyReportForm.elements.reportMemo.value) || null,
   };
 
-  await withLoading(editState.dailyReportId ? "日報更新" : "日報登録", async () => {
+  const taskName = editState.dailyReportId ? "日報更新" : "日報登録";
+  await withLoading(taskName, async () => {
     if (editState.dailyReportId) {
-      const { error } = await sbClient.from("daily_reports").update(payload).eq("id", editState.dailyReportId).eq("user_id", currentUser.id);
+      const { data, error } = await sbClient.from("daily_reports").update(payload).eq("id", editState.dailyReportId).eq("user_id", currentUser.id).select().single();
       if (error) throw error;
+      if (!data) throw new Error("更新結果を取得できませんでした。");
+      console.log("DB success", taskName);
+      await refreshAfterMutation("日報を更新しました。", taskName);
       resetDailyReportForm();
-      await refreshAfterMutation("日報を更新しました。");
       return;
     }
-    const { error } = await sbClient.from("daily_reports").insert(payload);
+    const { data, error } = await sbClient.from("daily_reports").insert(payload).select().single();
     if (error) throw error;
+    if (!data) throw new Error("登録結果を取得できませんでした。");
+    console.log("DB success", taskName);
+    await refreshAfterMutation("日報を登録しました。", taskName);
     resetDailyReportForm();
-    await refreshAfterMutation("日報を登録しました。");
   }, { triggerButton: event.submitter });
 }
 
@@ -871,8 +909,9 @@ async function handleClientListAction(event) {
     await withLoading("顧客削除", async () => {
       const { error } = await sbClient.from("clients").delete().eq("id", id).eq("user_id", currentUser.id);
       if (error) throw error;
+      console.log("DB success", "顧客削除");
       if (editState.clientId === id) resetClientForm();
-      await refreshAfterMutation("顧客を削除しました。");
+      await refreshAfterMutation("顧客を削除しました。", "顧客削除");
     });
   }
 }
@@ -926,8 +965,9 @@ async function handleCaseListAction(event) {
         .eq("user_id", currentUser.id);
       if (caseDeleteRes.error) throw caseDeleteRes.error;
 
+      console.log("DB success", "案件削除");
       if (editState.caseId === id) resetCaseForm();
-      await refreshAfterMutation("案件を削除しました。");
+      await refreshAfterMutation("案件を削除しました。", "案件削除");
     });
   }
 }
@@ -974,8 +1014,9 @@ async function handleSalesListAction(event) {
     await withLoading("売上削除", async () => {
       const { error } = await sbClient.from("sales").delete().eq("id", id).eq("user_id", currentUser.id);
       if (error) throw error;
+      console.log("DB success", "売上削除");
       if (editState.saleId === id) resetSaleForm();
-      await refreshAfterMutation("売上を削除しました。");
+      await refreshAfterMutation("売上を削除しました。", "売上削除");
     });
   }
 }
@@ -997,8 +1038,9 @@ async function handleExpensesListAction(event) {
     await withLoading("経費削除", async () => {
       const { error } = await sbClient.from("expenses").delete().eq("id", id).eq("user_id", currentUser.id);
       if (error) throw error;
+      console.log("DB success", "経費削除");
       if (editState.expenseId === id) resetExpenseForm();
-      await refreshAfterMutation("経費を削除しました。");
+      await refreshAfterMutation("経費を削除しました。", "経費削除");
     });
   }
 }
@@ -1120,13 +1162,17 @@ async function handleFixedExpensesListAction(event) {
     if (!target) return;
 
     await withLoading("固定費更新", async () => {
-      const { error } = await sbClient
+      const { data, error } = await sbClient
         .from("fixed_expenses")
         .update({ active: !target.active })
         .eq("id", id)
-        .eq("user_id", currentUser.id);
+        .eq("user_id", currentUser.id)
+        .select()
+        .single();
       if (error) throw error;
-      await refreshAfterMutation("固定費の有効/無効を更新しました。");
+      if (!data) throw new Error("更新結果を取得できませんでした。");
+      console.log("DB success", "固定費更新");
+      await refreshAfterMutation("固定費の有効/無効を更新しました。", "固定費更新");
     });
     return;
   }
@@ -1136,8 +1182,9 @@ async function handleFixedExpensesListAction(event) {
     await withLoading("固定費削除", async () => {
       const { error } = await sbClient.from("fixed_expenses").delete().eq("id", id).eq("user_id", currentUser.id);
       if (error) throw error;
+      console.log("DB success", "固定費削除");
       if (editState.fixedExpenseId === id) resetFixedExpenseForm();
-      await refreshAfterMutation("固定費を削除しました。");
+      await refreshAfterMutation("固定費を削除しました。", "固定費削除");
     });
   }
 }
@@ -1158,8 +1205,9 @@ async function handleDailyReportsListAction(event) {
     await withLoading("日報削除", async () => {
       const { error } = await sbClient.from("daily_reports").delete().eq("id", id).eq("user_id", currentUser.id);
       if (error) throw error;
+      console.log("DB success", "日報削除");
       if (editState.dailyReportId === id) resetDailyReportForm();
-      await refreshAfterMutation("日報を削除しました。");
+      await refreshAfterMutation("日報を削除しました。", "日報削除");
     });
   }
 }
@@ -1221,6 +1269,7 @@ async function handleClearAll() {
     if (casesRes.error) throw casesRes.error;
     if (clientsRes.error) throw clientsRes.error;
 
+    console.log("DB success", "全件削除");
     resetClientForm();
     resetCaseForm();
     resetEstimateForm();
@@ -1228,7 +1277,7 @@ async function handleClearAll() {
     resetExpenseForm();
     resetFixedExpenseForm();
     resetDailyReportForm();
-    await refreshAfterMutation("全データを削除しました。");
+    await refreshAfterMutation("全データを削除しました。", "全件削除");
   });
 }
 
@@ -1397,8 +1446,11 @@ async function handleCsvImportSubmit(event) {
   await withLoading("CSV取込", async () => {
     const text = await readCsvFileTextWithEncodingFallback(file);
     const result = await importCsvByType(importType, text);
+    console.log("DB success", "CSV取込");
     await loadAllData();
+    console.log("loadAllData done", "CSV取込");
     renderAfterDataChanged();
+    console.log("render done", "CSV取込");
     showAppMessage(`CSV取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, result.errorCount > 0);
     csvImportForm.reset();
   }, { triggerButton: event.submitter });
@@ -1518,8 +1570,11 @@ async function handleExcelImportSubmit(event) {
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
     const result = await importWorkbookBySheet(workbook);
+    console.log("DB success", "Excel取込");
     await loadAllData();
+    console.log("loadAllData done", "Excel取込");
     renderAfterDataChanged();
+    console.log("render done", "Excel取込");
     showAppMessage(`Excel取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, result.errorCount > 0);
     excelImportForm.reset();
   }, { triggerButton: event.submitter });
@@ -1536,6 +1591,7 @@ function renderAfterDataChanged() {
   renderFixedExpenses();
   renderDailyReports();
   renderDashboard();
+  renderTodayTaskCard();
 }
 
 function activateTab(tabKey) {
@@ -2208,23 +2264,26 @@ async function handleEstimateSubmit(event) {
     total: totals.total,
   };
 
-  await withLoading(editState.estimateId ? "見積更新" : "見積登録", async () => {
+  const taskName = editState.estimateId ? "見積更新" : "見積登録";
+  await withLoading(taskName, async () => {
     clearAppMessage();
     let estimateId = editState.estimateId;
     const isUpdate = Boolean(estimateId);
     if (estimateId) {
-      const { error } = await sbClient.from("estimates").update(payload).eq("id", estimateId).eq("user_id", currentUser.id);
+      const { data, error } = await sbClient.from("estimates").update(payload).eq("id", estimateId).eq("user_id", currentUser.id).select().single();
       if (error) throw error;
+      if (!data) throw new Error("更新結果を取得できませんでした。");
       const oldItemsDeleteRes = await sbClient.from("estimate_items").delete().eq("estimate_id", estimateId).eq("user_id", currentUser.id);
       if (oldItemsDeleteRes.error) throw oldItemsDeleteRes.error;
     } else {
       payload.estimate_number = await getNextMonthlyNumber("estimates", "estimate_number", "M", estimateDate);
       const res = await sbClient.from("estimates").insert(payload).select("id").single();
       if (res.error) throw res.error;
+      if (!res.data?.id) throw new Error("登録結果を取得できませんでした。");
       estimateId = res.data.id;
     }
     if (items.length) {
-      const { error } = await sbClient.from("estimate_items").insert(items.map((item) => ({
+      const { data, error } = await sbClient.from("estimate_items").insert(items.map((item) => ({
         user_id: currentUser.id,
         estimate_id: estimateId,
         item_name: item.itemName,
@@ -2232,17 +2291,17 @@ async function handleEstimateSubmit(event) {
         unit_price: item.unitPrice,
         amount: item.amount,
         sort_order: item.sortOrder,
-      })));
+      }))).select("id");
       if (error) throw error;
+      if (!data) throw new Error("明細登録結果を取得できませんでした。");
     }
     if (payload.status === "受注") await ensureCaseFromEstimate(estimateId);
+    console.log("DB success", taskName);
+    await refreshAfterMutation(isUpdate ? "見積を更新しました。" : "見積を登録しました。", taskName);
     resetEstimateForm();
     editState.estimateId = null;
     subtabState.estimates = "list";
-    await loadAllData();
-    renderAfterDataChanged();
     activateTab("estimates");
-    showAppMessage(isUpdate ? "見積を更新しました。" : "見積を登録しました。", false);
   }, { triggerButton: event.submitter });
 }
 
@@ -2313,8 +2372,9 @@ async function handleEstimateListAction(event) {
       await sbClient.from("estimate_items").delete().eq("estimate_id", estimateId).eq("user_id", currentUser.id);
       const { error } = await sbClient.from("estimates").delete().eq("id", estimateId).eq("user_id", currentUser.id);
       if (error) throw error;
+      console.log("DB success", "見積削除");
       if (editState.estimateId === estimateId) resetEstimateForm();
-      await refreshAfterMutation("見積を削除しました。");
+      await refreshAfterMutation("見積を削除しました。", "見積削除");
     });
     return;
   }
@@ -2325,7 +2385,8 @@ async function handleEstimateListAction(event) {
       return;
     }
     await ensureCaseFromEstimate(estimateId, true);
-    await refreshAfterMutation("案件化しました。");
+    console.log("DB success", "見積案件化");
+    await refreshAfterMutation("案件化しました。", "見積案件化");
   });
   if (btn.classList.contains("estimate-estimate-print-btn")) return withLoading("帳票出力", async () => openEstimatePrintPreview(estimateId));
   if (btn.classList.contains("estimate-print-btn")) return withLoading("帳票出力", async () => openInvoicePrintPreviewFromEstimate(estimateId));
@@ -2333,7 +2394,8 @@ async function handleEstimateListAction(event) {
   if (btn.classList.contains("estimate-xlsx-btn")) return withLoading("帳票出力", async () => exportInvoiceDataForEstimate(estimateId));
   if (btn.classList.contains("estimate-sale-btn")) return withLoading("見積から売上登録", async () => {
     await registerSaleFromEstimate(estimateId);
-    await refreshAfterMutation("売上を登録しました。");
+    console.log("DB success", "見積から売上登録");
+    await refreshAfterMutation("売上を登録しました。", "見積から売上登録");
   });
 }
 
@@ -2698,6 +2760,7 @@ async function ensureCaseFromEstimate(estimateId, force = false) {
   };
   const res = await sbClient.from("cases").insert(payload).select("id").single();
   if (res.error) throw res.error;
+  if (!res.data?.id) throw new Error("登録結果を取得できませんでした。");
   const updateRes = await sbClient.from("estimates").update({ case_id: res.data.id }).eq("id", estimateId).eq("user_id", currentUser.id);
   if (updateRes.error) throw updateRes.error;
   return res.data.id;
@@ -3437,8 +3500,9 @@ async function registerSaleFromEstimate(estimateId) {
     paid_date: null,
     is_unpaid: true,
   };
-  const { error } = await sbClient.from("sales").insert(payload);
+  const { data, error } = await sbClient.from("sales").insert(payload).select().single();
   if (error) throw error;
+  if (!data) throw new Error("登録結果を取得できませんでした。");
 }
 
 function buildDailyReportSummary() {
