@@ -132,6 +132,9 @@ const analysisPeriodLabel = document.getElementById("analysis-period-label");
 const clientAnalysisBody = document.getElementById("client-analysis-body");
 const clientAnalysisEmpty = document.getElementById("client-analysis-empty");
 const clientAnalysisWrap = document.getElementById("client-analysis-wrap");
+const importantClientsBody = document.getElementById("important-clients-body");
+const importantClientsEmpty = document.getElementById("important-clients-empty");
+const importantClientsWrap = document.getElementById("important-clients-wrap");
 const referralAnalysisBody = document.getElementById("referral-analysis-body");
 const referralAnalysisEmpty = document.getElementById("referral-analysis-empty");
 const referralAnalysisWrap = document.getElementById("referral-analysis-wrap");
@@ -2077,14 +2080,15 @@ function handleExportClientAnalysisCsv() {
   const { clientRows } = buildClientAndReferralAnalytics(getActiveDashboardFilter());
   const rows = clientRows.map((row) => ({
     client_name: row.clientName,
+    rank: row.rank,
     case_count: row.caseCount,
     sales_total: row.salesTotal,
     expense_total: row.expenseTotal,
     profit: row.profit,
     unpaid_total: row.unpaidTotal,
-    last_case_date: row.lastCaseDate || "",
+    last_contact_date: row.lastContactDate || "",
   }));
-  downloadCsvFile("client_analysis.csv", ["client_name", "case_count", "sales_total", "expense_total", "profit", "unpaid_total", "last_case_date"], rows);
+  downloadCsvFile("client_analysis.csv", ["client_name", "rank", "case_count", "sales_total", "expense_total", "profit", "unpaid_total", "last_contact_date"], rows);
 }
 
 function handleExportReferralAnalysisCsv() {
@@ -2253,12 +2257,13 @@ function exportAnalysisExcel() {
     const workbook = XLSX.utils.book_new();
     const clientRows = analytics.clientRows.map((row) => ({
       client_name: row.clientName,
+      rank: row.rank,
       case_count: row.caseCount,
       sales_total: row.salesTotal,
       expense_total: row.expenseTotal,
       profit: row.profit,
       unpaid_total: row.unpaidTotal,
-      last_case_date: row.lastCaseDate || "",
+      last_contact_date: row.lastContactDate || "",
     }));
     const referralRows = analytics.referralRows.map((row) => ({
       referral_source: row.referralSource,
@@ -2270,7 +2275,7 @@ function exportAnalysisExcel() {
     }));
     XLSX.utils.book_append_sheet(
       workbook,
-      createExcelSheet(clientRows, ["client_name", "case_count", "sales_total", "expense_total", "profit", "unpaid_total", "last_case_date"]),
+      createExcelSheet(clientRows, ["client_name", "rank", "case_count", "sales_total", "expense_total", "profit", "unpaid_total", "last_contact_date"]),
       "顧客別分析",
     );
     XLSX.utils.book_append_sheet(
@@ -3001,8 +3006,15 @@ function normalizeNameKey(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function getCaseAnalysisDate(caseEntry) {
-  return caseEntry.receivedDate || toDateString(caseEntry.createdAt);
+function getClientRank(totalSales) {
+  if (totalSales >= 500000) return "A";
+  if (totalSales >= 100000) return "B";
+  return "C";
+}
+
+function toSafeNumber(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
 }
 
 function resolveClientForCase(caseEntry, clientById, clientsByNameKey) {
@@ -3033,6 +3045,8 @@ function buildClientAndReferralAnalytics(filter = {}) {
         expenseTotal: 0,
         unpaidTotal: 0,
         lastCaseDate: "",
+        lastCreatedCaseDate: null,
+        lastContactDate: null,
       });
     }
     return clientMap.get(key);
@@ -3043,11 +3057,15 @@ function buildClientAndReferralAnalytics(filter = {}) {
     const clientName = client?.name || entry.customerName || "未設定";
     const row = ensureClientRow(clientName);
     row.referralSource = client?.referralSource || row.referralSource || "未設定";
-    const caseDate = getCaseAnalysisDate(entry);
-    if (isWithinFilterDate(caseDate, filter)) {
+    const caseCreatedDate = toDateString(entry.createdAt);
+    if (caseCreatedDate && (!row.lastCreatedCaseDate || toSortTimestamp(caseCreatedDate) > toSortTimestamp(row.lastCreatedCaseDate))) {
+      row.lastCreatedCaseDate = caseCreatedDate;
+    }
+    const caseDateForCount = entry.receivedDate || caseCreatedDate;
+    if (isWithinFilterDate(caseDateForCount, filter)) {
       row.caseCount += 1;
-      if (!row.lastCaseDate || toSortTimestamp(caseDate) > toSortTimestamp(row.lastCaseDate)) {
-        row.lastCaseDate = caseDate;
+      if (!row.lastCaseDate || toSortTimestamp(caseDateForCount) > toSortTimestamp(row.lastCaseDate)) {
+        row.lastCaseDate = caseDateForCount;
       }
     }
   });
@@ -3060,8 +3078,8 @@ function buildClientAndReferralAnalytics(filter = {}) {
     const clientName = client?.name || linkedCase.customerName || "未設定";
     const row = ensureClientRow(clientName);
     row.referralSource = client?.referralSource || row.referralSource || "未設定";
-    row.salesTotal += sale.invoiceAmount || 0;
-    row.unpaidTotal += getRemainingAmount(sale);
+    row.salesTotal += toSafeNumber(sale.invoiceAmount);
+    row.unpaidTotal += toSafeNumber(getRemainingAmount(sale));
   });
 
   state.expenses.forEach((expense) => {
@@ -3073,17 +3091,37 @@ function buildClientAndReferralAnalytics(filter = {}) {
     const clientName = client?.name || linkedCase.customerName || "未設定";
     const row = ensureClientRow(clientName);
     row.referralSource = client?.referralSource || row.referralSource || "未設定";
-    row.expenseTotal += expense.amount || 0;
+    row.expenseTotal += toSafeNumber(expense.amount);
+  });
+
+  state.dailyReports.forEach((report) => {
+    const linkedCase = report.caseId ? caseById.get(report.caseId) : null;
+    const directClient = report.clientId ? clientById.get(report.clientId) : null;
+    const caseClient = linkedCase ? resolveClientForCase(linkedCase, clientById, clientsByNameKey) : null;
+    const clientName = directClient?.name || caseClient?.name || linkedCase?.customerName || "未設定";
+    const row = ensureClientRow(clientName);
+    const reportDate = report.reportDate || null;
+    if (reportDate && (!row.lastContactDate || toSortTimestamp(reportDate) > toSortTimestamp(row.lastContactDate))) {
+      row.lastContactDate = reportDate;
+    }
   });
 
   const clientRows = Array.from(clientMap.values())
     .map((row) => ({
       ...row,
+      salesTotal: toSafeNumber(row.salesTotal),
+      expenseTotal: toSafeNumber(row.expenseTotal),
+      unpaidTotal: toSafeNumber(row.unpaidTotal),
       referralSource: row.referralSource || "未設定",
-      profit: row.salesTotal - row.expenseTotal,
+      profit: toSafeNumber(row.salesTotal) - toSafeNumber(row.expenseTotal),
+      rank: getClientRank(toSafeNumber(row.salesTotal)),
+      lastContactDate: row.lastContactDate || row.lastCreatedCaseDate || null,
     }))
     .filter((row) => row.caseCount > 0 || row.salesTotal > 0 || row.expenseTotal > 0 || row.unpaidTotal > 0)
     .sort((a, b) => {
+      const rankOrder = { A: 0, B: 1, C: 2 };
+      const rankDiff = (rankOrder[a.rank] ?? 9) - (rankOrder[b.rank] ?? 9);
+      if (rankDiff !== 0) return rankDiff;
       if (b.salesTotal !== a.salesTotal) return b.salesTotal - a.salesTotal;
       return a.clientName.localeCompare(b.clientName, "ja");
     });
@@ -3124,12 +3162,13 @@ function renderAnalyticsSection() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(row.clientName)}</td>
+      <td><span class="client-rank-badge rank-${row.rank}">${escapeHtml(row.rank)}</span></td>
       <td>${row.caseCount}件</td>
       <td>${formatCurrency(row.salesTotal)}</td>
       <td>${formatCurrency(row.expenseTotal)}</td>
       <td class="${row.profit < 0 ? "loss-text" : ""}">${formatCurrency(row.profit)}</td>
       <td class="${row.unpaidTotal > 0 ? "analysis-unpaid-text" : ""}">${formatCurrency(row.unpaidTotal)}${row.unpaidTotal > 0 ? " ⚠️" : ""}</td>
-      <td>${formatDate(row.lastCaseDate)}</td>
+      <td>${formatDate(row.lastContactDate)}</td>
     `;
     clientAnalysisBody.appendChild(tr);
   });
@@ -3151,6 +3190,25 @@ function renderAnalyticsSection() {
   });
 
   renderAnalyticsRankings(clientRows, referralRows);
+  renderImportantClients(clientRows);
+}
+
+function renderImportantClients(clientRows) {
+  if (!importantClientsBody || !importantClientsEmpty || !importantClientsWrap) return;
+  const rows = (clientRows || []).filter((row) => row.rank === "A").slice(0, 5);
+  importantClientsBody.innerHTML = "";
+  importantClientsWrap.hidden = rows.length === 0;
+  importantClientsEmpty.hidden = rows.length > 0;
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(row.clientName)}</td>
+      <td>${formatCurrency(row.salesTotal)}</td>
+      <td class="${row.profit < 0 ? "loss-text" : ""}">${formatCurrency(row.profit)}</td>
+      <td>${formatDate(row.lastContactDate)}</td>
+    `;
+    importantClientsBody.appendChild(tr);
+  });
 }
 
 function renderAnalyticsRankings(clientRows, referralRows) {
