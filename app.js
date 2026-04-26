@@ -1063,6 +1063,7 @@ async function handleFixedExpenseSubmit(event) {
 async function handleDailyReportSubmit(event) {
   event.preventDefault();
   if (!currentUser || !dailyReportForm) return;
+  console.log("DAILY REPORT FORM SUBMIT FIRED");
 
   const reportDate = dailyReportForm.elements.reportDate?.value || "";
   const clientId = dailyReportForm.elements.reportClientId?.value || "";
@@ -1073,6 +1074,17 @@ async function handleDailyReportSubmit(event) {
   const nextAction = asTrimmedText(dailyReportForm.elements.reportNextAction?.value);
   const nextActionDate = dailyReportForm.elements.reportNextActionDate?.value || "";
   const memo = asTrimmedText(dailyReportForm.elements.reportMemo?.value);
+  console.log("DAILY REPORT VALUES", {
+    reportDate,
+    clientId,
+    caseId,
+    interactionType,
+    workContent,
+    workMinutes,
+    nextAction,
+    nextActionDate,
+    memo,
+  });
 
   if (!reportDate) {
     showAppMessage("日付を入力してください。", true);
@@ -1098,37 +1110,36 @@ async function handleDailyReportSubmit(event) {
 
   const isEdit = Boolean(editState.dailyReportId);
   const taskName = isEdit ? "日報更新" : "日報登録";
-  console.log("DAILY REPORT SUBMIT START");
   console.log("DAILY REPORT PAYLOAD", payload);
   try {
     await withLoading(taskName, async () => {
       if (isEdit) {
         const { data, error } = await sbClient.from("daily_reports").update(payload).eq("id", editState.dailyReportId).eq("user_id", currentUser.id).select().single();
-        if (error) throw error;
+        if (error) {
+          console.error("日報登録Supabaseエラー", error);
+          throw error;
+        }
         if (!data) throw new Error("日報更新結果を取得できませんでした。");
         console.log("DAILY REPORT INSERT SUCCESS", data);
       } else {
         const { data, error } = await sbClient.from("daily_reports").insert(payload).select().single();
-        if (error) throw error;
+        if (error) {
+          console.error("日報登録Supabaseエラー", error);
+          throw error;
+        }
         if (!data) throw new Error("日報登録結果を取得できませんでした。");
         console.log("DAILY REPORT INSERT SUCCESS", data);
       }
       await loadAllData();
-      console.log("LOAD ALL DATA DONE");
+      console.log("DAILY REPORT STATE COUNT", state.dailyReports.length);
       renderAfterDataChanged();
-      console.log("RENDER DONE");
       resetDailyReportForm();
-      subtabState["daily-reports"] = "list";
-      activateTab("daily-reports");
-      showAppMessage(isEdit ? "日報を更新しました。" : "日報を登録しました。", false);
+      activateSubtab("daily-reports", "list");
+      showAppMessage("日報を登録しました。", false);
     }, { triggerButton: event.submitter });
   } catch (error) {
-    showAppMessage(
-      `日報登録に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.trim(),
-      true
-    );
+    showAppMessage(`日報登録に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
   } finally {
-    console.log("DAILY REPORT FINALLY");
     forceHideLoading();
   }
 }
