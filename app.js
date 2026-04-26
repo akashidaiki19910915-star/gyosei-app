@@ -4,7 +4,7 @@ const STATUS_ORDER = ["未着手", "進行中", "完了"];
 const STATUS_FILTER_KEYS = [...STATUS_ORDER, "その他"];
 const DEADLINE_FILTER_KEYS = ["all", "overdue", "within7", "within30"];
 const SALES_PAYMENT_STATUSES = ["未入金", "一部入金", "入金済"];
-const ESTIMATE_STATUS_ORDER = ["作成中", "提出済", "受注", "失注"];
+const ESTIMATE_STATUS_ORDER = ["作成中", "提出済", "未回答", "受注", "失注"];
 const EXPENSE_PAYMENT_METHODS = ["現金", "クレジットカード", "銀行振込", "電子マネー", "口座振替", "その他"];
 const DAILY_REPORT_INTERACTION_TYPES = ["作業", "電話", "メール", "面談", "訪問", "LINE", "その他"];
 const OFFICE_INFO = {
@@ -154,6 +154,11 @@ const todayTaskSummary = document.getElementById("today-task-summary");
 const todayTaskBody = document.getElementById("today-task-body");
 const todayTaskEmpty = document.getElementById("today-task-empty");
 const todayTaskListWrap = document.getElementById("today-task-list-wrap");
+const pendingEstimatesCard = document.getElementById("pending-estimates-card");
+const pendingEstimatesSummary = document.getElementById("pending-estimates-summary");
+const pendingEstimatesBody = document.getElementById("pending-estimates-body");
+const pendingEstimatesEmpty = document.getElementById("pending-estimates-empty");
+const pendingEstimatesListWrap = document.getElementById("pending-estimates-list-wrap");
 
 const clientForm = document.getElementById("client-form");
 const clientsList = document.getElementById("clients-list");
@@ -355,6 +360,7 @@ function bindEvents() {
   deadlineAlertBody?.addEventListener("click", handleDeadlineAlertClick);
   nextActionAlertBody?.addEventListener("click", handleNextActionAlertClick);
   todayTaskBody?.addEventListener("click", handleTodayTaskAction);
+  pendingEstimatesBody?.addEventListener("click", handlePendingEstimateAction);
   caseSearchInput?.addEventListener("input", handleCaseSearchInput);
   caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
   caseDeadlineFilterSelect?.addEventListener("change", handleCaseDeadlineFilterChange);
@@ -1373,6 +1379,16 @@ function handleBillingLeakAlertAction(event) {
   if (!caseId) return;
   if (btn.classList.contains("register-sale-btn")) {
     openSaleFormForCase(caseId);
+  }
+}
+
+function handlePendingEstimateAction(event) {
+  const btn = event.target.closest("button");
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const estimateId = btn.dataset.estimateId;
+  if (!estimateId) return;
+  if (btn.classList.contains("edit-pending-estimate-btn")) {
+    startEstimateEdit(estimateId).catch(() => {});
   }
 }
 
@@ -2448,6 +2464,7 @@ function renderAfterDataChanged() {
   safeRender("billingLeakAlerts", renderBillingLeakAlerts);
   safeRender("deadlineAlerts", renderDeadlineAlerts);
   safeRender("nextActionAlerts", renderNextActionAlerts);
+  safeRender("pendingEstimates", renderPendingEstimates);
   safeRender("clientAnalysis", renderClientAnalysis);
   safeRender("referralAnalysis", renderReferralAnalysis);
 }
@@ -2479,6 +2496,30 @@ function renderDeadlineAlerts() {
 function renderNextActionAlerts() {
   if (!nextActionAlertCard || !nextActionAlertSummary || !nextActionAlertBody || !nextActionAlertEmpty || !nextActionAlertListWrap) return;
   renderNextActionAlertCard();
+}
+
+function renderPendingEstimates() {
+  if (!pendingEstimatesCard || !pendingEstimatesSummary || !pendingEstimatesBody || !pendingEstimatesEmpty || !pendingEstimatesListWrap) return;
+  const targets = getPendingEstimates(state.estimates)
+    .slice()
+    .sort((a, b) => b.elapsedDays - a.elapsedDays || toSortTimestamp(a.baseDate) - toSortTimestamp(b.baseDate));
+  pendingEstimatesCard.classList.toggle("has-alert", targets.length > 0);
+  pendingEstimatesSummary.textContent = `対象 ${targets.length}件`;
+  pendingEstimatesBody.innerHTML = "";
+  pendingEstimatesEmpty.hidden = targets.length > 0;
+  pendingEstimatesListWrap.hidden = targets.length === 0;
+  if (!targets.length) return;
+  targets.slice(0, 5).forEach((entry) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(entry.customerName || "未設定")}</td>
+      <td>${escapeHtml(entry.estimateTitle || "未設定")}</td>
+      <td>${formatDate(entry.baseDate)}</td>
+      <td>${entry.elapsedDays}日</td>
+      <td><button type="button" class="secondary-btn edit-pending-estimate-btn" data-estimate-id="${entry.id}">編集</button></td>
+    `;
+    pendingEstimatesBody.appendChild(tr);
+  });
 }
 
 function renderClientAnalysis() {
@@ -2604,6 +2645,7 @@ function renderDashboard() {
   renderDashboardWorktimeSummary();
   renderUnpaidList();
   renderAnalyticsSection();
+  renderPendingEstimates();
 }
 
 function renderTodayTaskCard() {
@@ -5814,6 +5856,7 @@ function mapEstimateFromDb(row) {
     estimateNumber: row.estimate_number || "",
     estimateTitle: row.estimate_title || "",
     estimateDate: row.estimate_date || "",
+    sentDate: row.sent_date || row.estimate_date || "",
     validUntil: row.valid_until || "",
     status: normalizeEstimateStatus(row.status),
     memo: row.memo || "",
@@ -5824,6 +5867,26 @@ function mapEstimateFromDb(row) {
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
   };
+}
+
+function getPendingEstimates(estimates) {
+  const today = new Date();
+  return (Array.isArray(estimates) ? estimates : []).reduce((acc, estimate) => {
+    if (!estimate || estimate.status !== "未回答") return acc;
+    const baseDate = estimate.sentDate || estimate.estimateDate;
+    if (!baseDate) return acc;
+    const sent = new Date(baseDate);
+    const sentTs = sent.getTime();
+    if (!Number.isFinite(sentTs)) return acc;
+    const diffDays = (today.getTime() - sentTs) / (1000 * 60 * 60 * 24);
+    if (!Number.isFinite(diffDays) || diffDays < 3) return acc;
+    acc.push({
+      ...estimate,
+      baseDate,
+      elapsedDays: Math.floor(diffDays),
+    });
+    return acc;
+  }, []);
 }
 
 function mapEstimateItemFromDb(row) {
