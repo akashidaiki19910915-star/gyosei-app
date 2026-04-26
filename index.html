@@ -158,12 +158,11 @@
                     <th>種別</th>
                     <th>顧客名</th>
                     <th>案件名</th>
-                    <th>残額</th>
-                    <th>支払期限</th>
-                    <th>最終督促日</th>
-                    <th>督促回数</th>
+                    <th>タスク名</th>
+                    <th>期限日</th>
+                    <th>補足</th>
                     <th>編集</th>
-                    <th>督促記録</th>
+                    <th>対応</th>
                   </tr>
                 </thead>
                 <tbody id="today-task-body"></tbody>
@@ -512,6 +511,7 @@
             <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="entry">案件登録</button>
             <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="list">案件一覧</button>
             <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="alerts">アラート</button>
+            <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="tasks">タスク管理</button>
           </nav>
           <div class="layout two-col">
             <section class="panel subtab-panel" data-parent-tab="cases" data-subtab="entry" hidden>
@@ -620,6 +620,7 @@
                   <select id="case-deadline-filter">
                     <option value="all">全件</option>
                     <option value="overdue">期限切れ</option>
+                    <option value="within3">3日以内</option>
                     <option value="within7">7日以内</option>
                     <option value="within30">30日以内</option>
                   </select>
@@ -629,6 +630,54 @@
               <p id="case-filter-count" class="filter-count">表示中 0件 / 全0件</p>
               <div id="case-empty" class="empty">案件はまだ登録されていません。</div>
               <ul id="case-list" class="item-list"></ul>
+            </section>
+            <section class="panel subtab-panel" data-parent-tab="cases" data-subtab="tasks" hidden>
+              <h2>案件タスク管理</h2>
+              <form id="case-task-form" class="form">
+                <label>
+                  案件選択
+                  <select id="case-task-case-id" name="caseTaskCaseId"></select>
+                </label>
+                <label>
+                  タスク名 <span class="required">必須</span>
+                  <input id="case-task-title" name="caseTaskTitle" type="text" required maxlength="200" />
+                </label>
+                <label>
+                  タスクメモ
+                  <textarea id="case-task-memo" name="caseTaskMemo" rows="3" maxlength="4000"></textarea>
+                </label>
+                <label>
+                  期限日
+                  <input id="case-task-due-date" name="caseTaskDueDate" type="date" />
+                </label>
+                <label>
+                  ステータス
+                  <select id="case-task-status" name="caseTaskStatus">
+                    <option value="未完了">未完了</option>
+                    <option value="完了">完了</option>
+                  </select>
+                </label>
+                <button id="case-task-submit-btn" type="submit">タスクを追加</button>
+              </form>
+              <div id="case-tasks-empty" class="empty">案件タスクはまだありません。</div>
+              <div id="case-tasks-list-wrap" class="table-wrap" hidden>
+                <table class="daily-report-table">
+                  <thead>
+                    <tr>
+                      <th>顧客名</th>
+                      <th>案件名</th>
+                      <th>タスク名</th>
+                      <th>期限日</th>
+                      <th>ステータス</th>
+                      <th>完了日</th>
+                      <th>編集</th>
+                      <th>完了</th>
+                      <th>削除</th>
+                    </tr>
+                  </thead>
+                  <tbody id="case-tasks-body"></tbody>
+                </table>
+              </div>
             </section>
           </div>
         </section>
