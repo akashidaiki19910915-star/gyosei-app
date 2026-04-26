@@ -988,6 +988,11 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
+.payment-history-row {
+  margin-bottom: 0.3rem;
+  line-height: 1.5;
+}
+
 @media (max-width: 640px) {
   .estimate-list-grid,
   .estimate-card-grid {

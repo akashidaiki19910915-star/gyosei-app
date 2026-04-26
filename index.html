@@ -61,6 +61,7 @@
               <div class="csv-actions">
                 <button id="export-cases-csv-btn" type="button">案件CSV</button>
                 <button id="export-sales-csv-btn" type="button">売上CSV</button>
+                <button id="export-payments-csv-btn" type="button">入金CSV</button>
                 <button id="export-expenses-csv-btn" type="button">経費CSV</button>
                 <button id="export-fixed-expenses-csv-btn" type="button">固定費CSV</button>
                 <button id="export-all-csv-btn" type="button" class="secondary-btn">全データCSV</button>
@@ -74,6 +75,7 @@
                   <select id="csv-import-type" name="csvImportType" required>
                     <option value="cases">案件CSV</option>
                     <option value="sales">売上CSV</option>
+                    <option value="payments">入金CSV</option>
                     <option value="expenses">経費CSV</option>
                     <option value="fixed_expenses">固定費CSV</option>
                     <option value="client_interactions">対応履歴CSV</option>
@@ -264,6 +266,7 @@
                     <th>最終督促日</th>
                     <th>督促方法</th>
                     <th>督促メモ</th>
+                    <th>入金履歴</th>
                     <th>操作</th>
                   </tr>
                 </thead>
@@ -350,6 +353,7 @@
                   <th>最終督促日</th>
                   <th>督促方法</th>
                   <th>督促メモ</th>
+                  <th>入金履歴</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -815,6 +819,7 @@
                   <textarea id="sale-invoice-memo" name="invoiceMemo" rows="2" maxlength="2000" placeholder="請求書出力時に使用する備考"></textarea>
                 </label>
                 <p class="meta">請求番号は自動採番済みの番号を使用します（形式: S-YYYYMM-001）。</p>
+                <div id="sale-payment-history" class="meta"></div>
                 <button id="sale-submit-btn" type="submit">売上を登録</button>
               </form>
             </section>
@@ -846,7 +851,9 @@
                       <th>最終督促日</th>
                       <th>督促方法</th>
                       <th>督促メモ</th>
+                      <th>入金履歴</th>
                       <th>督促記録</th>
+                      <th>入金登録</th>
                       <th>編集</th>
                       <th>削除</th>
                     </tr>
