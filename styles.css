@@ -369,6 +369,18 @@ button:hover { background: var(--primary-dark); }
   background: #fff7ed;
 }
 
+.task-reminder-danger {
+  background: #fee2e2;
+}
+
+.task-reminder-warning {
+  background: #ffedd5;
+}
+
+.task-reminder-upcoming {
+  background: #fef9c3;
+}
+
 .next-action-alert-card.has-alert {
   border-color: #ef4444;
   box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.12);
