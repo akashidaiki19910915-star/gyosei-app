@@ -629,21 +629,25 @@ async function applyAuthState() {
 
   setDataMutationControlsEnabled(false);
   state.isInitialDataReady = false;
-  authView.hidden = true;
-  appView.hidden = false;
   userLabel.textContent = currentUser.email || "ログイン中";
 
-  await loadAllData();
-  resetCaseForm();
-  resetCaseTaskForm();
-  resetEstimateForm();
-  resetSaleForm();
-  resetExpenseForm();
-  resetFixedExpenseForm();
-  resetDailyReportForm();
-  renderAfterDataChanged();
-  state.isInitialDataReady = true;
-  setDataMutationControlsEnabled(true);
+  try {
+    await loadAllDataSafely();
+    resetCaseForm();
+    resetCaseTaskForm();
+    resetEstimateForm();
+    resetSaleForm();
+    resetExpenseForm();
+    resetFixedExpenseForm();
+    resetDailyReportForm();
+    safeRender("renderAfterDataChanged", renderAfterDataChanged);
+    state.isInitialDataReady = true;
+    setDataMutationControlsEnabled(true);
+  } finally {
+    authView.hidden = true;
+    appView.hidden = false;
+    forceHideLoading();
+  }
 }
 
 async function handleLogin(event) {
@@ -693,67 +697,74 @@ async function handleLogout() {
   }
 }
 
-async function loadAllData() {
+async function loadAllDataSafely() {
   if (!currentUser || isLoggingOut) return;
 
-  const [clientsRes, workTemplatesRes, casesRes, caseTasksRes, estimatesRes, estimateItemsRes, salesRes, paymentsRes, expensesRes, fixedExpensesRes, dailyReportsRes] = await Promise.all([
-    sbClient.from("clients").select("*").eq("user_id", currentUser.id),
-    sbClient.from("work_templates").select("*").eq("user_id", currentUser.id),
-    sbClient.from("cases").select("*").eq("user_id", currentUser.id),
-    sbClient.from("case_tasks").select("*").eq("user_id", currentUser.id),
-    sbClient.from("estimates").select("*").eq("user_id", currentUser.id),
-    sbClient.from("estimate_items").select("*").eq("user_id", currentUser.id),
-    sbClient.from("sales").select("*").eq("user_id", currentUser.id),
-    sbClient.from("payments").select("*").eq("user_id", currentUser.id),
-    sbClient.from("expenses").select("*").eq("user_id", currentUser.id),
-    sbClient.from("fixed_expenses").select("*").eq("user_id", currentUser.id),
-    sbClient.from("daily_reports").select("*").eq("user_id", currentUser.id),
-  ]);
+  const loadTable = async (tableName, mapFn, options = {}) => {
+    const { optional = false, fallback = [] } = options;
+    try {
+      const { data, error } = await sbClient.from(tableName).select("*").eq("user_id", currentUser.id);
+      if (error) throw error;
+      return (data || []).map(mapFn);
+    } catch (error) {
+      const level = optional ? "warn" : "error";
+      console[level](`LOAD ${tableName} ERROR`, error);
+      if (!optional) {
+        showAppMessage(`${tableName} の読み込みでエラーが発生しました。既存データの表示を続行します。`, true);
+      }
+      return fallback;
+    }
+  };
 
-  if (clientsRes.error) throw new Error(`clients: ${formatSupabaseError(clientsRes.error)}`);
-  if (workTemplatesRes.error) throw new Error(`work_templates: ${formatSupabaseError(workTemplatesRes.error)}`);
-  if (casesRes.error) throw new Error(`cases: ${formatSupabaseError(casesRes.error)}`);
-  if (caseTasksRes.error) throw new Error(`case_tasks: ${formatSupabaseError(caseTasksRes.error)}`);
-  if (estimatesRes.error) throw new Error(`estimates: ${formatSupabaseError(estimatesRes.error)}`);
-  if (estimateItemsRes.error) throw new Error(`estimate_items: ${formatSupabaseError(estimateItemsRes.error)}`);
-  if (salesRes.error) {
-    console.error("LOAD SALES ERROR", salesRes.error);
-    throw new Error(`sales: ${formatSupabaseError(salesRes.error)}`);
-  }
-  if (paymentsRes.error) throw new Error(`payments: ${formatSupabaseError(paymentsRes.error)}`);
-  if (expensesRes.error) throw new Error(`expenses: ${formatSupabaseError(expensesRes.error)}`);
-  if (fixedExpensesRes.error) throw new Error(`fixed_expenses: ${formatSupabaseError(fixedExpensesRes.error)}`);
-  if (dailyReportsRes.error) throw new Error(`daily_reports: ${formatSupabaseError(dailyReportsRes.error)}`);
-
-  state.clients = (clientsRes.data || []).map(mapClientFromDb);
-  state.workTemplates = (workTemplatesRes.data || []).map(mapWorkTemplateFromDb);
+  state.clients = await loadTable("clients", mapClientFromDb);
+  state.workTemplates = await loadTable("work_templates", mapWorkTemplateFromDb);
   if (!state.workTemplates.length) {
     const seeded = await seedDefaultWorkTemplates();
     if (seeded.length) state.workTemplates = seeded;
   }
-  state.cases = (casesRes.data || []).map(mapCaseFromDb);
-  state.caseTasks = (caseTasksRes.data || []).map(mapCaseTaskFromDb);
-  state.estimates = (estimatesRes.data || []).map(mapEstimateFromDb);
-  state.estimateItems = (estimateItemsRes.data || []).map(mapEstimateItemFromDb);
-  console.log("LOAD SALES RAW", salesRes.data);
-  state.sales = (salesRes.data || []).map(mapSaleFromDb);
-  state.payments = (paymentsRes.data || []).map(mapPaymentFromDb);
+  state.cases = await loadTable("cases", mapCaseFromDb);
+  state.caseTasks = await loadTable("case_tasks", mapCaseTaskFromDb, { optional: true, fallback: [] });
+  state.estimates = await loadTable("estimates", mapEstimateFromDb);
+  state.estimateItems = await loadTable("estimate_items", mapEstimateItemFromDb);
+  state.sales = await loadTable("sales", mapSaleFromDb);
+  state.payments = await loadTable("payments", mapPaymentFromDb, { optional: true, fallback: [] });
+  state.expenses = await loadTable("expenses", mapExpenseFromDb);
+  state.fixedExpenses = await loadTable("fixed_expenses", mapFixedExpenseFromDb);
+  state.dailyReports = await loadTable("daily_reports", mapDailyReportFromDb);
+
   state.sales = state.sales.map((sale) => hydrateSaleWithPayments(sale));
-  console.log("LOAD SALES MAPPED", state.sales);
-  state.expenses = (expensesRes.data || []).map(mapExpenseFromDb);
-  state.fixedExpenses = (fixedExpensesRes.data || []).map(mapFixedExpenseFromDb);
-  state.dailyReports = (dailyReportsRes.data || []).map(mapDailyReportFromDb);
-  console.log("LOAD ALL DATA DONE");
+
+  console.log("LOAD COUNTS", {
+    clients: state.clients.length,
+    cases: state.cases.length,
+    sales: state.sales.length,
+    expenses: state.expenses.length,
+    dailyReports: state.dailyReports.length,
+    fixedExpenses: state.fixedExpenses.length,
+    estimates: state.estimates.length,
+    caseTasks: state.caseTasks.length,
+    payments: state.payments.length,
+  });
+
   await cleanupLegacyEstimateMemoMarkers();
 
   const createdCount = await ensureMonthlyFixedExpenses();
   if (createdCount > 0) {
-    const refreshExpensesRes = await sbClient.from("expenses").select("*").eq("user_id", currentUser.id);
-    if (refreshExpensesRes.error) throw refreshExpensesRes.error;
-    state.expenses = (refreshExpensesRes.data || []).map(mapExpenseFromDb);
-    showAppMessage(`${createdCount}件の固定費を当月分として自動計上しました。`, false);
+    try {
+      const refreshExpensesRes = await sbClient.from("expenses").select("*").eq("user_id", currentUser.id);
+      if (refreshExpensesRes.error) throw refreshExpensesRes.error;
+      state.expenses = (refreshExpensesRes.data || []).map(mapExpenseFromDb);
+      showAppMessage(`${createdCount}件の固定費を当月分として自動計上しました。`, false);
+    } catch (error) {
+      console.error("LOAD expenses refresh ERROR", error);
+    }
   }
 }
+
+async function loadAllData() {
+  await loadAllDataSafely();
+}
+
 
 async function refreshAfterMutation(actionName, message) {
   await loadAllData();
@@ -7469,4 +7480,3 @@ function clearAppState() {
   appView.hidden = true;
   userLabel.textContent = "";
 }
-    if (paymentsRes.error) throw paymentsRes.error;
