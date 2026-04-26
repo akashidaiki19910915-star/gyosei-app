@@ -819,33 +819,29 @@ async function handleClientSubmit(event) {
     memo: asTrimmedText(clientForm.elements.clientMemo.value) || null,
   };
   const taskName = editState.clientId ? "顧客更新" : "顧客登録";
-  const actionName = taskName;
   console.log("EDIT STATE", editState);
-  console.log("ACTION START", actionName, editState.clientId || "new");
+  console.log("ACTION START", taskName, editState.clientId || "new");
   console.log("PAYLOAD", payload);
   try {
-    await withLoading(taskName, async () => {
+    await runMutation(taskName, async () => {
       if (editState.clientId) {
         const { data, error } = await sbClient.from("clients").update(payload).eq("id", editState.clientId).eq("user_id", currentUser.id).select().single();
         if (error) throw error;
         if (!data) throw new Error("更新結果を取得できませんでした。");
-        console.log("DB DONE", actionName, editState.clientId);
-        await refreshAfterMutation(actionName, "顧客を更新しました。");
-        resetClientForm();
-        return;
+        console.log("DB DONE", taskName, editState.clientId);
+        return data;
       }
       const { data, error } = await sbClient.from("clients").insert(payload).select().single();
       if (error) throw error;
       if (!data) throw new Error("登録結果を取得できませんでした。");
-      console.log("DB DONE", actionName, data.id || "new");
-      await refreshAfterMutation(actionName, "顧客を登録しました。");
-      resetClientForm();
-    }, { triggerButton: event.submitter });
+      console.log("DB DONE", taskName, data.id || "new");
+      return data;
+    }, {
+      successMessage: editState.clientId ? "顧客を更新しました。" : "顧客を登録しました。",
+      resetForm: resetClientForm,
+    });
   } catch (error) {
     showAppMessage(`顧客保存に失敗しました。${formatSupabaseError(error)}`, true);
-  } finally {
-    console.log("ACTION FINALLY", actionName);
-    forceHideLoading();
   }
 }
 
@@ -857,7 +853,7 @@ async function handleCaseSubmit(event) {
   const taskName = editState.caseId ? "案件更新" : "案件登録";
   const isEdit = Boolean(editState.caseId);
   try {
-    await withLoading(taskName, async () => {
+    await runMutation(taskName, async () => {
       const payload = buildCasePayloadFromForm();
       console.log("EDIT STATE", editState);
       const templateId = payload.template_id || "";
@@ -877,21 +873,18 @@ async function handleCaseSubmit(event) {
         await createCaseTasksFromTemplate(data, payload.template_id);
         console.log("CASE INSERT SUCCESS", data);
       }
-      await loadAllData();
-      console.log("LOAD ALL DATA DONE");
-      renderAfterDataChanged();
-      console.log("RENDER DONE");
-      subtabState.cases = "list";
-      resetCaseForm();
-      activateTab("cases");
-      showAppMessage(isEdit ? "案件を更新しました。" : "案件を登録しました。", false);
-    }, { triggerButton: event.submitter });
+      return true;
+    }, {
+      successMessage: isEdit ? "案件を更新しました。" : "案件を登録しました。",
+      resetForm: resetCaseForm,
+      afterSuccess: () => {
+        subtabState.cases = "list";
+        activateTab("cases");
+      },
+    });
   } catch (error) {
     console.error("案件登録に失敗しました", error);
     showAppMessage(`案件保存に失敗しました。${formatSupabaseError(error)}`, true);
-  } finally {
-    console.log("CASE SUBMIT FINALLY");
-    forceHideLoading();
   }
 }
 
@@ -910,28 +903,25 @@ async function handleWorkTemplateSubmit(event) {
     memo: asTrimmedText(workTemplateForm.elements.templateMemo.value) || null,
   };
   const taskName = editState.workTemplateId ? "業務テンプレート更新" : "業務テンプレート登録";
-  const actionName = taskName;
   console.log("EDIT STATE", editState);
   try {
-    await withLoading(taskName, async () => {
+    await runMutation(taskName, async () => {
       if (editState.workTemplateId) {
         const { data, error } = await sbClient.from("work_templates").update(payload).eq("id", editState.workTemplateId).eq("user_id", currentUser.id).select().single();
         if (error) throw error;
         if (!data) throw new Error("更新結果を取得できませんでした。");
-        await refreshAfterMutation(actionName, "業務テンプレートを更新しました。");
-        resetWorkTemplateForm();
-        return;
+        return data;
       }
       const { data, error } = await sbClient.from("work_templates").insert(payload).select().single();
       if (error) throw error;
       if (!data) throw new Error("登録結果を取得できませんでした。");
-      await refreshAfterMutation(actionName, "業務テンプレートを登録しました。");
-      resetWorkTemplateForm();
-    }, { triggerButton: event.submitter });
+      return data;
+    }, {
+      successMessage: editState.workTemplateId ? "業務テンプレートを更新しました。" : "業務テンプレートを登録しました。",
+      resetForm: resetWorkTemplateForm,
+    });
   } catch (error) {
     showAppMessage(`業務テンプレート保存に失敗しました。${formatSupabaseError(error)}`, true);
-  } finally {
-    forceHideLoading();
   }
 }
 
@@ -969,9 +959,7 @@ async function handleSaleSubmit(event) {
   }
   if (!saleForm) return;
 
-  startLoading("売上登録");
   try {
-    clearAppMessage();
     console.log("SALE SUBMIT FIRED");
 
     const isEdit = Boolean(editState.saleId);
@@ -1003,44 +991,30 @@ async function handleSaleSubmit(event) {
 
     console.log("SALE PAYLOAD", payload);
 
-    let query;
-    if (isEdit) {
-      query = sbClient
-        .from("sales")
-        .update(payload)
-        .eq("id", editState.saleId)
-        .eq("user_id", currentUser.id)
-        .select()
-        .single();
-    } else {
-      query = sbClient
-        .from("sales")
-        .insert(payload)
-        .select()
-        .single();
-    }
-
-    const { data, error } = await query;
-    if (error) {
-      console.error("SALE SUPABASE ERROR", error);
-      throw error;
-    }
-    if (!data) throw new Error("売上登録結果を取得できませんでした。");
-
-    console.log("SALE INSERT SUCCESS", data);
-    await loadAllData();
-    console.log("SALES COUNT AFTER LOAD", state.sales?.length);
-    renderAfterDataChanged();
-    resetSaleForm();
-    editState.saleId = null;
-    subtabState.sales = "list";
-    activateSubtab("sales", "list");
-    showAppMessage(isEdit ? "売上を更新しました。" : "売上を登録しました。", false);
+    await runMutation("売上登録", async () => {
+      const query = isEdit
+        ? sbClient.from("sales").update(payload).eq("id", editState.saleId).eq("user_id", currentUser.id).select().single()
+        : sbClient.from("sales").insert(payload).select().single();
+      const { data, error } = await query;
+      if (error) {
+        console.error("SALE SUPABASE ERROR", error);
+        throw error;
+      }
+      if (!data) throw new Error("売上登録結果を取得できませんでした。");
+      console.log("SALE INSERT SUCCESS", data);
+      return data;
+    }, {
+      successMessage: isEdit ? "売上を更新しました。" : "売上を登録しました。",
+      resetForm: resetSaleForm,
+      afterSuccess: () => {
+        editState.saleId = null;
+        subtabState.sales = "list";
+        activateSubtab("sales", "list");
+      },
+    });
   } catch (error) {
     console.error("売上登録に失敗しました。", error);
     showAppMessage(`売上登録に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
-  } finally {
-    forceHideLoading();
   }
 }
 
@@ -1073,12 +1047,11 @@ async function handleExpenseSubmit(event) {
   };
 
   const taskName = editState.expenseId ? "経費更新" : "経費登録";
-  const actionName = taskName;
   console.log("EDIT STATE", editState);
-  console.log("ACTION START", actionName, editState.expenseId || "new");
+  console.log("ACTION START", taskName, editState.expenseId || "new");
   console.log("PAYLOAD", payload);
   try {
-    await withLoading(taskName, async () => {
+    await runMutation(taskName, async () => {
       if (editState.expenseId) {
         const currentExpense = state.expenses.find((entry) => entry.id === editState.expenseId);
         const updatePayload = { ...payload };
@@ -1089,14 +1062,8 @@ async function handleExpenseSubmit(event) {
           throw error;
         }
         if (!data) throw new Error("更新結果を取得できませんでした。");
-        console.log("DB DONE", actionName, editState.expenseId);
-        await loadAllData();
-        renderAfterDataChanged();
-        resetExpenseForm();
-        subtabState.expenses = "list";
-        activateSubtab("expenses", "list");
-        showAppMessage("経費を更新しました。", false);
-        return;
+        console.log("DB DONE", taskName, editState.expenseId);
+        return data;
       }
 
       const { data, error } = await sbClient.from("expenses").insert(payload).select().single();
@@ -1105,19 +1072,18 @@ async function handleExpenseSubmit(event) {
         throw error;
       }
       if (!data) throw new Error("登録結果を取得できませんでした。");
-      console.log("DB DONE", actionName, data.id || "new");
-      await loadAllData();
-      renderAfterDataChanged();
-      resetExpenseForm();
-      subtabState.expenses = "list";
-      activateSubtab("expenses", "list");
-      showAppMessage("経費を登録しました。", false);
-    }, { triggerButton: event.submitter });
+      console.log("DB DONE", taskName, data.id || "new");
+      return data;
+    }, {
+      successMessage: editState.expenseId ? "経費を更新しました。" : "経費を登録しました。",
+      resetForm: resetExpenseForm,
+      afterSuccess: () => {
+        subtabState.expenses = "list";
+        activateSubtab("expenses", "list");
+      },
+    });
   } catch (error) {
     showAppMessage(`経費保存に失敗しました。${formatSupabaseError(error)}`, true);
-  } finally {
-    console.log("ACTION FINALLY", actionName);
-    forceHideLoading();
   }
 }
 
@@ -1142,40 +1108,35 @@ async function handleFixedExpenseSubmit(event) {
   };
 
   const taskName = editState.fixedExpenseId ? "固定費更新" : "固定費登録";
-  const actionName = taskName;
   console.log("EDIT STATE", editState);
-  console.log("ACTION START", actionName, editState.fixedExpenseId || "new");
+  console.log("ACTION START", taskName, editState.fixedExpenseId || "new");
   console.log("PAYLOAD", payload);
   try {
-    await withLoading(taskName, async () => {
-    if (editState.fixedExpenseId) {
-      const { data, error } = await sbClient
-        .from("fixed_expenses")
-        .update(payload)
-        .eq("id", editState.fixedExpenseId)
-        .eq("user_id", currentUser.id)
-        .select()
-        .single();
+    await runMutation(taskName, async () => {
+      if (editState.fixedExpenseId) {
+        const { data, error } = await sbClient
+          .from("fixed_expenses")
+          .update(payload)
+          .eq("id", editState.fixedExpenseId)
+          .eq("user_id", currentUser.id)
+          .select()
+          .single();
+        if (error) throw error;
+        if (!data) throw new Error("更新結果を取得できませんでした。");
+        console.log("DB DONE", taskName, editState.fixedExpenseId);
+        return data;
+      }
+      const { data, error } = await sbClient.from("fixed_expenses").insert(payload).select().single();
       if (error) throw error;
-      if (!data) throw new Error("更新結果を取得できませんでした。");
-      console.log("DB DONE", actionName, editState.fixedExpenseId);
-      await refreshAfterMutation(actionName, "固定費を更新しました。");
-      resetFixedExpenseForm();
-      return;
-    }
-
-    const { data, error } = await sbClient.from("fixed_expenses").insert(payload).select().single();
-    if (error) throw error;
-    if (!data) throw new Error("登録結果を取得できませんでした。");
-    console.log("DB DONE", actionName, data.id || "new");
-    await refreshAfterMutation(actionName, "固定費を登録しました。");
-    resetFixedExpenseForm();
-    }, { triggerButton: event.submitter });
+      if (!data) throw new Error("登録結果を取得できませんでした。");
+      console.log("DB DONE", taskName, data.id || "new");
+      return data;
+    }, {
+      successMessage: editState.fixedExpenseId ? "固定費を更新しました。" : "固定費を登録しました。",
+      resetForm: resetFixedExpenseForm,
+    });
   } catch (error) {
     showAppMessage(`固定費保存に失敗しました。${formatSupabaseError(error)}`, true);
-  } finally {
-    console.log("ACTION FINALLY", actionName);
-    forceHideLoading();
   }
 }
 
@@ -1232,7 +1193,7 @@ async function handleDailyReportSubmit(event) {
   console.log("EDIT STATE", editState);
   console.log("PAYLOAD", payload);
   try {
-    await withLoading(taskName, async () => {
+    await runMutation(taskName, async () => {
       if (isEdit) {
         const { data, error } = await sbClient.from("daily_reports").update(payload).eq("id", editState.dailyReportId).eq("user_id", currentUser.id).select().single();
         if (error) {
@@ -1250,17 +1211,14 @@ async function handleDailyReportSubmit(event) {
         if (!data) throw new Error("日報登録結果を取得できませんでした。");
         console.log("DAILY REPORT INSERT SUCCESS", data);
       }
-      await loadAllData();
-      console.log("DAILY REPORT STATE COUNT", state.dailyReports.length);
-      renderAfterDataChanged();
-      resetDailyReportForm();
-      activateSubtab("daily-reports", "list");
-      showAppMessage(isEdit ? "日報を更新しました。" : "日報を登録しました。", false);
-    }, { triggerButton: event.submitter });
+      return true;
+    }, {
+      successMessage: isEdit ? "日報を更新しました。" : "日報を登録しました。",
+      resetForm: resetDailyReportForm,
+      afterSuccess: () => activateSubtab("daily-reports", "list"),
+    });
   } catch (error) {
     showAppMessage(`日報登録に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
-  } finally {
-    forceHideLoading();
   }
 }
 
@@ -1581,26 +1539,26 @@ async function handleCaseTaskSubmit(event) {
   if (!payload.task_title) return;
   if (payload.status === "完了") payload.completed_at = toDateString(new Date());
   const taskName = editState.caseTaskId ? "案件タスク更新" : "案件タスク登録";
+  const isEdit = Boolean(editState.caseTaskId);
   try {
-    await withLoading(taskName, async () => {
-      if (editState.caseTaskId) {
+    await runMutation(taskName, async () => {
+      if (isEdit) {
         const { data, error } = await sbClient.from("case_tasks").update(payload).eq("id", editState.caseTaskId).eq("user_id", currentUser.id).select().single();
         if (error) throw error;
         if (!data) throw new Error("更新結果を取得できませんでした。");
+        return data;
       } else {
         const { data, error } = await sbClient.from("case_tasks").insert(payload).select().single();
         if (error) throw error;
         if (!data) throw new Error("登録結果を取得できませんでした。");
+        return data;
       }
-      await loadAllData();
-      renderAfterDataChanged();
-      resetCaseTaskForm();
-      showAppMessage(editState.caseTaskId ? "案件タスクを更新しました。" : "案件タスクを登録しました。", false);
-    }, { triggerButton: event.submitter });
+    }, {
+      successMessage: isEdit ? "案件タスクを更新しました。" : "案件タスクを登録しました。",
+      resetForm: resetCaseTaskForm,
+    });
   } catch (error) {
     showAppMessage(`案件タスク保存に失敗しました。${formatSupabaseError(error)}`, true);
-  } finally {
-    forceHideLoading();
   }
 }
 
@@ -1871,7 +1829,7 @@ async function handleFixedExpensesListAction(event) {
     if (!target) return;
 
     try {
-      await withLoading("固定費更新", async () => {
+      await runMutation("固定費更新", async () => {
         const { data, error } = await sbClient
           .from("fixed_expenses")
           .update({ active: !target.active })
@@ -1882,10 +1840,12 @@ async function handleFixedExpensesListAction(event) {
         if (error) throw error;
         if (!data) throw new Error("更新結果を取得できませんでした。");
         console.log("DB success", "固定費更新");
-        await refreshAfterMutation("固定費更新", "固定費の有効/無効を更新しました。");
+        return data;
+      }, {
+        successMessage: "固定費の有効/無効を更新しました。",
       });
-    } finally {
-      forceHideLoading();
+    } catch (error) {
+      showAppMessage(`固定費更新に失敗しました。${formatSupabaseError(error)}`, true);
     }
     return;
   }
@@ -2147,54 +2107,47 @@ async function deleteDailyReport(id) {
 async function deleteAllData() {
   if (!currentUser) return;
   if (!window.confirm("顧客・対応履歴・業務テンプレート・見積・案件・売上・入金・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
-  const taskName = "全件削除";
-  startLoading(taskName);
   try {
-    clearAppMessage();
-    console.log("DELETE START", taskName, "all");
-    const [estimateItemsRes, estimatesRes, paymentsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes, workTemplatesRes, clientsRes] = await Promise.all([
-      sbClient.from("estimate_items").delete().eq("user_id", currentUser.id),
-      sbClient.from("estimates").delete().eq("user_id", currentUser.id),
-      sbClient.from("payments").delete().eq("user_id", currentUser.id),
-      sbClient.from("sales").delete().eq("user_id", currentUser.id),
-      sbClient.from("expenses").delete().eq("user_id", currentUser.id),
-      sbClient.from("fixed_expenses").delete().eq("user_id", currentUser.id),
-      sbClient.from("daily_reports").delete().eq("user_id", currentUser.id),
-      sbClient.from("cases").delete().eq("user_id", currentUser.id),
-      sbClient.from("work_templates").delete().eq("user_id", currentUser.id),
-      sbClient.from("clients").delete().eq("user_id", currentUser.id),
-    ]);
-
-    if (salesRes.error) throw salesRes.error;
-    if (paymentsRes.error) throw paymentsRes.error;
-    if (expensesRes.error) throw expensesRes.error;
-    if (estimateItemsRes.error) throw estimateItemsRes.error;
-    if (estimatesRes.error) throw estimatesRes.error;
-    if (fixedExpensesRes.error) throw fixedExpensesRes.error;
-    if (dailyReportsRes.error) throw dailyReportsRes.error;
-    if (casesRes.error) throw casesRes.error;
-    if (workTemplatesRes.error) throw workTemplatesRes.error;
-    if (clientsRes.error) throw clientsRes.error;
-    console.log("DELETE DB DONE", taskName, "all");
-    resetClientForm();
-    resetCaseForm();
-    resetWorkTemplateForm();
-    resetEstimateForm();
-    resetSaleForm();
-    resetExpenseForm();
-    resetFixedExpenseForm();
-    resetDailyReportForm();
-    await loadAllData();
-    console.log("DELETE LOAD DONE", taskName, "all");
-    renderAfterDataChanged();
-    console.log("DELETE RENDER DONE", taskName, "all");
-    showAppMessage("削除しました。", false);
+    await runMutation("全件削除", async () => {
+      const [estimateItemsRes, estimatesRes, paymentsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes, workTemplatesRes, clientsRes] = await Promise.all([
+        sbClient.from("estimate_items").delete().eq("user_id", currentUser.id),
+        sbClient.from("estimates").delete().eq("user_id", currentUser.id),
+        sbClient.from("payments").delete().eq("user_id", currentUser.id),
+        sbClient.from("sales").delete().eq("user_id", currentUser.id),
+        sbClient.from("expenses").delete().eq("user_id", currentUser.id),
+        sbClient.from("fixed_expenses").delete().eq("user_id", currentUser.id),
+        sbClient.from("daily_reports").delete().eq("user_id", currentUser.id),
+        sbClient.from("cases").delete().eq("user_id", currentUser.id),
+        sbClient.from("work_templates").delete().eq("user_id", currentUser.id),
+        sbClient.from("clients").delete().eq("user_id", currentUser.id),
+      ]);
+      if (salesRes.error) throw salesRes.error;
+      if (paymentsRes.error) throw paymentsRes.error;
+      if (expensesRes.error) throw expensesRes.error;
+      if (estimateItemsRes.error) throw estimateItemsRes.error;
+      if (estimatesRes.error) throw estimatesRes.error;
+      if (fixedExpensesRes.error) throw fixedExpensesRes.error;
+      if (dailyReportsRes.error) throw dailyReportsRes.error;
+      if (casesRes.error) throw casesRes.error;
+      if (workTemplatesRes.error) throw workTemplatesRes.error;
+      if (clientsRes.error) throw clientsRes.error;
+      return true;
+    }, {
+      successMessage: "削除しました。",
+      afterSuccess: () => {
+        resetClientForm();
+        resetCaseForm();
+        resetWorkTemplateForm();
+        resetEstimateForm();
+        resetSaleForm();
+        resetExpenseForm();
+        resetFixedExpenseForm();
+        resetDailyReportForm();
+      },
+    });
   } catch (error) {
     console.error("削除に失敗しました。", error);
     showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
-  } finally {
-    console.log("DELETE FINALLY", taskName, "all");
-    forceHideLoading();
   }
 }
 
@@ -4244,13 +4197,11 @@ async function handleEstimateSubmit(event) {
   };
 
   const taskName = editState.estimateId ? "見積更新" : "見積登録";
-  const actionName = taskName;
   console.log("EDIT STATE", editState);
-  console.log("ACTION START", actionName, editState.estimateId || "new");
+  console.log("ACTION START", taskName, editState.estimateId || "new");
   console.log("PAYLOAD", payload);
   try {
-    await withLoading(taskName, async () => {
-      clearAppMessage();
+    await runMutation(taskName, async () => {
       let estimateId = editState.estimateId;
       const isUpdate = Boolean(estimateId);
       if (estimateId) {
@@ -4280,18 +4231,19 @@ async function handleEstimateSubmit(event) {
         if (!data) throw new Error("明細登録結果を取得できませんでした。");
       }
       if (payload.status === "受注") await ensureCaseFromEstimate(estimateId);
-      console.log("DB DONE", actionName, estimateId);
-      await refreshAfterMutation(taskName, isUpdate ? "見積を更新しました。" : "見積を登録しました。");
-      resetEstimateForm();
-      editState.estimateId = null;
-      subtabState.estimates = "list";
-      activateTab("estimates");
-    }, { triggerButton: event.submitter });
+      console.log("DB DONE", taskName, estimateId);
+      return { estimateId, isUpdate };
+    }, {
+      successMessage: editState.estimateId ? "見積を更新しました。" : "見積を登録しました。",
+      resetForm: resetEstimateForm,
+      afterSuccess: () => {
+        editState.estimateId = null;
+        subtabState.estimates = "list";
+        activateTab("estimates");
+      },
+    });
   } catch (error) {
     showAppMessage(`見積保存に失敗しました。${formatSupabaseError(error)}`, true);
-  } finally {
-    console.log("ACTION FINALLY", actionName);
-    forceHideLoading();
   }
 }
 
@@ -4399,13 +4351,14 @@ async function handleEstimateConversionAction(options) {
     showAppMessage("対象見積IDを取得できませんでした。", true);
     return null;
   }
-  let isSuccess = false;
-  startLoading(loadingLabel);
   try {
-    clearAppMessage();
-    const result = await execute();
-    isSuccess = true;
-    return result;
+    return await runMutation(loadingLabel, execute, {
+      successMessage,
+      afterSuccess: () => {
+        if (successTab) activateTab(successTab);
+        if (successTab && successSubtab) activateSubtab(successTab, successSubtab);
+      },
+    });
   } catch (error) {
     console.error(`${actionLabel}に失敗しました。`, error);
     if (["DUPLICATE_ESTIMATE_CASE", "DUPLICATE_ESTIMATE_INVOICE"].includes(error?.code)) {
@@ -4414,21 +4367,6 @@ async function handleEstimateConversionAction(options) {
       showAppMessage(`${actionLabel}に失敗しました。${formatSupabaseError(error)}`, true);
     }
     return null;
-  } finally {
-    try {
-      if (isSuccess && successMessage) {
-        await loadAllData();
-        renderAfterDataChanged();
-        if (successTab) activateTab(successTab);
-        if (successTab && successSubtab) activateSubtab(successTab, successSubtab);
-        showAppMessage(successMessage, false);
-      }
-    } catch (refreshError) {
-      console.error("変換後の再読み込みに失敗しました。", refreshError);
-      showAppMessage(`再読み込みに失敗しました。${formatSupabaseError(refreshError)}`, true);
-    } finally {
-      forceHideLoading();
-    }
   }
 }
 
@@ -4554,42 +4492,34 @@ async function deleteEstimate(id) {
     return;
   }
   if (!window.confirm("この見積を削除しますか？")) return;
-  const taskName = "見積削除";
-  startLoading(taskName);
   try {
-    clearAppMessage();
-    console.log("ACTION START", taskName, id);
+    await runMutation("見積削除", async () => {
+      const estimateItemsRes = await sbClient
+        .from("estimate_items")
+        .delete()
+        .eq("estimate_id", id)
+        .eq("user_id", currentUser.id);
+      if (estimateItemsRes.error) throw estimateItemsRes.error;
 
-    const estimateItemsRes = await sbClient
-      .from("estimate_items")
-      .delete()
-      .eq("estimate_id", id)
-      .eq("user_id", currentUser.id);
-    if (estimateItemsRes.error) throw estimateItemsRes.error;
-
-    const estimateDeleteRes = await sbClient
-      .from("estimates")
-      .delete()
-      .eq("id", id)
-      .eq("user_id", currentUser.id);
-    if (estimateDeleteRes.error) throw estimateDeleteRes.error;
-    console.log("DB DONE", taskName, id);
-
-    if (editState.estimateId === id) {
-      editState.estimateId = null;
-      resetEstimateForm();
-    }
-    await loadAllData();
-    console.log("LOAD DONE", taskName);
-    renderAfterDataChanged();
-    console.log("RENDER DONE", taskName);
-    showAppMessage("削除しました。", false);
+      const estimateDeleteRes = await sbClient
+        .from("estimates")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", currentUser.id);
+      if (estimateDeleteRes.error) throw estimateDeleteRes.error;
+      return true;
+    }, {
+      successMessage: "削除しました。",
+      afterSuccess: () => {
+        if (editState.estimateId === id) {
+          editState.estimateId = null;
+          resetEstimateForm();
+        }
+      },
+    });
   } catch (error) {
     console.error("削除に失敗しました。", error);
     showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
-  } finally {
-    console.log("ACTION FINALLY", taskName);
-    forceHideLoading();
   }
 }
 
