@@ -894,6 +894,16 @@ tbody tr:last-child td {
   margin: 0;
 }
 
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
 @media (max-width: 640px) {
   .estimate-list-grid,
   .estimate-card-grid {

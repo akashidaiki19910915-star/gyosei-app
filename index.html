@@ -282,7 +282,7 @@
             <div id="year-filter" class="dashboard-filter" hidden>
               <label for="target-year">
                 対象年
-                <input id="target-year" name="targetYear" type="number" min="2000" max="9999" step="1" />
+                <input id="target-year" name="targetYear" type="text" inputmode="numeric" pattern="[0-9,]*" />
               </label>
             </div>
           </div>
@@ -462,7 +462,7 @@
                 </label>
                 <label>
                   見積金額（円）
-                  <input id="amount" name="amount" type="number" min="0" step="1" />
+                  <input id="amount" name="amount" type="text" inputmode="numeric" pattern="[0-9,]*" />
                 </label>
                 <div class="date-grid">
                   <label>
@@ -564,7 +564,7 @@
               <h2>業務テンプレート登録</h2>
               <form id="work-template-form" class="form">
                 <label>テンプレート名 <span class="required">必須</span><input id="template-name" name="templateName" type="text" required maxlength="120" /></label>
-                <label>標準期限（日数）<input id="template-default-due-days" name="templateDefaultDueDays" type="number" min="0" step="1" placeholder="例: 30" /></label>
+                <label>標準期限（日数）<input id="template-default-due-days" name="templateDefaultDueDays" type="text" inputmode="numeric" pattern="[0-9,]*" placeholder="例: 30" /></label>
                 <label>必要書類<textarea id="template-required-documents" name="templateRequiredDocuments" rows="4" maxlength="4000" placeholder="登記事項証明書&#10;納税証明書"></textarea></label>
                 <label>標準タスク<textarea id="template-default-tasks" name="templateDefaultTasks" rows="5" maxlength="4000" placeholder="要件確認&#10;必要書類案内&#10;書類回収"></textarea></label>
                 <label>作業メモ<textarea id="template-memo" name="templateMemo" rows="3" maxlength="2000"></textarea></label>
@@ -666,11 +666,11 @@
                 </label>
                 <label>
                   請求額（円） <span class="required">必須</span>
-                  <input id="invoice-amount" name="invoiceAmount" type="number" min="0" step="1" required />
+                  <input id="invoice-amount" name="invoiceAmount" type="text" inputmode="numeric" pattern="[0-9,]*" required />
                 </label>
                 <label>
                   入金額（円）
-                  <input id="paid-amount" name="paidAmount" type="number" min="0" step="1" />
+                  <input id="paid-amount" name="paidAmount" type="text" inputmode="numeric" pattern="[0-9,]*" />
                 </label>
                 <label>
                   入金日
@@ -751,7 +751,7 @@
                 </label>
                 <label>
                   金額（円） <span class="required">必須</span>
-                  <input id="expense-amount" name="expenseAmount" type="number" min="0" step="1" required />
+                  <input id="expense-amount" name="expenseAmount" type="text" inputmode="numeric" pattern="[0-9,]*" required />
                 </label>
                 <label>
                   領収書URL
@@ -784,12 +784,12 @@
                 </label>
                 <label>
                   金額（円） <span class="required">必須</span>
-                  <input id="fixed-expense-amount" name="fixedExpenseAmount" type="number" min="0" step="1" required />
+                  <input id="fixed-expense-amount" name="fixedExpenseAmount" type="text" inputmode="numeric" pattern="[0-9,]*" required />
                 </label>
                 <div class="date-grid">
                   <label>
                     毎月の計上日 <span class="required">必須</span>
-                    <input id="fixed-expense-day" name="fixedExpenseDayOfMonth" type="number" min="1" max="31" step="1" required />
+                    <input id="fixed-expense-day" name="fixedExpenseDayOfMonth" type="text" inputmode="numeric" pattern="[0-9,]*" required />
                   </label>
                   <label>
                     開始日 <span class="required">必須</span>
@@ -852,7 +852,7 @@
                 </label>
                 <label>
                   作業時間（分）
-                  <input id="report-work-minutes" name="reportWorkMinutes" type="number" min="0" step="1" />
+                  <input id="report-work-minutes" name="reportWorkMinutes" type="text" inputmode="numeric" pattern="[0-9,]*" />
                 </label>
                 <label>
                   次回対応

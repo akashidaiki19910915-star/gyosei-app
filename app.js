@@ -387,6 +387,7 @@ function bindEvents() {
   excelImportForm?.addEventListener("submit", handleExcelImportSubmit);
   exportBackupJsonBtn?.addEventListener("click", handleExportBackupJson);
   backupRestoreForm?.addEventListener("submit", handleBackupRestoreSubmit);
+  document.addEventListener("wheel", handleNumberInputWheel, { passive: true });
   estimateAddItemBtn?.addEventListener("click", () => addEstimateItemRow());
   estimateItemsWrap?.addEventListener("input", handleEstimateItemsInput);
   estimateItemsWrap?.addEventListener("click", handleEstimateItemsClick);
@@ -1135,7 +1136,7 @@ async function handleDailyReportSubmit(event) {
       renderAfterDataChanged();
       resetDailyReportForm();
       activateSubtab("daily-reports", "list");
-      showAppMessage("日報を登録しました。", false);
+      showAppMessage(isEdit ? "日報を更新しました。" : "日報を登録しました。", false);
     }, { triggerButton: event.submitter });
   } catch (error) {
     showAppMessage(`日報登録に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
@@ -3401,8 +3402,8 @@ function addEstimateItemRow(defaultItem = {}) {
   row.className = "estimate-item-row";
   row.innerHTML = `
     <input type="text" data-key="itemName" placeholder="項目名" value="${escapeHtml(defaultItem.itemName || "")}" />
-    <input type="number" data-key="quantity" min="0" step="0.01" placeholder="数量" value="${defaultItem.quantity ?? 1}" />
-    <input type="number" data-key="unitPrice" min="0" step="1" placeholder="単価" value="${defaultItem.unitPrice ?? 0}" />
+    <input type="text" inputmode="decimal" pattern="[0-9.,]*" data-key="quantity" placeholder="数量" value="${defaultItem.quantity ?? 1}" />
+    <input type="text" inputmode="numeric" pattern="[0-9,]*" data-key="unitPrice" placeholder="単価" value="${defaultItem.unitPrice ?? 0}" />
     <p class="meta item-amount">${formatCurrency(defaultItem.amount ?? 0)}</p>
     <button type="button" class="danger-btn estimate-item-remove-btn">削除</button>
   `;
@@ -3427,7 +3428,7 @@ function getEstimateItemsFromForm() {
   return Array.from(estimateItemsWrap.querySelectorAll(".estimate-item-row"))
     .map((row, idx) => {
       const itemName = asTrimmedText(row.querySelector('[data-key="itemName"]')?.value);
-      const quantity = Number(row.querySelector('[data-key="quantity"]')?.value || 0);
+      const quantity = parseDecimalInput(row.querySelector('[data-key="quantity"]')?.value);
       const unitPrice = normalizeAmount(row.querySelector('[data-key="unitPrice"]')?.value) ?? 0;
       const amount = Math.floor((Number.isFinite(quantity) ? quantity : 0) * unitPrice);
       return { itemName, quantity, unitPrice, amount, sortOrder: idx };
@@ -3438,7 +3439,7 @@ function getEstimateItemsFromForm() {
 function recalcEstimateTotals() {
   let subtotal = 0;
   Array.from(estimateItemsWrap?.querySelectorAll(".estimate-item-row") || []).forEach((row) => {
-    const quantity = Number(row.querySelector('[data-key="quantity"]')?.value || 0);
+    const quantity = parseDecimalInput(row.querySelector('[data-key="quantity"]')?.value);
     const unitPrice = normalizeAmount(row.querySelector('[data-key="unitPrice"]')?.value) ?? 0;
     const amount = Math.floor((Number.isFinite(quantity) ? quantity : 0) * unitPrice);
     subtotal += amount;
@@ -4913,7 +4914,7 @@ function toYearNumber(dateSource) {
 }
 
 function normalizeYear(value) {
-  const year = Number(value);
+  const year = Number(String(value ?? "").replace(/,/g, "").trim());
   if (!Number.isInteger(year) || year < 1900 || year > 9999) return null;
   return year;
 }
@@ -4966,9 +4967,27 @@ function toDateString(dateSource) {
 
 function normalizeAmount(raw) {
   if (raw === "" || raw === null || raw === undefined) return null;
-  const value = Number(raw);
+  const normalized = String(raw).replace(/,/g, "").trim();
+  if (!normalized) return null;
+  const value = Number(normalized);
   if (!Number.isFinite(value) || value < 0) return null;
   return Math.floor(value);
+}
+
+function parseDecimalInput(raw) {
+  if (raw === "" || raw === null || raw === undefined) return 0;
+  const normalized = String(raw).replace(/,/g, "").trim();
+  const value = Number(normalized);
+  if (!Number.isFinite(value) || value < 0) return 0;
+  return value;
+}
+
+function handleNumberInputWheel(event) {
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLInputElement)) return;
+  if (activeElement.type !== "number") return;
+  if (event.target !== activeElement) return;
+  activeElement.blur();
 }
 
 function normalizeStatus(status) {
@@ -5127,7 +5146,7 @@ function toStatusClassKey(status) {
 }
 
 function normalizeDayOfMonth(raw) {
-  const value = Number(raw);
+  const value = Number(String(raw ?? "").replace(/,/g, "").trim());
   if (!Number.isInteger(value) || value < 1 || value > 31) return null;
   return value;
 }
