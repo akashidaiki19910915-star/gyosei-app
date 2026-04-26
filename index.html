@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-    <script src="app.js?v=20260426-work-templates" defer></script>
+    <script src="app.js?v=20260426-daily-report-client-unify" defer></script>
   </head>
   <body>
     <div id="loading-overlay" class="loading-overlay" hidden>
@@ -376,7 +376,7 @@
           <nav class="subtabs" aria-label="顧客サブタブ">
             <button type="button" class="subtab-btn active" data-parent-tab="clients" data-subtab="entry">顧客登録</button>
             <button type="button" class="subtab-btn" data-parent-tab="clients" data-subtab="list">顧客一覧</button>
-            <button type="button" class="subtab-btn" data-parent-tab="clients" data-subtab="interactions">対応履歴</button>
+            <button type="button" class="subtab-btn" data-parent-tab="clients" data-subtab="history">顧客別履歴</button>
           </nav>
           <div class="layout two-col">
             <section class="panel subtab-panel" data-parent-tab="clients" data-subtab="entry">
@@ -403,49 +403,28 @@
               <div id="clients-empty" class="empty">顧客データはまだありません。</div>
               <ul id="clients-list" class="item-list"></ul>
             </section>
-            <section class="panel subtab-panel" data-parent-tab="clients" data-subtab="interactions" hidden>
-              <h2>対応履歴</h2>
-              <form id="client-interaction-form" class="form">
-                <div class="date-grid">
-                  <label>対応日 <span class="required">必須</span><input id="interaction-date" name="interactionDate" type="date" required /></label>
-                  <label>顧客選択
-                    <select id="interaction-client-id" name="interactionClientId"></select>
-                  </label>
-                </div>
-                <label>対応種別
-                  <select id="interaction-type" name="interactionType">
-                    <option value="">未設定</option>
-                    <option value="電話">電話</option>
-                    <option value="メール">メール</option>
-                    <option value="面談">面談</option>
-                    <option value="訪問">訪問</option>
-                    <option value="LINE">LINE</option>
-                    <option value="その他">その他</option>
-                  </select>
-                </label>
-                <label>対応内容 <span class="required">必須</span><textarea id="interaction-summary" name="interactionSummary" rows="3" maxlength="4000" required></textarea></label>
-                <label>次回対応<textarea id="interaction-next-action" name="interactionNextAction" rows="2" maxlength="4000"></textarea></label>
-                <label>次回対応日<input id="interaction-next-action-date" name="interactionNextActionDate" type="date" /></label>
-                <label>メモ<textarea id="interaction-memo" name="interactionMemo" rows="3" maxlength="4000"></textarea></label>
-                <button id="interaction-submit-btn" type="submit">対応履歴を登録</button>
-              </form>
-              <div id="client-interactions-empty" class="empty">対応履歴データはまだありません。</div>
-              <div id="client-interactions-wrap" class="table-wrap" hidden>
+            <section class="panel subtab-panel" data-parent-tab="clients" data-subtab="history" hidden>
+              <h2>顧客別履歴</h2>
+              <label>
+                顧客選択
+                <select id="client-history-client-id"></select>
+              </label>
+              <p class="meta">登録は「日報」タブで行ってください。ここでは顧客別の日報履歴を表示します。</p>
+              <div id="client-history-empty" class="empty">日報履歴データはまだありません。</div>
+              <div id="client-history-wrap" class="table-wrap" hidden>
                 <table>
                   <thead>
                     <tr>
-                      <th>対応日</th>
-                      <th>顧客名</th>
+                      <th>日付</th>
+                      <th>案件名</th>
                       <th>対応種別</th>
                       <th>対応内容</th>
                       <th>次回対応</th>
                       <th>次回対応日</th>
                       <th>メモ</th>
-                      <th>編集</th>
-                      <th>削除</th>
                     </tr>
                   </thead>
-                  <tbody id="client-interactions-body"></tbody>
+                  <tbody id="client-history-body"></tbody>
                 </table>
               </div>
             </section>
@@ -852,6 +831,22 @@
                   <select id="report-case-id" name="reportCaseId"></select>
                 </label>
                 <label>
+                  顧客選択（任意）
+                  <select id="report-client-id" name="reportClientId"></select>
+                </label>
+                <label>
+                  対応種別
+                  <select id="report-interaction-type" name="reportInteractionType">
+                    <option value="作業">作業</option>
+                    <option value="電話">電話</option>
+                    <option value="メール">メール</option>
+                    <option value="面談">面談</option>
+                    <option value="訪問">訪問</option>
+                    <option value="LINE">LINE</option>
+                    <option value="その他">その他</option>
+                  </select>
+                </label>
+                <label>
                   作業内容 <span class="required">必須</span>
                   <textarea id="report-work-content" name="reportWorkContent" rows="3" maxlength="2000" required></textarea>
                 </label>
@@ -862,6 +857,10 @@
                 <label>
                   次回対応
                   <textarea id="report-next-action" name="reportNextAction" rows="2" maxlength="2000"></textarea>
+                </label>
+                <label>
+                  次回対応日
+                  <input id="report-next-action-date" name="reportNextActionDate" type="date" />
                 </label>
                 <label>
                   メモ
