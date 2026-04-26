@@ -3786,6 +3786,7 @@ function renderEstimates() {
       return true;
     });
   filtered.forEach((entry) => {
+    const hasCreatedInvoice = state.sales.some((sale) => sale.estimateId === entry.id);
     const li = document.createElement("li");
     li.className = "item estimate-card";
     li.dataset.id = entry.id;
@@ -3813,7 +3814,7 @@ function renderEstimates() {
         <button type="button" class="secondary-btn estimate-print-btn">請求書出力</button>
         <button type="button" class="secondary-btn estimate-estimate-xlsx-btn">見積Excel</button>
         <button type="button" class="secondary-btn estimate-xlsx-btn">請求Excel</button>
-        <button type="button" class="secondary-btn estimate-sale-btn">売上登録</button>
+        <button type="button" class="secondary-btn estimate-create-invoice-btn" ${hasCreatedInvoice ? "disabled" : ""}>${hasCreatedInvoice ? "請求済み" : "請求作成"}</button>
       </div>
     `;
     estimateList.appendChild(li);
@@ -3860,16 +3861,30 @@ async function handleEstimateListAction(event) {
   if (btn.classList.contains("estimate-print-btn")) return openInvoicePrintPreviewFromEstimate(estimateId);
   if (btn.classList.contains("estimate-estimate-xlsx-btn")) return exportEstimateDataForEstimate(estimateId);
   if (btn.classList.contains("estimate-xlsx-btn")) return exportInvoiceDataForEstimate(estimateId);
-  if (btn.classList.contains("estimate-sale-btn")) {
+  if (btn.classList.contains("estimate-create-invoice-btn")) {
     try {
-      return await withLoading("見積から売上登録", async () => {
-        await registerSaleFromEstimate(estimateId);
-        console.log("DB success", "見積から売上登録");
-        await refreshAfterMutation("見積から売上登録", "売上を登録しました。");
+      return await withLoading("見積から請求作成", async () => {
+        await handleCreateInvoiceFromEstimate(estimateId);
       });
     } finally {
       forceHideLoading();
     }
+  }
+}
+
+async function handleCreateInvoiceFromEstimate(estimateId) {
+  try {
+    await registerSaleFromEstimate(estimateId);
+    console.log("DB success", "見積から請求作成");
+    await loadAllData();
+    renderAfterDataChanged();
+    showAppMessage("請求を作成しました。");
+  } catch (error) {
+    if (error?.code === "DUPLICATE_ESTIMATE_INVOICE" || String(error?.message || "").includes("すでに請求済み")) {
+      showAppMessage("すでに請求済みです。", true);
+      return;
+    }
+    throw error;
   }
 }
 
@@ -5064,16 +5079,37 @@ async function getNextMonthlyNumber(tableName, columnName, prefix, issueDate = t
 
 async function registerSaleFromEstimate(estimateId) {
   const estimate = state.estimates.find((entry) => entry.id === estimateId);
-  if (!estimate) return;
+  if (!estimate) throw new Error("対象の見積が見つかりません。");
+  const existingSale = state.sales.find((sale) => sale.estimateId === estimateId);
+  if (existingSale) {
+    const duplicatedError = new Error("すでに請求済みです");
+    duplicatedError.code = "DUPLICATE_ESTIMATE_INVOICE";
+    throw duplicatedError;
+  }
+  const duplicateCheckRes = await sbClient
+    .from("sales")
+    .select("id")
+    .eq("user_id", currentUser.id)
+    .eq("estimate_id", estimateId)
+    .limit(1);
+  if (duplicateCheckRes.error) throw duplicateCheckRes.error;
+  if (Array.isArray(duplicateCheckRes.data) && duplicateCheckRes.data.length > 0) {
+    const duplicatedError = new Error("すでに請求済みです");
+    duplicatedError.code = "DUPLICATE_ESTIMATE_INVOICE";
+    throw duplicatedError;
+  }
+  const today = new Date();
+  const dueDate = toDateString(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7));
   const caseId = estimate.caseId || await ensureCaseFromEstimate(estimateId, true);
   const payload = {
     user_id: currentUser.id,
+    estimate_id: estimate.id,
     case_id: caseId || null,
     invoice_number: await getNextMonthlyNumber("sales", "invoice_number", "S"),
-    invoice_amount: estimate.total,
+    invoice_amount: estimate.total || 0,
     paid_amount: 0,
     paid_date: null,
-    due_date: null,
+    due_date: dueDate,
     payment_status: "未入金",
     is_unpaid: true,
   };
@@ -6169,11 +6205,13 @@ function mapSaleFromDb(row) {
   // alter table sales add column if not exists payment_status text;
   // alter table sales add column if not exists due_date date;
   // alter table sales add column if not exists invoice_number text;
+  // alter table sales add column if not exists estimate_id uuid;
   const invoiceAmount = Number(row.invoice_amount || 0);
   const paidAmount = Number(row.paid_amount || 0);
   return {
     id: row.id,
     userId: row.user_id,
+    estimateId: row.estimate_id || null,
     caseId: row.case_id || null,
     invoiceAmount,
     paidAmount,
