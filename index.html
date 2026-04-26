@@ -188,6 +188,27 @@
               </table>
             </div>
           </section>
+          <section id="pending-estimates-card" class="pending-estimates-card case-alert-block" aria-live="polite">
+            <div class="pending-estimates-header">
+              <h3>フォロー必要案件</h3>
+              <p id="pending-estimates-summary" class="pending-estimates-summary">対象 0件</p>
+            </div>
+            <div id="pending-estimates-empty" class="empty">フォローが必要な見積案件はありません。</div>
+            <div id="pending-estimates-list-wrap" class="table-wrap" hidden>
+              <table class="pending-estimates-table">
+                <thead>
+                  <tr>
+                    <th>顧客名</th>
+                    <th>案件名</th>
+                    <th>見積日</th>
+                    <th>経過日数</th>
+                    <th>編集</th>
+                  </tr>
+                </thead>
+                <tbody id="pending-estimates-body"></tbody>
+              </table>
+            </div>
+          </section>
           <section id="deadline-alert-card" class="deadline-alert-card case-alert-block" aria-live="polite">
             <div class="deadline-alert-header">
               <h3>期限アラート</h3>
@@ -601,6 +622,7 @@
                   <select id="estimate-status" name="status">
                     <option value="作成中">作成中</option>
                     <option value="提出済">提出済</option>
+                    <option value="未回答">未回答</option>
                     <option value="受注">受注</option>
                     <option value="失注">失注</option>
                   </select>
@@ -629,6 +651,7 @@
                     <option value="all">全件</option>
                     <option value="作成中">作成中</option>
                     <option value="提出済">提出済</option>
+                    <option value="未回答">未回答</option>
                     <option value="受注">受注</option>
                     <option value="失注">失注</option>
                   </select>
