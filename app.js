@@ -51,6 +51,7 @@ const state = {
   estimateTitleQuery: "",
   estimateStatusFilter: "all",
   estimateExpiredFilter: "all",
+  isInitialDataReady: false,
 };
 const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null };
 
@@ -237,6 +238,25 @@ let loadingTimeoutId = null;
 const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
 const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
 const RESTORE_DELETE_ORDER = ["estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "estimates", "cases", "work_templates", "clients"];
+const CASE_MUTATION_COLUMNS = [
+  "user_id",
+  "client_id",
+  "customer_name",
+  "case_name",
+  "estimate_amount",
+  "received_date",
+  "due_date",
+  "status",
+  "work_memo",
+  "next_action_date",
+  "next_action",
+  "template_id",
+  "required_documents",
+  "task_list",
+  "document_url",
+  "invoice_url",
+  "receipt_url",
+];
 
 initialize();
 
@@ -548,6 +568,8 @@ async function applyAuthState() {
     return;
   }
 
+  setDataMutationControlsEnabled(false);
+  state.isInitialDataReady = false;
   authView.hidden = true;
   appView.hidden = false;
   userLabel.textContent = currentUser.email || "ログイン中";
@@ -560,6 +582,8 @@ async function applyAuthState() {
   resetFixedExpenseForm();
   resetDailyReportForm();
   renderAfterDataChanged();
+  state.isInitialDataReady = true;
+  setDataMutationControlsEnabled(true);
 }
 
 async function handleLogin(event) {
@@ -667,6 +691,54 @@ async function refreshAfterMutation(actionName, message) {
   if (message) showAppMessage(message, false);
 }
 
+function ensureInitialDataReady(actionName = "操作") {
+  if (state.isInitialDataReady) return true;
+  showAppMessage(`${actionName}は初期データの読み込み完了後に実行できます。`, true);
+  return false;
+}
+
+function pickObjectKeys(source, keys) {
+  return keys.reduce((acc, key) => {
+    if (Object.prototype.hasOwnProperty.call(source, key)) acc[key] = source[key];
+    return acc;
+  }, {});
+}
+
+function buildCasePayloadFromForm() {
+  const customerName = asTrimmedText(caseForm.elements.customerName.value);
+  const caseName = asTrimmedText(caseForm.elements.caseName.value);
+  const selectedClientId = caseForm.elements.caseClientId.value || null;
+  const selectedClient = selectedClientId ? state.clients.find((entry) => entry.id === selectedClientId) : null;
+  const rawPayload = {
+    user_id: currentUser.id,
+    client_id: selectedClientId,
+    customer_name: selectedClient?.name || customerName,
+    case_name: caseName,
+    estimate_amount: normalizeAmount(caseForm.elements.amount.value),
+    received_date: caseForm.elements.receivedDate.value || null,
+    due_date: caseForm.elements.dueDate.value || null,
+    status: normalizeStatus(caseForm.elements.status.value),
+    work_memo: asTrimmedText(caseForm.elements.workMemo.value) || null,
+    next_action_date: caseForm.elements.nextActionDate.value || null,
+    next_action: asTrimmedText(caseForm.elements.nextAction.value) || null,
+    template_id: caseForm.elements.caseTemplateId.value || null,
+    required_documents: asTrimmedText(caseForm.elements.requiredDocuments.value) || null,
+    task_list: asTrimmedText(caseForm.elements.taskList.value) || null,
+    document_url: asTrimmedText(caseForm.elements.documentUrl.value) || null,
+    invoice_url: asTrimmedText(caseForm.elements.invoiceUrl.value) || null,
+    receipt_url: asTrimmedText(caseForm.elements.receiptUrl.value) || null,
+  };
+  return pickObjectKeys(rawPayload, CASE_MUTATION_COLUMNS);
+}
+
+function formatSupabaseError(error) {
+  if (!error) return "";
+  const chunks = [error.message, error.code, error.details, error.hint]
+    .filter((part) => typeof part === "string" && part.trim())
+    .map((part) => part.trim());
+  return chunks.length ? chunks.join(" / ") : "不明なエラーです。";
+}
+
 async function handleClientSubmit(event) {
   event.preventDefault();
   if (!currentUser || !clientForm) return;
@@ -714,66 +786,44 @@ async function handleClientSubmit(event) {
 
 async function handleCaseSubmit(event) {
   event.preventDefault();
-  if (!currentUser) return;
-
-  const customerName = caseForm.elements.customerName.value.trim();
-  const caseName = caseForm.elements.caseName.value.trim();
-  if (!customerName || !caseName) return;
-
-  const selectedClientId = caseForm.elements.caseClientId.value || null;
-  const selectedClient = selectedClientId ? state.clients.find((entry) => entry.id === selectedClientId) : null;
-  const payload = {
-    user_id: currentUser.id,
-    client_id: selectedClientId,
-    template_id: caseForm.elements.caseTemplateId.value || null,
-    customer_name: selectedClient?.name || customerName,
-    case_name: caseName,
-    estimate_amount: normalizeAmount(caseForm.elements.amount.value),
-    received_date: caseForm.elements.receivedDate.value || null,
-    due_date: caseForm.elements.dueDate.value || null,
-    required_documents: asTrimmedText(caseForm.elements.requiredDocuments.value) || null,
-    task_list: asTrimmedText(caseForm.elements.taskList.value) || null,
-    work_memo: asTrimmedText(caseForm.elements.workMemo.value) || null,
-    next_action_date: caseForm.elements.nextActionDate.value || null,
-    next_action: asTrimmedText(caseForm.elements.nextAction.value) || null,
-    document_url: asTrimmedText(caseForm.elements.documentUrl.value) || null,
-    invoice_url: asTrimmedText(caseForm.elements.invoiceUrl.value) || null,
-    receipt_url: asTrimmedText(caseForm.elements.receiptUrl.value) || null,
-    status: normalizeStatus(caseForm.elements.status.value),
-  };
+  if (!currentUser || !ensureInitialDataReady("案件登録")) return;
 
   const taskName = editState.caseId ? "案件更新" : "案件登録";
-  const actionName = taskName;
-  console.log("ACTION START", actionName, editState.caseId || "new");
-  console.log("PAYLOAD", payload);
+  const isEdit = Boolean(editState.caseId);
+  console.log("CASE SUBMIT START");
   try {
     await withLoading(taskName, async () => {
-      if (editState.caseId) {
-        if (!editState.caseId) throw new Error("更新対象の案件IDがありません。");
+      const payload = buildCasePayloadFromForm();
+      const templateId = payload.template_id || "";
+      console.log("CASE TEMPLATE VALUE", templateId);
+      console.log("CASE PAYLOAD", payload);
+      if (!payload.customer_name || !payload.case_name) return;
+
+      if (isEdit) {
         const { data, error } = await sbClient.from("cases").update(payload).eq("id", editState.caseId).eq("user_id", currentUser.id).select().single();
         if (error) throw error;
         if (!data) throw new Error("更新結果を取得できませんでした。");
-        console.log("DB DONE", actionName, editState.caseId);
-        await refreshAfterMutation(actionName, "案件を更新しました。");
-        subtabState.cases = "list";
-        resetCaseForm();
-        activateTab("cases");
-        return;
+        console.log("CASE INSERT SUCCESS", data);
+      } else {
+        const { data, error } = await sbClient.from("cases").insert(payload).select().single();
+        if (error) throw error;
+        if (!data) throw new Error("案件登録結果を取得できませんでした。");
+        console.log("CASE INSERT SUCCESS", data);
       }
-
-      const { data, error } = await sbClient.from("cases").insert(payload).select().single();
-      if (error) throw error;
-      if (!data) throw new Error("登録結果を取得できませんでした。");
-      console.log("DB DONE", actionName, data.id || "new");
-      await refreshAfterMutation(actionName, "案件を登録しました。");
+      await loadAllData();
+      console.log("LOAD ALL DATA DONE");
+      renderAfterDataChanged();
+      console.log("RENDER DONE");
       subtabState.cases = "list";
       resetCaseForm();
       activateTab("cases");
+      showAppMessage(isEdit ? "案件を更新しました。" : "案件を登録しました。", false);
     }, { triggerButton: event.submitter });
   } catch (error) {
-    showAppMessage(`案件保存に失敗しました。${error?.message || ""}`, true);
+    console.error("案件登録に失敗しました", error);
+    showAppMessage(`案件保存に失敗しました。${formatSupabaseError(error)}`, true);
   } finally {
-    console.log("ACTION FINALLY", actionName);
+    console.log("CASE SUBMIT FINALLY");
     forceHideLoading();
   }
 }
@@ -1137,9 +1187,10 @@ function handleCaseTemplateChange(event) {
   if (!templateId || !caseForm) return;
   const found = state.workTemplates.find((entry) => entry.id === templateId);
   if (!found) return;
-  const today = new Date();
+  const baseDate = caseForm.elements.receivedDate.value ? new Date(caseForm.elements.receivedDate.value) : new Date();
+  const baseTime = Number.isNaN(baseDate.getTime()) ? new Date() : baseDate;
   const dueDate = Number.isFinite(found.defaultDueDays) && found.defaultDueDays >= 0
-    ? toDateString(new Date(today.getTime() + found.defaultDueDays * 24 * 60 * 60 * 1000))
+    ? toDateString(new Date(baseTime.getTime() + found.defaultDueDays * 24 * 60 * 60 * 1000))
     : "";
   if (!asTrimmedText(caseForm.elements.caseName.value)) {
     caseForm.elements.caseName.value = found.name;
@@ -2262,9 +2313,10 @@ async function restoreBackupData(rawData, mode) {
 
 function safeRender(name, fn) {
   try {
-    fn();
+    if (typeof fn === "function") fn();
   } catch (error) {
     console.error(`render failed: ${name}`, error);
+    showAppMessage(`画面更新中にエラーが発生しました: ${name}`, true);
   }
 }
 
@@ -5601,6 +5653,25 @@ function setSubmitButtonsDisabled(disabled) {
   });
 }
 
+function setDataMutationControlsEnabled(enabled) {
+  const controls = [
+    clientSubmitBtn,
+    caseSubmitBtn,
+    workTemplateSubmitBtn,
+    estimateSubmitBtn,
+    saleSubmitBtn,
+    expenseSubmitBtn,
+    fixedExpenseSubmitBtn,
+    dailyReportSubmitBtn,
+    csvImportForm?.querySelector('button[type="submit"]'),
+    excelImportForm?.querySelector('button[type="submit"]'),
+    backupRestoreForm?.querySelector('button[type="submit"]'),
+  ].filter(Boolean);
+  controls.forEach((control) => {
+    control.disabled = !enabled;
+  });
+}
+
 function updateLoadingOverlay() {
   if (!loadingOverlay) return;
   const isLoading = loadingCount > 0;
@@ -5727,6 +5798,7 @@ function resetEditState() {
 
 function clearAppState() {
   currentUser = null;
+  state.isInitialDataReady = false;
   state.clients = [];
   state.workTemplates = [];
   state.cases = [];
@@ -5748,6 +5820,7 @@ function clearAppState() {
   resetDailyReportForm();
   clearAppMessage();
   clearLoadingState();
+  setDataMutationControlsEnabled(false);
   authView.hidden = false;
   appView.hidden = true;
   userLabel.textContent = "";
