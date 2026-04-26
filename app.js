@@ -8,6 +8,7 @@ const ESTIMATE_STATUS_ORDER = ["作成中", "提出済", "未回答", "受注", 
 const EXPENSE_PAYMENT_METHODS = ["現金", "クレジットカード", "銀行振込", "電子マネー", "口座振替", "その他"];
 const DAILY_REPORT_INTERACTION_TYPES = ["作業", "電話", "メール", "面談", "訪問", "LINE", "その他"];
 const REMINDER_METHODS = ["電話", "メール", "LINE", "郵送", "訪問", "その他"];
+const PAYMENT_METHODS = ["現金", "振込", "その他"];
 const OFFICE_INFO = {
   name: "あかし行政書士事務所",
   zip: "574-0044",
@@ -36,6 +37,7 @@ const state = {
   estimates: [],
   estimateItems: [],
   sales: [],
+  payments: [],
   expenses: [],
   fixedExpenses: [],
   dailyReports: [],
@@ -70,6 +72,7 @@ const userLabel = document.getElementById("user-label");
 const appMessage = document.getElementById("app-message");
 const exportCasesCsvBtn = document.getElementById("export-cases-csv-btn");
 const exportSalesCsvBtn = document.getElementById("export-sales-csv-btn");
+const exportPaymentsCsvBtn = document.getElementById("export-payments-csv-btn");
 const exportExpensesCsvBtn = document.getElementById("export-expenses-csv-btn");
 const exportFixedExpensesCsvBtn = document.getElementById("export-fixed-expenses-csv-btn");
 const exportAllCsvBtn = document.getElementById("export-all-csv-btn");
@@ -202,6 +205,7 @@ const salesListWrap = document.getElementById("sales-list-wrap");
 const salesEmpty = document.getElementById("sales-empty");
 const saleSubmitBtn = document.getElementById("sale-submit-btn") || saleForm.querySelector('button[type="submit"]');
 const saleInvoiceMemoInput = document.getElementById("sale-invoice-memo");
+const salePaymentHistory = document.getElementById("sale-payment-history");
 const salesSearchInput = document.getElementById("sales-search-input");
 const salesFilterClearBtn = document.getElementById("sales-filter-clear-btn");
 const salesFilterCount = document.getElementById("sales-filter-count");
@@ -260,9 +264,9 @@ let isLoggingOut = false;
 let eventsBound = false;
 let loadingCount = 0;
 let loadingTimeoutId = null;
-const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
-const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
-const RESTORE_DELETE_ORDER = ["estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "case_tasks", "estimates", "cases", "work_templates", "clients"];
+const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports"];
+const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports"];
+const RESTORE_DELETE_ORDER = ["payments", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "case_tasks", "estimates", "cases", "work_templates", "clients"];
 const CASE_MUTATION_COLUMNS = [
   "user_id",
   "client_id",
@@ -414,6 +418,7 @@ function bindEvents() {
   });
   exportCasesCsvBtn?.addEventListener("click", handleExportCasesCsv);
   exportSalesCsvBtn?.addEventListener("click", handleExportSalesCsv);
+  exportPaymentsCsvBtn?.addEventListener("click", handleExportPaymentsCsv);
   exportExpensesCsvBtn?.addEventListener("click", handleExportExpensesCsv);
   exportFixedExpensesCsvBtn?.addEventListener("click", handleExportFixedExpensesCsv);
   exportAllCsvBtn?.addEventListener("click", handleExportAllCsv);
@@ -691,7 +696,7 @@ async function handleLogout() {
 async function loadAllData() {
   if (!currentUser || isLoggingOut) return;
 
-  const [clientsRes, workTemplatesRes, casesRes, caseTasksRes, estimatesRes, estimateItemsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes] = await Promise.all([
+  const [clientsRes, workTemplatesRes, casesRes, caseTasksRes, estimatesRes, estimateItemsRes, salesRes, paymentsRes, expensesRes, fixedExpensesRes, dailyReportsRes] = await Promise.all([
     sbClient.from("clients").select("*").eq("user_id", currentUser.id),
     sbClient.from("work_templates").select("*").eq("user_id", currentUser.id),
     sbClient.from("cases").select("*").eq("user_id", currentUser.id),
@@ -699,6 +704,7 @@ async function loadAllData() {
     sbClient.from("estimates").select("*").eq("user_id", currentUser.id),
     sbClient.from("estimate_items").select("*").eq("user_id", currentUser.id),
     sbClient.from("sales").select("*").eq("user_id", currentUser.id),
+    sbClient.from("payments").select("*").eq("user_id", currentUser.id),
     sbClient.from("expenses").select("*").eq("user_id", currentUser.id),
     sbClient.from("fixed_expenses").select("*").eq("user_id", currentUser.id),
     sbClient.from("daily_reports").select("*").eq("user_id", currentUser.id),
@@ -714,6 +720,7 @@ async function loadAllData() {
     console.error("LOAD SALES ERROR", salesRes.error);
     throw new Error(`sales: ${formatSupabaseError(salesRes.error)}`);
   }
+  if (paymentsRes.error) throw new Error(`payments: ${formatSupabaseError(paymentsRes.error)}`);
   if (expensesRes.error) throw new Error(`expenses: ${formatSupabaseError(expensesRes.error)}`);
   if (fixedExpensesRes.error) throw new Error(`fixed_expenses: ${formatSupabaseError(fixedExpensesRes.error)}`);
   if (dailyReportsRes.error) throw new Error(`daily_reports: ${formatSupabaseError(dailyReportsRes.error)}`);
@@ -730,6 +737,8 @@ async function loadAllData() {
   state.estimateItems = (estimateItemsRes.data || []).map(mapEstimateItemFromDb);
   console.log("LOAD SALES RAW", salesRes.data);
   state.sales = (salesRes.data || []).map(mapSaleFromDb);
+  state.payments = (paymentsRes.data || []).map(mapPaymentFromDb);
+  state.sales = state.sales.map((sale) => hydrateSaleWithPayments(sale));
   console.log("LOAD SALES MAPPED", state.sales);
   state.expenses = (expensesRes.data || []).map(mapExpenseFromDb);
   state.fixedExpenses = (fixedExpensesRes.data || []).map(mapFixedExpenseFromDb);
@@ -1476,6 +1485,15 @@ async function handleSalesListAction(event) {
     await deleteSale(id);
     return;
   }
+  if (btn.classList.contains("register-payment-btn")) {
+    await handlePaymentRegistration(id);
+    return;
+  }
+  if (btn.classList.contains("delete-payment-btn")) {
+    const paymentId = btn.dataset.paymentId;
+    if (!paymentId) return;
+    await deletePayment(paymentId);
+  }
 
 }
 
@@ -1508,6 +1526,15 @@ function handleUnpaidListAction(event) {
   if (btn.classList.contains("edit-sale-btn")) {
     editSale(saleId).catch(() => {});
     return;
+  }
+  if (btn.classList.contains("register-payment-btn")) {
+    handlePaymentRegistration(saleId).catch(() => {});
+    return;
+  }
+  if (btn.classList.contains("delete-payment-btn")) {
+    const paymentId = btn.dataset.paymentId;
+    if (!paymentId) return;
+    deletePayment(paymentId).catch(() => {});
   }
 }
 
@@ -1687,6 +1714,84 @@ async function handleRecordReminder(saleId) {
   }
 }
 
+async function handlePaymentRegistration(saleId) {
+  if (!currentUser) return;
+  const sale = state.sales.find((entry) => entry.id === saleId);
+  if (!sale) {
+    showAppMessage("対象の売上が見つかりません。", true);
+    return;
+  }
+
+  const paymentDateInput = window.prompt("入金日を入力してください（YYYY-MM-DD）", toDateString(new Date()));
+  if (!paymentDateInput) return;
+  const paymentDate = parseFlexibleDate(paymentDateInput);
+  if (!paymentDate) {
+    showAppMessage("入金日の形式が不正です。YYYY-MM-DD形式で入力してください。", true);
+    return;
+  }
+  const amountInput = window.prompt("入金額を入力してください（数字のみ）", "");
+  if (amountInput === null) return;
+  const amount = parseFlexibleAmount(amountInput);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    showAppMessage("入金額は0より大きい数値を入力してください。", true);
+    return;
+  }
+  const methodInput = window.prompt(`入金方法を入力してください（${PAYMENT_METHODS.join("・")}）`, PAYMENT_METHODS[1]);
+  if (!methodInput) return;
+  const method = normalizePaymentMethod(methodInput);
+  const memoInput = window.prompt("メモ（任意）を入力してください", "");
+  if (memoInput === null) return;
+  const memo = asTrimmedText(memoInput) || null;
+
+  startLoading("入金登録");
+  try {
+    const payload = {
+      user_id: currentUser.id,
+      sale_id: saleId,
+      payment_date: paymentDate,
+      amount,
+      method,
+      memo,
+    };
+    const { data, error } = await sbClient.from("payments").insert(payload).select().single();
+    if (error) throw error;
+    if (!data) throw new Error("入金登録結果を取得できませんでした。");
+    await syncSalePaymentSummary(saleId);
+    await loadAllData();
+    renderAfterDataChanged();
+    showAppMessage("入金を登録しました。", false);
+  } catch (error) {
+    showAppMessage(`入金登録に失敗しました。${formatSupabaseError(error)}`, true);
+  } finally {
+    forceHideLoading();
+  }
+}
+
+async function deletePayment(paymentId) {
+  if (!currentUser) return;
+  const target = state.payments.find((entry) => entry.id === paymentId);
+  if (!target) {
+    showAppMessage("削除対象の入金履歴が見つかりません。", true);
+    return;
+  }
+  if (!window.confirm("この入金履歴を削除しますか？")) return;
+
+  startLoading("入金削除");
+  try {
+    const { data, error } = await sbClient.from("payments").delete().eq("id", paymentId).eq("user_id", currentUser.id).select().single();
+    if (error) throw error;
+    if (!data) throw new Error("入金削除結果を取得できませんでした。");
+    await syncSalePaymentSummary(target.saleId);
+    await loadAllData();
+    renderAfterDataChanged();
+    showAppMessage("入金履歴を削除しました。", false);
+  } catch (error) {
+    showAppMessage(`入金削除に失敗しました。${formatSupabaseError(error)}`, true);
+  } finally {
+    forceHideLoading();
+  }
+}
+
 async function startSaleEdit(saleId) {
     const target = state.sales.find((entry) => entry.id === saleId);
     if (!target) return;
@@ -1700,6 +1805,7 @@ async function startSaleEdit(saleId) {
     saleForm.elements.dueDate.value = target.dueDate || "";
     setSaleInvoiceNumberDisplay(target.invoiceNumber || "");
     saleSubmitBtn.textContent = "売上を更新";
+    renderPayments();
     saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -1930,6 +2036,11 @@ async function deleteCase(id) {
     clearAppMessage();
     console.log("ACTION START", taskName, id);
 
+    const caseSales = state.sales.filter((entry) => entry.caseId === id);
+    for (const sale of caseSales) {
+      const paymentDeleteRes = await sbClient.from("payments").delete().eq("sale_id", sale.id).eq("user_id", currentUser.id);
+      if (paymentDeleteRes.error) throw paymentDeleteRes.error;
+    }
     const salesDeleteRes = await sbClient.from("sales").delete().eq("case_id", id).eq("user_id", currentUser.id);
     if (salesDeleteRes.error) throw salesDeleteRes.error;
     const caseTasksDeleteRes = await sbClient.from("case_tasks").delete().eq("case_id", id).eq("user_id", currentUser.id);
@@ -1999,6 +2110,8 @@ async function deleteSale(id) {
   try {
     clearAppMessage();
     console.log("ACTION START", taskName, id);
+    const paymentDeleteRes = await sbClient.from("payments").delete().eq("sale_id", id).eq("user_id", currentUser.id);
+    if (paymentDeleteRes.error) throw paymentDeleteRes.error;
     const { error } = await sbClient.from("sales").delete().eq("id", id).eq("user_id", currentUser.id);
     if (error) throw error;
     console.log("DB DONE", taskName, id);
@@ -2128,15 +2241,16 @@ async function deleteDailyReport(id) {
 
 async function deleteAllData() {
   if (!currentUser) return;
-  if (!window.confirm("顧客・対応履歴・業務テンプレート・見積・案件・売上・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
+  if (!window.confirm("顧客・対応履歴・業務テンプレート・見積・案件・売上・入金・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
   const taskName = "全件削除";
   startLoading(taskName);
   try {
     clearAppMessage();
     console.log("DELETE START", taskName, "all");
-    const [estimateItemsRes, estimatesRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes, workTemplatesRes, clientsRes] = await Promise.all([
+    const [estimateItemsRes, estimatesRes, paymentsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes, workTemplatesRes, clientsRes] = await Promise.all([
       sbClient.from("estimate_items").delete().eq("user_id", currentUser.id),
       sbClient.from("estimates").delete().eq("user_id", currentUser.id),
+      sbClient.from("payments").delete().eq("user_id", currentUser.id),
       sbClient.from("sales").delete().eq("user_id", currentUser.id),
       sbClient.from("expenses").delete().eq("user_id", currentUser.id),
       sbClient.from("fixed_expenses").delete().eq("user_id", currentUser.id),
@@ -2147,6 +2261,7 @@ async function deleteAllData() {
     ]);
 
     if (salesRes.error) throw salesRes.error;
+    if (paymentsRes.error) throw paymentsRes.error;
     if (expensesRes.error) throw expensesRes.error;
     if (estimateItemsRes.error) throw estimateItemsRes.error;
     if (estimatesRes.error) throw estimatesRes.error;
@@ -2223,6 +2338,23 @@ function handleExportSalesCsv() {
   downloadCsvFile("sales.csv", ["customer_name", "case_name", "invoice_number", "invoice_amount", "paid_amount", "remaining_amount", "paid_date", "due_date", "payment_status", "is_unpaid", "reminder_count", "last_reminder_date", "reminder_method", "reminder_memo"], rows);
 }
 
+function handleExportPaymentsCsv() {
+  const rows = state.payments.map((entry) => {
+    const sale = state.sales.find((row) => row.id === entry.saleId);
+    const linkedCase = sale?.caseId ? state.cases.find((c) => c.id === sale.caseId) : null;
+    return {
+      sale_invoice_number: sale?.invoiceNumber || "",
+      customer_name: linkedCase?.customerName || "",
+      case_name: linkedCase?.caseName || "",
+      payment_date: entry.paymentDate || "",
+      amount: entry.amount ?? "",
+      method: entry.method || "",
+      memo: entry.memo || "",
+    };
+  });
+  downloadCsvFile("payments.csv", ["sale_invoice_number", "customer_name", "case_name", "payment_date", "amount", "method", "memo"], rows);
+}
+
 function handleExportExpensesCsv() {
   const rows = state.expenses.map((entry) => {
     const foundCase = state.cases.find((c) => c.id === entry.caseId);
@@ -2256,6 +2388,7 @@ function handleExportAllCsv() {
     "client_name", "client_type", "address", "tel", "email", "referral_source", "client_memo",
     "client_id", "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action", "document_url", "invoice_url", "receipt_url",
     "estimate_number", "invoice_number", "invoice_amount", "paid_amount", "remaining_amount", "paid_date", "due_date", "payment_status", "is_unpaid", "reminder_count", "last_reminder_date", "reminder_method", "reminder_memo",
+    "sale_invoice_number", "payment_date", "payment_amount", "payment_method", "payment_memo",
     "date", "content", "amount", "payee", "payment_method",
     "day_of_month", "start_date", "active",
     "report_date", "report_client_id", "report_client_name", "report_case_name", "report_interaction_type", "report_work_content", "report_work_minutes", "report_next_action", "report_next_action_date", "report_memo",
@@ -2323,6 +2456,17 @@ function handleExportAllCsv() {
       last_reminder_date: entry.lastReminderDate || "",
       reminder_method: entry.reminderMethod || "",
       reminder_memo: entry.reminderMemo || "",
+    });
+  });
+  state.payments.forEach((entry) => {
+    const sale = state.sales.find((row) => row.id === entry.saleId);
+    rows.push({
+      data_type: "payment",
+      sale_invoice_number: sale?.invoiceNumber || "",
+      payment_date: entry.paymentDate || "",
+      payment_amount: entry.amount ?? "",
+      payment_method: entry.method || "",
+      payment_memo: entry.memo || "",
     });
   });
   state.expenses.forEach((entry) => {
@@ -2466,6 +2610,7 @@ function exportExcel() {
     const clientHeaders = ["name", "client_type", "address", "tel", "email", "referral_source", "memo"];
     const caseHeaders = ["client_id", "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action", "document_url", "invoice_url", "receipt_url"];
     const saleHeaders = ["customer_name", "case_name", "invoice_number", "invoice_amount", "paid_amount", "remaining_amount", "paid_date", "due_date", "payment_status", "is_unpaid", "reminder_count", "last_reminder_date", "reminder_method", "reminder_memo"];
+    const paymentHeaders = ["sale_invoice_number", "payment_date", "amount", "method", "memo"];
     const expenseHeaders = ["case_name", "date", "content", "amount", "payee", "payment_method", "receipt_url"];
     const fixedExpenseHeaders = ["content", "amount", "day_of_month", "start_date", "active"];
     const dailyReportHeaders = ["report_date", "client_id", "client_name", "case_name", "interaction_type", "work_content", "work_minutes", "next_action", "next_action_date", "memo"];
@@ -2525,6 +2670,16 @@ function exportExcel() {
         receipt_url: entry.receiptUrl || "",
       };
     });
+    const paymentRows = state.payments.map((entry) => {
+      const sale = state.sales.find((row) => row.id === entry.saleId);
+      return {
+        sale_invoice_number: sale?.invoiceNumber || "",
+        payment_date: entry.paymentDate || "",
+        amount: entry.amount ?? "",
+        method: entry.method || "",
+        memo: entry.memo || "",
+      };
+    });
     const fixedExpenseRows = state.fixedExpenses.map((entry) => ({
       content: entry.content,
       amount: entry.amount ?? "",
@@ -2560,6 +2715,7 @@ function exportExcel() {
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(clientRows, clientHeaders), "顧客");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(caseRows, caseHeaders), "案件");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(saleRows, saleHeaders), "売上");
+    XLSX.utils.book_append_sheet(workbook, createExcelSheet(paymentRows, paymentHeaders), "入金");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(expenseRows, expenseHeaders), "経費");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(fixedExpenseRows, fixedExpenseHeaders), "固定費");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(dailyReportRows, dailyReportHeaders), "日報");
@@ -2811,6 +2967,7 @@ function renderAfterDataChanged() {
   safeRender("cases", renderCases);
   safeRender("estimates", renderEstimates);
   safeRender("sales", renderSales);
+  safeRender("payments", renderPayments);
   safeRender("expenses", renderExpenses);
   safeRender("fixedExpenses", renderFixedExpenses);
   safeRender("dailyReports", renderDailyReports);
@@ -2823,6 +2980,17 @@ function renderAfterDataChanged() {
   safeRender("pendingEstimates", renderPendingEstimates);
   safeRender("clientAnalysis", renderClientAnalysis);
   safeRender("referralAnalysis", renderReferralAnalysis);
+}
+
+function renderPayments() {
+  if (!salePaymentHistory) return;
+  const targetSaleId = editState.saleId;
+  if (!targetSaleId) {
+    salePaymentHistory.innerHTML = '<p class="meta">売上編集時に入金履歴を表示します。</p>';
+    return;
+  }
+  const html = renderPaymentHistoryInline(targetSaleId);
+  salePaymentHistory.innerHTML = html === "-" ? '<p class="meta">入金履歴はありません。</p>' : html;
 }
 
 function renderTodayTasks() {
@@ -3366,6 +3534,7 @@ function renderUnpaidAlert(filter = {}) {
       const customerName = linkedCase?.customerName || linkedEstimate?.customerName || "顧客不明";
       const caseName = linkedCase?.caseName || "案件なし";
       const tr = document.createElement("tr");
+      const paymentHistory = renderPaymentHistoryInline(sale.id);
       tr.innerHTML = `
         <td>${escapeHtml(customerName)}</td>
         <td>${escapeHtml(caseName)}</td>
@@ -3379,8 +3548,10 @@ function renderUnpaidAlert(filter = {}) {
         <td>${sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "-"}</td>
         <td>${escapeHtml(sale.reminderMethod || "-")}</td>
         <td>${escapeHtml(sale.reminderMemo || "-")}</td>
+        <td>${paymentHistory}</td>
         <td>
           <button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button>
+          <button type="button" class="secondary-btn register-payment-btn" data-sale-id="${sale.id}">入金登録</button>
           ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : ""}
         </td>
       `;
@@ -3398,6 +3569,7 @@ function renderUnpaidList() {
 
   unpaidSales.forEach((sale) => {
     const linkedCase = state.cases.find((entry) => entry.id === sale.caseId);
+    const paymentHistory = renderPaymentHistoryInline(sale.id);
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(linkedCase?.customerName || "（削除済み顧客）")}</td>
@@ -3413,7 +3585,8 @@ function renderUnpaidList() {
       <td>${sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "-"}</td>
       <td>${escapeHtml(sale.reminderMethod || "-")}</td>
       <td>${escapeHtml(sale.reminderMemo || "-")}</td>
-      <td><button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button> ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : ""}</td>
+      <td>${paymentHistory}</td>
+      <td><button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button> <button type="button" class="secondary-btn register-payment-btn" data-sale-id="${sale.id}">入金登録</button> ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : ""}</td>
     `;
     tr.classList.add(getSaleRowClass(sale));
     unpaidListBody.appendChild(tr);
@@ -3770,6 +3943,14 @@ function getCollectionTargetSales() {
 
 function getRemainingAmount(sale) {
   return Math.max((sale.invoiceAmount ?? 0) - (sale.paidAmount ?? 0), 0);
+}
+
+function renderPaymentHistoryInline(saleId) {
+  const payments = getSalePayments(saleId);
+  if (!payments.length) return "-";
+  return payments.map((entry) => (
+    `<div class="payment-history-row">${formatDate(entry.paymentDate)} / ${formatCurrency(entry.amount)} / ${escapeHtml(entry.method || "その他")} ${entry.memo ? `/ ${escapeHtml(entry.memo)}` : ""} <button type="button" class="danger-btn delete-payment-btn" data-sale-id="${saleId}" data-payment-id="${entry.id}">削除</button></div>`
+  )).join("");
 }
 
 function renderCaseOptions() {
@@ -4698,6 +4879,7 @@ function renderSales() {
       const reminderMemo = sale.reminderMemo || "-";
       const lastReminderDateLabel = sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "-";
       const canRecordReminder = isReminderRecordableSale(safeSale);
+      const paymentHistory = renderPaymentHistoryInline(sale.id);
       const tr = document.createElement("tr");
       tr.dataset.id = sale.id || "";
       tr.classList.add(getSaleRowClass(safeSale));
@@ -4714,7 +4896,9 @@ function renderSales() {
         <td>${lastReminderDateLabel}</td>
         <td>${escapeHtml(reminderMethod)}</td>
         <td>${escapeHtml(reminderMemo)}</td>
+        <td>${paymentHistory}</td>
         <td>${canRecordReminder ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : "-"}</td>
+        <td><button type="button" class="secondary-btn register-payment-btn">入金登録</button></td>
         <td><button type="button" class="edit-btn secondary-btn">編集</button></td>
         <td><button type="button" class="danger-btn delete-btn">削除</button></td>
       `;
@@ -4883,6 +5067,7 @@ function resetSaleForm() {
   saleForm.reset();
   setSaleInvoiceNumberDisplay("");
   saleSubmitBtn.textContent = "売上を登録";
+  renderPayments();
 }
 
 function resetExpenseForm() {
@@ -5975,6 +6160,56 @@ function calculatePaymentStatus(invoiceAmount, paidAmount) {
   return "入金済";
 }
 
+function normalizePaymentMethod(value) {
+  const normalized = asTrimmedText(value);
+  if (!normalized) return "その他";
+  return PAYMENT_METHODS.includes(normalized) ? normalized : "その他";
+}
+
+function getSalePayments(saleId) {
+  return state.payments
+    .filter((entry) => entry.saleId === saleId)
+    .slice()
+    .sort((a, b) => toSortTimestamp(b.paymentDate) - toSortTimestamp(a.paymentDate));
+}
+
+function getSalePaidAmountByPayments(saleId) {
+  return getSalePayments(saleId).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+}
+
+function hydrateSaleWithPayments(sale) {
+  const payments = getSalePayments(sale.id);
+  if (!payments.length) return sale;
+  const paidAmount = payments.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+  const paymentStatus = calculatePaymentStatus(sale.invoiceAmount, paidAmount);
+  const latestPayment = payments[0];
+  return {
+    ...sale,
+    paidAmount,
+    paidDate: latestPayment?.paymentDate || null,
+    paymentStatus,
+    isUnpaid: paymentStatus !== "入金済",
+  };
+}
+
+async function syncSalePaymentSummary(saleId) {
+  if (!currentUser || !saleId) return;
+  const paidAmount = getSalePaidAmountByPayments(saleId);
+  const sale = state.sales.find((entry) => entry.id === saleId);
+  const invoiceAmount = Number(sale?.invoiceAmount || 0);
+  const paymentStatus = calculatePaymentStatus(invoiceAmount, paidAmount);
+  const latestPayment = getSalePayments(saleId)[0];
+  const payload = {
+    paid_amount: paidAmount,
+    paid_date: latestPayment?.paymentDate || null,
+    payment_status: paymentStatus,
+    is_unpaid: paymentStatus !== "入金済",
+  };
+  const { data, error } = await sbClient.from("sales").update(payload).eq("id", saleId).eq("user_id", currentUser.id).select().single();
+  if (error) throw error;
+  if (!data) throw new Error("売上の入金ステータス更新結果を取得できませんでした。");
+}
+
 function getSalePaymentStatus(invoiceAmount, paidAmount) {
   return calculatePaymentStatus(invoiceAmount, paidAmount);
 }
@@ -6109,6 +6344,7 @@ function normalizeExpensePaymentMethod(raw) {
 function importTypeToLabel(type) {
   if (type === "cases") return "案件CSV";
   if (type === "sales") return "売上CSV";
+  if (type === "payments") return "入金CSV";
   if (type === "expenses") return "経費CSV";
   if (type === "fixed_expenses") return "固定費CSV";
   if (type === "client_interactions") return "対応履歴CSV";
@@ -6341,6 +6577,10 @@ async function importWorkbookBySheet(workbook) {
   if (salesData.rows.length) {
     mergeResult(await importRowsByType("sales", salesData));
   }
+  const paymentsData = getSheetRows("入金");
+  if (paymentsData.rows.length) {
+    mergeResult(await importRowsByType("payments", paymentsData));
+  }
   const expensesData = getSheetRows("経費");
   if (expensesData.rows.length) {
     mergeResult(await importRowsByType("expenses", expensesData));
@@ -6509,6 +6749,44 @@ async function importRowsByType(importType, tableData) {
     });
     if (payloads.length) {
       const { error } = await sbClient.from("expenses").insert(payloads);
+      if (error) throw error;
+      result.insertedCount += payloads.length;
+    }
+    return result;
+  }
+
+  if (importType === "payments") {
+    validateRequiredHeaders(headers, ["sale_invoice_number", "payment_date", "amount"]);
+    const saleMap = new Map(state.sales.map((s) => [s.invoiceNumber, s.id]));
+    const payloads = [];
+    rows.forEach((row) => {
+      try {
+        const saleInvoiceNumber = asTrimmedText(row.sale_invoice_number);
+        const saleId = saleMap.get(saleInvoiceNumber);
+        if (!saleId) {
+          result.skippedCount += 1;
+          return;
+        }
+        const paymentDate = parseFlexibleDate(row.payment_date);
+        const amount = parseFlexibleAmount(row.amount);
+        if (!paymentDate || amount === null || amount <= 0) {
+          result.errorCount += 1;
+          return;
+        }
+        payloads.push({
+          user_id: currentUser.id,
+          sale_id: saleId,
+          payment_date: paymentDate,
+          amount,
+          method: normalizePaymentMethod(row.method || row.payment_method),
+          memo: asTrimmedText(row.memo || row.payment_memo) || null,
+        });
+      } catch (_error) {
+        result.errorCount += 1;
+      }
+    });
+    if (payloads.length) {
+      const { error } = await sbClient.from("payments").insert(payloads);
       if (error) throw error;
       result.insertedCount += payloads.length;
     }
@@ -6866,6 +7144,16 @@ function mapSaleFromDb(row) {
   // alter table sales add column if not exists last_reminder_date date;
   // alter table sales add column if not exists reminder_method text;
   // alter table sales add column if not exists reminder_memo text;
+  // create table if not exists payments (
+  //   id uuid primary key default gen_random_uuid(),
+  //   user_id uuid not null,
+  //   sale_id uuid not null,
+  //   payment_date date,
+  //   amount numeric not null,
+  //   method text,
+  //   memo text,
+  //   created_at timestamptz default now()
+  // );
   const invoiceAmount = Number(row.invoice_amount || 0);
   const paidAmount = Number(row.paid_amount || 0);
   return {
@@ -6886,6 +7174,19 @@ function mapSaleFromDb(row) {
     reminderMemo: row.reminder_memo || "",
     createdAt: Date.parse(row.created_at) || null,
     updatedAt: Date.parse(row.updated_at) || null,
+  };
+}
+
+function mapPaymentFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    saleId: row.sale_id,
+    paymentDate: row.payment_date || null,
+    amount: normalizeAmount(row.amount) ?? 0,
+    method: normalizePaymentMethod(row.method),
+    memo: row.memo || "",
+    createdAt: Date.parse(row.created_at) || null,
   };
 }
 
@@ -7146,6 +7447,7 @@ function clearAppState() {
   state.estimates = [];
   state.estimateItems = [];
   state.sales = [];
+  state.payments = [];
   state.expenses = [];
   state.fixedExpenses = [];
   state.dailyReports = [];
@@ -7167,3 +7469,4 @@ function clearAppState() {
   appView.hidden = true;
   userLabel.textContent = "";
 }
+    if (paymentsRes.error) throw paymentsRes.error;
