@@ -7,6 +7,7 @@ const SALES_PAYMENT_STATUSES = ["未入金", "一部入金", "入金済"];
 const ESTIMATE_STATUS_ORDER = ["作成中", "提出済", "未回答", "受注", "失注"];
 const EXPENSE_PAYMENT_METHODS = ["現金", "クレジットカード", "銀行振込", "電子マネー", "口座振替", "その他"];
 const DAILY_REPORT_INTERACTION_TYPES = ["作業", "電話", "メール", "面談", "訪問", "LINE", "その他"];
+const REMINDER_METHODS = ["電話", "メール", "LINE", "郵送", "訪問", "その他"];
 const OFFICE_INFO = {
   name: "あかし行政書士事務所",
   zip: "574-0044",
@@ -1376,6 +1377,11 @@ async function handleSalesListAction(event) {
 
   if (btn.classList.contains("delete-btn")) {
     await deleteSale(id);
+    return;
+  }
+
+  if (btn.classList.contains("record-reminder-btn")) {
+    await recordSaleReminder(id);
   }
 }
 
@@ -1407,6 +1413,10 @@ function handleUnpaidListAction(event) {
   if (!saleId) return;
   if (btn.classList.contains("edit-sale-btn")) {
     editSale(saleId).catch(() => {});
+    return;
+  }
+  if (btn.classList.contains("record-reminder-btn")) {
+    recordSaleReminder(saleId).catch(() => {});
   }
 }
 
@@ -1422,6 +1432,10 @@ function handleTodayTaskAction(event) {
   }
   if (target === "sale") {
     editSale(taskId).catch(() => {});
+    return;
+  }
+  if (target === "sale-reminder") {
+    recordSaleReminder(taskId).catch(() => {});
     return;
   }
   if (target === "daily-report") {
@@ -1446,6 +1460,68 @@ function handlePendingEstimateAction(event) {
   if (!estimateId) return;
   if (btn.classList.contains("edit-pending-estimate-btn")) {
     startEstimateEdit(estimateId).catch(() => {});
+  }
+}
+
+async function recordSaleReminder(saleId) {
+  if (!currentUser) {
+    showAppMessage("ログイン状態を確認できません。", true);
+    return;
+  }
+  const target = state.sales.find((entry) => entry.id === saleId);
+  if (!target) {
+    showAppMessage("対象の売上データが見つかりません。", true);
+    return;
+  }
+  if (!isReminderRecordableSale(target)) {
+    showAppMessage("督促記録は未入金または一部入金の売上のみ登録できます。", true);
+    return;
+  }
+
+  const defaultDate = toDateString(new Date());
+  const reminderDate = window.prompt("督促日を入力してください（YYYY-MM-DD）", target.lastReminderDate || defaultDate);
+  if (reminderDate === null) return;
+  const normalizedReminderDate = parseFlexibleDate(reminderDate);
+  if (!normalizedReminderDate) {
+    showAppMessage("督促日の形式が不正です。YYYY-MM-DD形式で入力してください。", true);
+    return;
+  }
+
+  const methodPrompt = `督促方法を入力してください（${REMINDER_METHODS.join(" / ")}）`;
+  const methodInput = window.prompt(methodPrompt, target.reminderMethod || REMINDER_METHODS[0]);
+  if (methodInput === null) return;
+  const normalizedMethod = normalizeReminderMethod(methodInput);
+
+  const memoInput = window.prompt("督促メモを入力してください（任意）", target.reminderMemo || "");
+  if (memoInput === null) return;
+  const normalizedMemo = asTrimmedText(memoInput) || null;
+
+  startLoading("督促記録");
+  try {
+    clearAppMessage();
+    const payload = {
+      reminder_count: (Number(target.reminderCount) || 0) + 1,
+      last_reminder_date: normalizedReminderDate,
+      reminder_method: normalizedMethod,
+      reminder_memo: normalizedMemo,
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error } = await sbClient
+      .from("sales")
+      .update(payload)
+      .eq("id", saleId)
+      .eq("user_id", currentUser.id)
+      .select()
+      .single();
+    if (error) throw error;
+    if (!data) throw new Error("督促記録の更新結果を取得できませんでした。");
+    await loadAllData();
+    renderAfterDataChanged();
+    showAppMessage("督促記録を保存しました。", false);
+  } catch (error) {
+    showAppMessage(`督促記録の保存に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
+  } finally {
+    forceHideLoading();
   }
 }
 
@@ -1974,9 +2050,13 @@ function handleExportSalesCsv() {
       due_date: entry.dueDate || "",
       payment_status: entry.paymentStatus || "",
       is_unpaid: entry.paymentStatus !== "入金済" ? "true" : "false",
+      reminder_count: entry.reminderCount ?? 0,
+      last_reminder_date: entry.lastReminderDate || "",
+      reminder_method: entry.reminderMethod || "",
+      reminder_memo: entry.reminderMemo || "",
     };
   });
-  downloadCsvFile("sales.csv", ["customer_name", "case_name", "invoice_number", "invoice_amount", "paid_amount", "remaining_amount", "paid_date", "due_date", "payment_status", "is_unpaid"], rows);
+  downloadCsvFile("sales.csv", ["customer_name", "case_name", "invoice_number", "invoice_amount", "paid_amount", "remaining_amount", "paid_date", "due_date", "payment_status", "is_unpaid", "reminder_count", "last_reminder_date", "reminder_method", "reminder_memo"], rows);
 }
 
 function handleExportExpensesCsv() {
@@ -2011,7 +2091,7 @@ function handleExportAllCsv() {
     "data_type",
     "client_name", "client_type", "address", "tel", "email", "referral_source", "client_memo",
     "client_id", "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action", "document_url", "invoice_url", "receipt_url",
-    "estimate_number", "invoice_number", "invoice_amount", "paid_amount", "remaining_amount", "paid_date", "due_date", "payment_status", "is_unpaid",
+    "estimate_number", "invoice_number", "invoice_amount", "paid_amount", "remaining_amount", "paid_date", "due_date", "payment_status", "is_unpaid", "reminder_count", "last_reminder_date", "reminder_method", "reminder_memo",
     "date", "content", "amount", "payee", "payment_method",
     "day_of_month", "start_date", "active",
     "report_date", "report_client_id", "report_client_name", "report_case_name", "report_interaction_type", "report_work_content", "report_work_minutes", "report_next_action", "report_next_action_date", "report_memo",
@@ -2074,6 +2154,10 @@ function handleExportAllCsv() {
       due_date: entry.dueDate || "",
       payment_status: entry.paymentStatus || "",
       is_unpaid: entry.paymentStatus !== "入金済" ? "true" : "false",
+      reminder_count: entry.reminderCount ?? 0,
+      last_reminder_date: entry.lastReminderDate || "",
+      reminder_method: entry.reminderMethod || "",
+      reminder_memo: entry.reminderMemo || "",
     });
   });
   state.expenses.forEach((entry) => {
@@ -2203,7 +2287,7 @@ function exportExcel() {
     const workbook = XLSX.utils.book_new();
     const clientHeaders = ["name", "client_type", "address", "tel", "email", "referral_source", "memo"];
     const caseHeaders = ["client_id", "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action", "document_url", "invoice_url", "receipt_url"];
-    const saleHeaders = ["customer_name", "case_name", "invoice_number", "invoice_amount", "paid_amount", "remaining_amount", "paid_date", "due_date", "payment_status", "is_unpaid"];
+    const saleHeaders = ["customer_name", "case_name", "invoice_number", "invoice_amount", "paid_amount", "remaining_amount", "paid_date", "due_date", "payment_status", "is_unpaid", "reminder_count", "last_reminder_date", "reminder_method", "reminder_memo"];
     const expenseHeaders = ["case_name", "date", "content", "amount", "payee", "payment_method", "receipt_url"];
     const fixedExpenseHeaders = ["content", "amount", "day_of_month", "start_date", "active"];
     const dailyReportHeaders = ["report_date", "client_id", "client_name", "case_name", "interaction_type", "work_content", "work_minutes", "next_action", "next_action_date", "memo"];
@@ -2244,6 +2328,10 @@ function exportExcel() {
         due_date: entry.dueDate || "",
         payment_status: entry.paymentStatus || "",
         is_unpaid: entry.paymentStatus !== "入金済" ? "true" : "false",
+        reminder_count: entry.reminderCount ?? 0,
+        last_reminder_date: entry.lastReminderDate || "",
+        reminder_method: entry.reminderMethod || "",
+        reminder_memo: entry.reminderMemo || "",
       };
     });
     const expenseRows = state.expenses.map((entry) => {
@@ -2740,9 +2828,12 @@ function renderTodayTaskCard() {
         <td>${escapeHtml(row.type)}</td>
         <td>${escapeHtml(row.customerName)}</td>
         <td>${escapeHtml(row.caseName)}</td>
-        <td>${escapeHtml(row.action)}</td>
-        <td>${formatDate(row.date)}</td>
+        <td>${row.remainingAmountLabel || "-"}</td>
+        <td>${row.dueDateLabel || formatDate(row.date)}</td>
+        <td>${row.lastReminderDateLabel || "-"}</td>
+        <td>${row.reminderCountLabel || "-"}</td>
         <td><button type="button" class="secondary-btn" data-task-target="${row.target}" data-task-id="${row.id}">編集</button></td>
+        <td>${row.showReminderButton ? `<button type="button" class="secondary-btn" data-task-target="sale-reminder" data-task-id="${row.id}">督促記録</button>` : "-"}</td>
       `;
       todayTaskBody.appendChild(tr);
     });
@@ -2769,22 +2860,30 @@ function buildTodayTasks() {
     });
   });
   getCollectionTargetSales()
-    .filter((sale) => {
-      const dueTs = toDateOnlyTimestamp(sale.dueDate);
-      return Number.isFinite(dueTs) && dueTs <= todayLimit;
-    })
+    .filter((sale) => isReminderTaskTarget(sale))
     .forEach((sale) => {
-    const linked = state.cases.find((entry) => entry.id === sale.caseId);
-    const saleType = isSaleOverdue(sale)
-      ? "期限超過入金確認"
-      : sale.paymentStatus === "一部入金"
-        ? "一部入金確認"
-        : "未入金確認";
-    tasks.push({
-      id: sale.id, target: "sale", type: saleType, customerName: linked?.customerName || "（削除済み顧客）", caseName: linked?.caseName || "（削除済み案件）",
-      action: `${sale.paymentStatus} ${formatCurrency(getRemainingAmount(sale))}`, date: sale.dueDate || sale.paidDate || toDateString(sale.createdAt), urgencyClass: isSaleOverdue(sale) ? "task-overdue" : "task-soon",
+      const linked = state.cases.find((entry) => entry.id === sale.caseId);
+      const reminderStatus = getReminderTaskStatus(sale);
+      const urgencyClass = reminderStatus === "overdue_no_reminder"
+        ? "task-reminder-danger"
+        : reminderStatus === "reminder_elapsed"
+          ? "task-reminder-warning"
+          : "task-reminder-upcoming";
+      tasks.push({
+        id: sale.id,
+        target: "sale",
+        type: sale.paymentStatus === "一部入金" ? "督促（一部入金）" : "督促（未入金）",
+        customerName: linked?.customerName || "（削除済み顧客）",
+        caseName: linked?.caseName || "（削除済み案件）",
+        date: sale.dueDate || sale.paidDate || toDateString(sale.createdAt),
+        urgencyClass,
+        remainingAmountLabel: formatCurrency(getRemainingAmount(sale)),
+        dueDateLabel: sale.dueDate ? formatDate(sale.dueDate) : "未設定",
+        lastReminderDateLabel: sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "未記録",
+        reminderCountLabel: `${Number(sale.reminderCount || 0)}回`,
+        showReminderButton: isReminderRecordableSale(sale),
+      });
     });
-  });
   getBillingLeakCandidates().forEach((entry) => {
     tasks.push({
       id: entry.id, target: "case", type: "請求漏れ", customerName: entry.customerName, caseName: entry.caseName,
@@ -3012,7 +3111,14 @@ function renderUnpaidAlert(filter = {}) {
         <td>${formatDate(sale.dueDate)}</td>
         <td><span class="${getSaleStatusClass(sale)}">${escapeHtml(sale.paymentStatus)}</span></td>
         <td>${getSaleDeadlineDaysLabel(sale)}</td>
-        <td><button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button></td>
+        <td>${Number(sale.reminderCount || 0)}回</td>
+        <td>${sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "-"}</td>
+        <td>${escapeHtml(sale.reminderMethod || "-")}</td>
+        <td>${escapeHtml(sale.reminderMemo || "-")}</td>
+        <td>
+          <button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button>
+          ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : ""}
+        </td>
       `;
       tr.classList.add(getSaleRowClass(sale));
       unpaidAlertBody.appendChild(tr);
@@ -3039,7 +3145,11 @@ function renderUnpaidList() {
       <td>${formatDate(sale.paidDate)}</td>
       <td><span class="${getSaleStatusClass(sale)}">${escapeHtml(sale.paymentStatus)}</span></td>
       <td>${getSaleDeadlineDaysLabel(sale)}</td>
-      <td><button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button></td>
+      <td>${Number(sale.reminderCount || 0)}回</td>
+      <td>${sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "-"}</td>
+      <td>${escapeHtml(sale.reminderMethod || "-")}</td>
+      <td>${escapeHtml(sale.reminderMemo || "-")}</td>
+      <td><button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button> ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : ""}</td>
     `;
     tr.classList.add(getSaleRowClass(sale));
     unpaidListBody.appendChild(tr);
@@ -4269,6 +4379,11 @@ function renderSales() {
       const dueDateLabel = sale.dueDate ? formatDate(sale.dueDate) : "未設定";
       const paidDateLabel = sale.paidDate ? formatDate(sale.paidDate) : "未設定";
       const safeSale = { ...sale, invoiceAmount, paidAmount, paymentStatus };
+      const reminderCount = Number(sale.reminderCount) || 0;
+      const reminderMethod = sale.reminderMethod || "-";
+      const reminderMemo = sale.reminderMemo || "-";
+      const lastReminderDateLabel = sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "-";
+      const canRecordReminder = isReminderRecordableSale(safeSale);
       const tr = document.createElement("tr");
       tr.dataset.id = sale.id || "";
       tr.classList.add(getSaleRowClass(safeSale));
@@ -4281,6 +4396,11 @@ function renderSales() {
         <td><span class="${getSaleStatusClass(safeSale)}">${escapeHtml(paymentStatus)}</span></td>
         <td>${dueDateLabel}</td>
         <td>${paidDateLabel}</td>
+        <td>${reminderCount}回</td>
+        <td>${lastReminderDateLabel}</td>
+        <td>${escapeHtml(reminderMethod)}</td>
+        <td>${escapeHtml(reminderMemo)}</td>
+        <td>${canRecordReminder ? '<button type="button" class="secondary-btn record-reminder-btn">督促記録</button>' : '-'}</td>
         <td><button type="button" class="edit-btn secondary-btn">編集</button></td>
         <td><button type="button" class="danger-btn delete-btn">削除</button></td>
       `;
@@ -5540,6 +5660,40 @@ function normalizeSalePaymentStatus(value, invoiceAmount, paidAmount) {
   return value || calculatePaymentStatus(invoiceAmount, paidAmount);
 }
 
+function normalizeReminderMethod(value) {
+  const normalized = asTrimmedText(value);
+  if (!normalized) return "";
+  return REMINDER_METHODS.includes(normalized) ? normalized : "その他";
+}
+
+function isReminderRecordableSale(sale) {
+  const status = sale?.paymentStatus || calculatePaymentStatus(sale?.invoiceAmount || 0, sale?.paidAmount || 0);
+  return status === "未入金" || status === "一部入金";
+}
+
+function getReminderTaskStatus(sale) {
+  const dueTs = toDateOnlyTimestamp(sale?.dueDate);
+  const todayTs = getTodayTimestamp();
+  const lastReminderTs = toDateOnlyTimestamp(sale?.lastReminderDate);
+  const hasReminder = Number(sale?.reminderCount || 0) > 0 || Boolean(sale?.lastReminderDate);
+  const isOverdue = Number.isFinite(dueTs) && Number.isFinite(todayTs) && dueTs < todayTs;
+  const reminderElapsed = Number.isFinite(lastReminderTs) && Number.isFinite(todayTs) && (todayTs - lastReminderTs) >= 7 * 86400000;
+
+  if (isOverdue && !hasReminder) return "overdue_no_reminder";
+  if (reminderElapsed) return "reminder_elapsed";
+  return "before_due";
+}
+
+function isReminderTaskTarget(sale) {
+  if (!isReminderRecordableSale(sale)) return false;
+  const dueTs = toDateOnlyTimestamp(sale?.dueDate);
+  const todayTs = getTodayTimestamp();
+  const lastReminderTs = toDateOnlyTimestamp(sale?.lastReminderDate);
+  const hasOverdueDueDate = Number.isFinite(dueTs) && Number.isFinite(todayTs) && dueTs < todayTs;
+  const reminderElapsed = Number.isFinite(lastReminderTs) && Number.isFinite(todayTs) && (todayTs - lastReminderTs) >= 7 * 86400000;
+  return hasOverdueDueDate || reminderElapsed;
+}
+
 function isSaleOverdue(sale) {
   if (!sale?.dueDate || sale.paymentStatus === "入金済") return false;
   const dueTimestamp = toDateOnlyTimestamp(sale.dueDate);
@@ -5584,6 +5738,10 @@ function matchesSalesSearch(sale, query) {
     relatedCase?.caseName,
     sale.invoiceAmount,
     getSalesPaymentLabel(sale),
+    sale.reminderCount,
+    sale.lastReminderDate,
+    sale.reminderMethod,
+    sale.reminderMemo,
   ]
     .map((value) => String(value ?? "").toLowerCase())
     .join(" ");
@@ -5812,6 +5970,14 @@ function parseFlexibleAmount(value) {
   return normalizeAmount(normalized);
 }
 
+function parseFlexibleInteger(value, fallback = 0) {
+  const normalized = String(value ?? "").trim().replaceAll(",", "");
+  if (!normalized) return fallback;
+  const num = Number(normalized);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.max(0, Math.floor(num));
+}
+
 function parseBooleanLike(value) {
   const normalized = String(value || "").trim().toLowerCase();
   return ["1", "true", "yes", "y", "on"].includes(normalized);
@@ -5968,6 +6134,10 @@ async function importRowsByType(importType, tableData) {
           due_date: parseFlexibleDate(row.due_date),
           payment_status: paymentStatus,
           is_unpaid: parseBooleanLike(row.is_unpaid) || paymentStatus !== "入金済",
+          reminder_count: parseFlexibleInteger(row.reminder_count, 0),
+          last_reminder_date: parseFlexibleDate(row.last_reminder_date),
+          reminder_method: normalizeReminderMethod(row.reminder_method),
+          reminder_memo: asTrimmedText(row.reminder_memo) || null,
         });
       } catch (_error) {
         result.errorCount += 1;
@@ -6316,6 +6486,10 @@ function mapSaleFromDb(row) {
   // alter table sales add column if not exists due_date date;
   // alter table sales add column if not exists invoice_number text;
   // alter table sales add column if not exists estimate_id uuid;
+  // alter table sales add column if not exists reminder_count int default 0;
+  // alter table sales add column if not exists last_reminder_date date;
+  // alter table sales add column if not exists reminder_method text;
+  // alter table sales add column if not exists reminder_memo text;
   const invoiceAmount = Number(row.invoice_amount || 0);
   const paidAmount = Number(row.paid_amount || 0);
   return {
@@ -6330,6 +6504,10 @@ function mapSaleFromDb(row) {
     paymentStatus: row.payment_status || calculatePaymentStatus(invoiceAmount, paidAmount),
     isUnpaid: row.is_unpaid !== false,
     invoiceNumber: row.invoice_number || "",
+    reminderCount: parseFlexibleInteger(row.reminder_count, 0),
+    lastReminderDate: row.last_reminder_date || null,
+    reminderMethod: normalizeReminderMethod(row.reminder_method),
+    reminderMemo: row.reminder_memo || "",
     createdAt: Date.parse(row.created_at) || null,
     updatedAt: Date.parse(row.updated_at) || null,
   };
