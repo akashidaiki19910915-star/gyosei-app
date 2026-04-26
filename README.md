@@ -215,3 +215,30 @@ alter table cases add column if not exists invoice_url text;
 alter table cases add column if not exists receipt_url text;
 alter table expenses add column if not exists receipt_url text;
 ```
+
+## 業務テンプレート機能の追加SQL
+
+```sql
+create table if not exists work_templates (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  name text not null,
+  default_due_days int,
+  required_documents text,
+  default_tasks text,
+  memo text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table work_templates enable row level security;
+
+create policy "work_templates_own" on work_templates
+for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+alter table cases add column if not exists template_id uuid;
+alter table cases add column if not exists required_documents text;
+alter table cases add column if not exists task_list text;
+```
