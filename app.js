@@ -259,11 +259,10 @@ const estimateStatusFilter = document.getElementById("estimate-status-filter");
 const estimateExpiredFilter = document.getElementById("estimate-expired-filter");
 
 let currentUser = null;
-let isResuming = false;
 let isLoggingOut = false;
 let eventsBound = false;
 let loadingCount = 0;
-let loadingTimeoutId = null;
+let loadingTimer = null;
 const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports"];
 const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports"];
 const RESTORE_DELETE_ORDER = ["payments", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "case_tasks", "estimates", "cases", "work_templates", "clients"];
@@ -380,7 +379,6 @@ function bindEvents() {
   caseList.addEventListener("click", handleCaseListAction);
   caseTasksBody?.addEventListener("click", handleCaseTaskListAction);
   workTemplatesList?.addEventListener("click", handleWorkTemplateListAction);
-  salesListBody?.addEventListener("click", handleSalesListAction);
   expensesList.addEventListener("click", handleExpensesListAction);
   fixedExpensesList.addEventListener("click", handleFixedExpensesListAction);
   dailyReportsBody?.addEventListener("click", handleDailyReportsListAction);
@@ -397,8 +395,7 @@ function bindEvents() {
   nextActionAlertBody?.addEventListener("click", handleNextActionAlertClick);
   todayTaskBody?.addEventListener("click", handleTodayTaskAction);
   pendingEstimatesBody?.addEventListener("click", handlePendingEstimateAction);
-  document.addEventListener("click", handleReminderRecordClick);
-  document.addEventListener("click", handleRecordPaymentClick);
+  document.addEventListener("click", handleGlobalListAction);
   caseSearchInput?.addEventListener("input", handleCaseSearchInput);
   caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
   caseDeadlineFilterSelect?.addEventListener("change", handleCaseDeadlineFilterChange);
@@ -593,33 +590,14 @@ function clearDailyReportFilters() {
 async function handleVisibilityChange() {
   if (document.hidden) return;
   forceHideLoading();
-  await handleResumeRefresh("visibilitychange");
 }
 
 async function handleWindowFocus() {
   forceHideLoading();
-  await handleResumeRefresh("focus");
 }
 
 async function handlePageShow() {
   forceHideLoading();
-  await handleResumeRefresh("pageshow");
-}
-
-async function handleResumeRefresh(trigger) {
-  if (!currentUser || isResuming || isLoggingOut) return;
-
-  isResuming = true;
-  try {
-    await withLoading("画面復帰時の再読み込み", async () => {
-      await loadAllData();
-      renderAfterDataChanged();
-    });
-  } catch (error) {
-    console.error(`画面復帰時の再読み込みに失敗しました。(${trigger})`, error);
-  } finally {
-    isResuming = false;
-  }
 }
 
 async function applyAuthState() {
@@ -1390,40 +1368,28 @@ function startCaseTaskEdit(taskId) {
 async function completeCaseTask(taskId) {
   if (!currentUser) return;
   try {
-    await withLoading("案件タスク完了", async () => {
+    await runMutation("案件タスク完了", async () => {
       const payload = { status: "完了", completed_at: toDateString(new Date()) };
       const { data, error } = await sbClient.from("case_tasks").update(payload).eq("id", taskId).eq("user_id", currentUser.id).select().single();
       if (error) throw error;
       if (!data) throw new Error("更新結果を取得できませんでした。");
-      await loadAllData();
-      renderAfterDataChanged();
-      showAppMessage("案件タスクを完了にしました。", false);
-    });
+      return data;
+    }, { successMessage: "案件タスクを完了にしました。" });
   } catch (error) {
     showAppMessage(`案件タスク完了に失敗しました。${formatSupabaseError(error)}`, true);
-  } finally {
-    forceHideLoading();
   }
 }
 
 async function deleteCaseTask(taskId) {
-  if (!currentUser) return;
-  if (!window.confirm("この案件タスクを削除しますか？")) return;
-  try {
-    await withLoading("案件タスク削除", async () => {
-      const { data, error } = await sbClient.from("case_tasks").delete().eq("id", taskId).eq("user_id", currentUser.id).select().single();
-      if (error) throw error;
-      if (!data) throw new Error("削除結果を取得できませんでした。");
-      await loadAllData();
-      renderAfterDataChanged();
+  await deleteRecord({
+    table: "case_tasks",
+    id: taskId,
+    actionName: "案件タスク削除",
+    confirmMessage: "この案件タスクを削除しますか？",
+    afterSuccess: () => {
       if (editState.caseTaskId === taskId) resetCaseTaskForm();
-      showAppMessage("案件タスクを削除しました。", false);
-    });
-  } catch (error) {
-    showAppMessage(`案件タスク削除に失敗しました。${formatSupabaseError(error)}`, true);
-  } finally {
-    forceHideLoading();
-  }
+    },
+  });
 }
 
 function handleCaseTemplateChange(event) {
@@ -1504,6 +1470,36 @@ async function handleSalesListAction(event) {
     await deletePayment(paymentId);
   }
 
+}
+
+async function handleGlobalListAction(event) {
+  const button = event.target.closest("button");
+  if (!(button instanceof HTMLButtonElement)) return;
+
+  if (button.classList.contains("delete-sale-btn")) {
+    const saleId = button.dataset.saleId || button.closest("[data-id]")?.dataset.id;
+    console.log("DELETE SALE CLICKED", saleId);
+    if (!saleId) return;
+    await deleteSale(saleId);
+    return;
+  }
+  if (button.classList.contains("edit-sale-btn")) {
+    const saleId = button.dataset.saleId || button.closest("[data-id]")?.dataset.id;
+    if (!saleId) return;
+    await editSale(saleId);
+    return;
+  }
+  if (button.classList.contains("record-payment-btn")) {
+    const saleId = button.dataset.saleId || button.closest("[data-sale-id]")?.dataset.saleId || button.closest("[data-id]")?.dataset.id;
+    if (!saleId) return;
+    await handleRecordPayment(saleId);
+    return;
+  }
+  if (button.classList.contains("record-reminder-btn")) {
+    const saleId = button.dataset.saleId || button.closest("[data-sale-id]")?.dataset.saleId || button.closest("[data-id]")?.dataset.id;
+    if (!saleId) return;
+    await handleRecordReminder(saleId);
+  }
 }
 
 async function handleExpensesListAction(event) {
@@ -1626,28 +1622,6 @@ function handleCaseTaskListAction(event) {
   }
 }
 
-async function handleReminderRecordClick(event) {
-  const button = event.target.closest(".record-reminder-btn");
-  if (!(button instanceof HTMLButtonElement)) return;
-  const saleId = button.dataset.saleId || button.closest("[data-sale-id]")?.dataset.saleId || button.closest("[data-id]")?.dataset.id;
-  if (!saleId) {
-    showAppMessage("督促対象の売上IDを取得できませんでした。", true);
-    return;
-  }
-  await handleRecordReminder(saleId);
-}
-
-async function handleRecordPaymentClick(event) {
-  const button = event.target.closest(".record-payment-btn");
-  if (!(button instanceof HTMLButtonElement)) return;
-  const saleId = button.dataset.saleId || button.closest("[data-sale-id]")?.dataset.saleId || button.closest("[data-id]")?.dataset.id;
-  if (!saleId) {
-    showAppMessage("入金対象の売上IDを取得できませんでした。", true);
-    return;
-  }
-  await handleRecordPayment(saleId);
-}
-
 function handleBillingLeakAlertAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
@@ -1700,33 +1674,30 @@ async function handleRecordReminder(saleId) {
   if (reminderMemo === null) return;
   const normalizedMemo = asTrimmedText(reminderMemo) || "";
 
-  startLoading("督促記録");
   try {
-    const currentCount = Number(sale.reminderCount || 0);
-    const payload = {
-      reminder_count: currentCount + 1,
-      last_reminder_date: normalizedReminderDate,
-      reminder_method: normalizedMethod,
-      reminder_memo: normalizedMemo,
-    };
-    console.log("REMINDER PAYLOAD", saleId, payload);
-    const { data, error } = await sbClient
-      .from("sales")
-      .update(payload)
-      .eq("id", saleId)
-      .eq("user_id", currentUser.id)
-      .select()
-      .single();
-    if (error) throw error;
-    if (!data) throw new Error("督促記録の更新結果を取得できませんでした。");
-    await loadAllData();
-    renderAfterDataChanged();
-    showAppMessage("督促記録を保存しました。", false);
+    await runMutation("督促記録", async () => {
+      const currentCount = Number(sale.reminderCount || 0);
+      const payload = {
+        reminder_count: currentCount + 1,
+        last_reminder_date: normalizedReminderDate,
+        reminder_method: normalizedMethod,
+        reminder_memo: normalizedMemo,
+      };
+      console.log("REMINDER PAYLOAD", saleId, payload);
+      const { data, error } = await sbClient
+        .from("sales")
+        .update(payload)
+        .eq("id", saleId)
+        .eq("user_id", currentUser.id)
+        .select()
+        .single();
+      if (error) throw error;
+      if (!data) throw new Error("督促記録の更新結果を取得できませんでした。");
+      return data;
+    }, { successMessage: "督促記録を保存しました。" });
   } catch (error) {
     console.error("督促記録に失敗しました。", error);
     showAppMessage(`督促記録に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
-  } finally {
-    forceHideLoading();
   }
 }
 
@@ -1765,61 +1736,34 @@ async function handleRecordPayment(saleId) {
   if (memoInput === null) return;
   const memo = asTrimmedText(memoInput) || null;
 
-  startLoading("入金登録");
   try {
-    clearAppMessage();
-    console.log("PAYMENT START", { saleId, paymentDate, amount, method, memo });
-
-    const paymentPayload = {
-      user_id: currentUser.id,
-      sale_id: saleId,
-      payment_date: paymentDate,
-      amount,
-      method,
-      memo,
-    };
-
-    const { data: paymentData, error: paymentError } = await sbClient
-      .from("payments")
-      .insert(paymentPayload)
-      .select()
-      .single();
-    if (paymentError) throw paymentError;
-    if (!paymentData) throw new Error("入金登録結果を取得できませんでした。");
-
-    const existingPayments = (state.payments || []).filter((entry) => entry.saleId === saleId);
-    const existingPaidAmount = existingPayments.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-    const newPaidAmount = existingPaidAmount + amount;
-    const invoiceAmount = Number(sale.invoiceAmount || 0);
-    const paymentStatus = calculatePaymentStatus(invoiceAmount, newPaidAmount);
-
-    const salePayload = {
-      paid_amount: newPaidAmount,
-      paid_date: paymentDate,
-      payment_status: paymentStatus,
-      is_unpaid: paymentStatus !== "入金済",
-    };
-
-    const { data: saleData, error: saleError } = await sbClient
-      .from("sales")
-      .update(salePayload)
-      .eq("id", saleId)
-      .eq("user_id", currentUser.id)
-      .select()
-      .single();
-
-    if (saleError) throw saleError;
-    if (!saleData) throw new Error("売上の入金情報を更新できませんでした。");
-
-    await loadAllDataSafely();
-    renderAfterDataChanged();
-
-    showAppMessage("入金を登録しました。", false);
+    await runMutation("入金登録", async () => {
+      console.log("PAYMENT START", { saleId, paymentDate, amount, method, memo });
+      const paymentPayload = {
+        user_id: currentUser.id,
+        sale_id: saleId,
+        payment_date: paymentDate,
+        amount,
+        method,
+        memo,
+      };
+      const { data: paymentData, error: paymentError } = await sbClient.from("payments").insert(paymentPayload).select().single();
+      if (paymentError) throw paymentError;
+      if (!paymentData) throw new Error("入金登録結果を取得できませんでした。");
+      const existingPayments = (state.payments || []).filter((entry) => entry.saleId === saleId);
+      const existingPaidAmount = existingPayments.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+      const newPaidAmount = existingPaidAmount + amount;
+      const invoiceAmount = Number(sale.invoiceAmount || 0);
+      const paymentStatus = calculatePaymentStatus(invoiceAmount, newPaidAmount);
+      const salePayload = { paid_amount: newPaidAmount, paid_date: paymentDate, payment_status: paymentStatus, is_unpaid: paymentStatus !== "入金済" };
+      const { data: saleData, error: saleError } = await sbClient.from("sales").update(salePayload).eq("id", saleId).eq("user_id", currentUser.id).select().single();
+      if (saleError) throw saleError;
+      if (!saleData) throw new Error("売上の入金情報を更新できませんでした。");
+      return saleData;
+    }, { successMessage: "入金を登録しました。" });
   } catch (error) {
     console.error("入金登録に失敗しました。", error);
     showAppMessage(`入金登録に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
-  } finally {
-    forceHideLoading();
   }
 }
 
@@ -1833,20 +1777,13 @@ async function deletePayment(paymentId) {
   }
   if (!window.confirm("この入金履歴を削除しますか？")) return;
 
-  startLoading("入金削除");
-  try {
+  await runMutation("入金削除", async () => {
     const { data, error } = await sbClient.from("payments").delete().eq("id", paymentId).eq("user_id", currentUser.id).select().single();
     if (error) throw error;
     if (!data) throw new Error("入金削除結果を取得できませんでした。");
     await syncSalePaymentSummary(target.saleId);
-    await loadAllData();
-    renderAfterDataChanged();
-    showAppMessage("入金履歴を削除しました。", false);
-  } catch (error) {
-    showAppMessage(`入金削除に失敗しました。${formatSupabaseError(error)}`, true);
-  } finally {
-    forceHideLoading();
-  }
+    return data;
+  }, { successMessage: "入金履歴を削除しました。" });
 }
 
 async function startSaleEdit(saleId) {
@@ -2019,281 +1956,192 @@ async function handleClearAll() {
   await deleteAllData();
 }
 
-async function deleteClient(id) {
-  if (!currentUser) return;
-  if (!id) {
-    showAppMessage("削除対象の顧客IDがありません。", true);
-    return;
-  }
-  if (!window.confirm("この顧客を削除しますか？案件や見積は削除されません。")) return;
-  const taskName = "顧客削除";
-  startLoading(taskName);
+async function runMutation(actionName, mutationFn, options = {}) {
+  startLoading(actionName);
+  console.log("MUTATION START", actionName);
   try {
     clearAppMessage();
-    console.log("ACTION START", taskName, id);
-
-    const casesUpdateRes = await sbClient
-      .from("cases")
-      .update({ client_id: null })
-      .eq("client_id", id)
-      .eq("user_id", currentUser.id);
-    if (casesUpdateRes.error) throw casesUpdateRes.error;
-
-    const estimatesUpdateRes = await sbClient
-      .from("estimates")
-      .update({ client_id: null })
-      .eq("client_id", id)
-      .eq("user_id", currentUser.id);
-    if (estimatesUpdateRes.error) throw estimatesUpdateRes.error;
-
-    const reportsUpdateRes = await sbClient
-      .from("daily_reports")
-      .update({ client_id: null })
-      .eq("client_id", id)
-      .eq("user_id", currentUser.id);
-    if (reportsUpdateRes.error) throw reportsUpdateRes.error;
-
-    const clientDeleteRes = await sbClient
-      .from("clients")
-      .delete()
-      .eq("id", id)
-      .eq("user_id", currentUser.id);
-    if (clientDeleteRes.error) throw clientDeleteRes.error;
-    console.log("DB DONE", taskName, id);
-
-    if (editState.clientId === id) {
-      editState.clientId = null;
-      resetClientForm();
-    }
-
-    await loadAllData();
-    console.log("LOAD DONE", taskName);
+    const result = await mutationFn();
+    await loadAllDataSafely();
     renderAfterDataChanged();
-    console.log("RENDER DONE", taskName);
-    showAppMessage("顧客を削除しました。", false);
+    console.log("MUTATION SUCCESS", actionName);
+    if (typeof options.resetForm === "function") options.resetForm();
+    if (typeof options.afterSuccess === "function") options.afterSuccess(result);
+    showAppMessage(options.successMessage || `${actionName}が完了しました。`, false);
+    return result;
   } catch (error) {
-    console.error("顧客削除に失敗しました。", error);
-    showAppMessage(`顧客削除に失敗しました。${error.message || ""}`, true);
+    console.error(`${actionName}に失敗しました`, error);
+    showAppMessage(
+      `${actionName}に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.trim(),
+      true
+    );
+    throw error;
   } finally {
-    console.log("ACTION FINALLY", taskName);
     forceHideLoading();
   }
+}
+
+async function deleteRecord({ table, id, actionName, confirmMessage, beforeDelete, afterSuccess }) {
+  if (!currentUser) {
+    showAppMessage("ログイン状態を確認できません。", true);
+    return;
+  }
+  if (!id) {
+    showAppMessage(`${actionName}対象IDを取得できませんでした。`, true);
+    return;
+  }
+  if (confirmMessage && !window.confirm(confirmMessage)) return;
+
+  await runMutation(actionName, async () => {
+    if (beforeDelete) await beforeDelete(id);
+    const { data, error } = await sbClient
+      .from(table)
+      .delete()
+      .eq("id", id)
+      .eq("user_id", currentUser.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }, {
+    successMessage: `${actionName}しました。`,
+    afterSuccess,
+  });
+}
+
+async function deleteClient(id) {
+  await deleteRecord({
+    table: "clients",
+    id,
+    actionName: "顧客削除",
+    confirmMessage: "この顧客を削除しますか？案件や見積は削除されません。",
+    beforeDelete: async (clientId) => {
+      const casesUpdateRes = await sbClient.from("cases").update({ client_id: null }).eq("client_id", clientId).eq("user_id", currentUser.id);
+      if (casesUpdateRes.error) throw casesUpdateRes.error;
+      const estimatesUpdateRes = await sbClient.from("estimates").update({ client_id: null }).eq("client_id", clientId).eq("user_id", currentUser.id);
+      if (estimatesUpdateRes.error) throw estimatesUpdateRes.error;
+      const reportsUpdateRes = await sbClient.from("daily_reports").update({ client_id: null }).eq("client_id", clientId).eq("user_id", currentUser.id);
+      if (reportsUpdateRes.error) throw reportsUpdateRes.error;
+    },
+    afterSuccess: () => {
+      if (editState.clientId === id) {
+        editState.clientId = null;
+        resetClientForm();
+      }
+    },
+  });
 }
 
 async function deleteCase(id) {
-  if (!currentUser) return;
-  if (!id) {
-    showAppMessage("削除対象の案件IDがありません。", true);
-    return;
-  }
-  if (!window.confirm("この案件を削除しますか？関連する売上・経費も削除されます。")) return;
-  const taskName = "案件削除";
-  startLoading(taskName);
-  try {
-    clearAppMessage();
-    console.log("ACTION START", taskName, id);
-
-    const caseSales = state.sales.filter((entry) => entry.caseId === id);
-    for (const sale of caseSales) {
-      const paymentDeleteRes = await sbClient.from("payments").delete().eq("sale_id", sale.id).eq("user_id", currentUser.id);
-      if (paymentDeleteRes.error) throw paymentDeleteRes.error;
-    }
-    const salesDeleteRes = await sbClient.from("sales").delete().eq("case_id", id).eq("user_id", currentUser.id);
-    if (salesDeleteRes.error) throw salesDeleteRes.error;
-    const caseTasksDeleteRes = await sbClient.from("case_tasks").delete().eq("case_id", id).eq("user_id", currentUser.id);
-    if (caseTasksDeleteRes.error) throw caseTasksDeleteRes.error;
-    const expensesDeleteRes = await sbClient.from("expenses").delete().eq("case_id", id).eq("user_id", currentUser.id);
-    if (expensesDeleteRes.error) throw expensesDeleteRes.error;
-    const reportsUpdateRes = await sbClient.from("daily_reports").update({ case_id: null }).eq("case_id", id).eq("user_id", currentUser.id);
-    if (reportsUpdateRes.error) throw reportsUpdateRes.error;
-    const estimatesUpdateRes = await sbClient.from("estimates").update({ case_id: null }).eq("case_id", id).eq("user_id", currentUser.id);
-    if (estimatesUpdateRes.error) throw estimatesUpdateRes.error;
-    const caseDeleteRes = await sbClient.from("cases").delete().eq("id", id).eq("user_id", currentUser.id);
-    if (caseDeleteRes.error) throw caseDeleteRes.error;
-    console.log("DB DONE", taskName, id);
-
-    if (editState.caseId === id) {
-      editState.caseId = null;
-      resetCaseForm();
-    }
-
-    await loadAllData();
-    console.log("LOAD DONE", taskName);
-    renderAfterDataChanged();
-    console.log("RENDER DONE", taskName);
-    showAppMessage("案件を削除しました。", false);
-  } catch (error) {
-    console.error("案件削除に失敗しました。", error);
-    showAppMessage(`案件削除に失敗しました。${error.message || ""}`, true);
-  } finally {
-    console.log("ACTION FINALLY", taskName);
-    forceHideLoading();
-  }
+  await deleteRecord({
+    table: "cases",
+    id,
+    actionName: "案件削除",
+    confirmMessage: "この案件を削除しますか？関連する売上・経費も削除されます。",
+    beforeDelete: async (caseId) => {
+      const caseSales = state.sales.filter((entry) => entry.caseId === caseId);
+      for (const sale of caseSales) {
+        const paymentDeleteRes = await sbClient.from("payments").delete().eq("sale_id", sale.id).eq("user_id", currentUser.id);
+        if (paymentDeleteRes.error) throw paymentDeleteRes.error;
+      }
+      const salesDeleteRes = await sbClient.from("sales").delete().eq("case_id", caseId).eq("user_id", currentUser.id);
+      if (salesDeleteRes.error) throw salesDeleteRes.error;
+      const caseTasksDeleteRes = await sbClient.from("case_tasks").delete().eq("case_id", caseId).eq("user_id", currentUser.id);
+      if (caseTasksDeleteRes.error) throw caseTasksDeleteRes.error;
+      const expensesDeleteRes = await sbClient.from("expenses").delete().eq("case_id", caseId).eq("user_id", currentUser.id);
+      if (expensesDeleteRes.error) throw expensesDeleteRes.error;
+      const reportsUpdateRes = await sbClient.from("daily_reports").update({ case_id: null }).eq("case_id", caseId).eq("user_id", currentUser.id);
+      if (reportsUpdateRes.error) throw reportsUpdateRes.error;
+      const estimatesUpdateRes = await sbClient.from("estimates").update({ case_id: null }).eq("case_id", caseId).eq("user_id", currentUser.id);
+      if (estimatesUpdateRes.error) throw estimatesUpdateRes.error;
+    },
+    afterSuccess: () => {
+      if (editState.caseId === id) {
+        editState.caseId = null;
+        resetCaseForm();
+      }
+    },
+  });
 }
 
 async function deleteWorkTemplate(id) {
-  if (!currentUser) return;
-  if (!window.confirm("この業務テンプレートを削除しますか？")) return;
-  const taskName = "業務テンプレート削除";
-  startLoading(taskName);
-  try {
-    const caseUpdateRes = await sbClient.from("cases")
-      .update({ template_id: null })
-      .eq("template_id", id)
-      .eq("user_id", currentUser.id);
-    if (caseUpdateRes.error) throw caseUpdateRes.error;
-    const { error } = await sbClient.from("work_templates").delete().eq("id", id).eq("user_id", currentUser.id);
-    if (error) throw error;
-    if (editState.workTemplateId === id) resetWorkTemplateForm();
-    await loadAllData();
-    renderAfterDataChanged();
-    showAppMessage("業務テンプレートを削除しました。", false);
-  } catch (error) {
-    showAppMessage(`業務テンプレート削除に失敗しました。${error?.message || ""}`, true);
-  } finally {
-    forceHideLoading();
-  }
+  await deleteRecord({
+    table: "work_templates",
+    id,
+    actionName: "業務テンプレート削除",
+    confirmMessage: "この業務テンプレートを削除しますか？",
+    beforeDelete: async (templateId) => {
+      const caseUpdateRes = await sbClient.from("cases").update({ template_id: null }).eq("template_id", templateId).eq("user_id", currentUser.id);
+      if (caseUpdateRes.error) throw caseUpdateRes.error;
+    },
+    afterSuccess: () => {
+      if (editState.workTemplateId === id) resetWorkTemplateForm();
+    },
+  });
 }
 
 async function deleteSale(id) {
-  if (!currentUser) return;
-  if (!id) {
-    showAppMessage("削除対象の売上IDがありません。", true);
-    return;
-  }
-  if (!window.confirm("この売上を削除しますか？")) return;
-  const taskName = "売上削除";
-  startLoading(taskName);
-  try {
-    clearAppMessage();
-    console.log("ACTION START", taskName, id);
-    const paymentDeleteRes = await sbClient.from("payments").delete().eq("sale_id", id).eq("user_id", currentUser.id);
-    if (paymentDeleteRes.error) throw paymentDeleteRes.error;
-    const { error } = await sbClient.from("sales").delete().eq("id", id).eq("user_id", currentUser.id);
-    if (error) throw error;
-    console.log("DB DONE", taskName, id);
-
-    if (editState.saleId === id) {
+  console.log("DELETE SALE CLICKED", id);
+  await deleteRecord({
+    table: "sales",
+    id,
+    actionName: "売上削除",
+    confirmMessage: "この売上を削除しますか？関連する入金履歴も削除されます。",
+    beforeDelete: async (saleId) => {
+      const { error } = await sbClient.from("payments").delete().eq("sale_id", saleId).eq("user_id", currentUser.id);
+      if (error) console.error("payments削除エラー", error);
+    },
+    afterSuccess: () => {
       editState.saleId = null;
-      resetSaleForm();
-    }
-    await loadAllData();
-    console.log("LOAD DONE", taskName);
-    renderAfterDataChanged();
-    console.log("RENDER DONE", taskName);
-    showAppMessage("削除しました。", false);
-  } catch (error) {
-    console.error("削除に失敗しました。", error);
-    showAppMessage(
-      `削除に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.trim(),
-      true
-    );
-  } finally {
-    console.log("ACTION FINALLY", taskName);
-    forceHideLoading();
-  }
+      resetSaleForm?.();
+      activateSubtab?.("sales", "list");
+    },
+  });
 }
 
 async function deleteExpense(id) {
-  if (!currentUser) return;
-  if (!id) {
-    showAppMessage("削除対象の経費IDがありません。", true);
-    return;
-  }
-  if (!window.confirm("この経費を削除しますか？")) return;
-  const taskName = "経費削除";
-  startLoading(taskName);
-  try {
-    clearAppMessage();
-    console.log("ACTION START", taskName, id);
-    const { error } = await sbClient.from("expenses").delete().eq("id", id).eq("user_id", currentUser.id);
-    if (error) throw error;
-    console.log("DB DONE", taskName, id);
-
-    if (editState.expenseId === id) {
-      editState.expenseId = null;
-      resetExpenseForm();
-    }
-    await loadAllData();
-    console.log("LOAD DONE", taskName);
-    renderAfterDataChanged();
-    console.log("RENDER DONE", taskName);
-    showAppMessage("削除しました。", false);
-  } catch (error) {
-    console.error("削除に失敗しました。", error);
-    showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
-  } finally {
-    console.log("ACTION FINALLY", taskName);
-    forceHideLoading();
-  }
+  await deleteRecord({
+    table: "expenses",
+    id,
+    actionName: "経費削除",
+    confirmMessage: "この経費を削除しますか？",
+    afterSuccess: () => {
+      if (editState.expenseId === id) {
+        editState.expenseId = null;
+        resetExpenseForm();
+      }
+    },
+  });
 }
 
 async function deleteFixedExpense(id) {
-  if (!currentUser) return;
-  if (!id) {
-    showAppMessage("削除対象の固定費IDがありません。", true);
-    return;
-  }
-  if (!window.confirm("この固定費を削除しますか？")) return;
-  const taskName = "固定費削除";
-  startLoading(taskName);
-  try {
-    clearAppMessage();
-    console.log("ACTION START", taskName, id);
-    const { error } = await sbClient.from("fixed_expenses").delete().eq("id", id).eq("user_id", currentUser.id);
-    if (error) throw error;
-    console.log("DB DONE", taskName, id);
-
-    if (editState.fixedExpenseId === id) {
-      editState.fixedExpenseId = null;
-      resetFixedExpenseForm();
-    }
-    await loadAllData();
-    console.log("LOAD DONE", taskName);
-    renderAfterDataChanged();
-    console.log("RENDER DONE", taskName);
-    showAppMessage("削除しました。", false);
-  } catch (error) {
-    console.error("削除に失敗しました。", error);
-    showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
-  } finally {
-    console.log("ACTION FINALLY", taskName);
-    forceHideLoading();
-  }
+  await deleteRecord({
+    table: "fixed_expenses",
+    id,
+    actionName: "固定費削除",
+    confirmMessage: "この固定費を削除しますか？",
+    afterSuccess: () => {
+      if (editState.fixedExpenseId === id) {
+        editState.fixedExpenseId = null;
+        resetFixedExpenseForm();
+      }
+    },
+  });
 }
 
 async function deleteDailyReport(id) {
-  if (!currentUser) return;
-  if (!id) {
-    showAppMessage("削除対象の日報IDがありません。", true);
-    return;
-  }
-  if (!window.confirm("この日報を削除しますか？")) return;
-  const taskName = "日報削除";
-  startLoading(taskName);
-  try {
-    clearAppMessage();
-    console.log("ACTION START", taskName, id);
-    const { error } = await sbClient.from("daily_reports").delete().eq("id", id).eq("user_id", currentUser.id);
-    if (error) throw error;
-    console.log("DB DONE", taskName, id);
-
-    if (editState.dailyReportId === id) {
-      editState.dailyReportId = null;
-      resetDailyReportForm();
-    }
-    await loadAllData();
-    console.log("LOAD DONE", taskName);
-    renderAfterDataChanged();
-    console.log("RENDER DONE", taskName);
-    showAppMessage("削除しました。", false);
-  } catch (error) {
-    console.error("削除に失敗しました。", error);
-    showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
-  } finally {
-    console.log("ACTION FINALLY", taskName);
-    forceHideLoading();
-  }
+  await deleteRecord({
+    table: "daily_reports",
+    id,
+    actionName: "日報削除",
+    confirmMessage: "この日報を削除しますか？",
+    afterSuccess: () => {
+      if (editState.dailyReportId === id) {
+        editState.dailyReportId = null;
+        resetDailyReportForm();
+      }
+    },
+  });
 }
 
 async function deleteAllData() {
@@ -3037,6 +2885,7 @@ function renderAfterDataChanged() {
   safeRender("pendingEstimates", renderPendingEstimates);
   safeRender("clientAnalysis", renderClientAnalysis);
   safeRender("referralAnalysis", renderReferralAnalysis);
+  console.log("RENDER DONE");
 }
 
 function renderPayments() {
@@ -4957,7 +4806,7 @@ function renderSales() {
         <td>${canRecordReminder ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : "-"}</td>
         <td><button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-sale-id="${sale.id}">入金登録</button></td>
         <td><button type="button" class="edit-btn secondary-btn">編集</button></td>
-        <td><button type="button" class="danger-btn delete-btn">削除</button></td>
+        <td><button type="button" class="danger-btn delete-btn delete-sale-btn" data-sale-id="${sale.id}">削除</button></td>
       `;
       salesListBody.appendChild(tr);
     } catch (error) {
@@ -7380,29 +7229,28 @@ function startLoading(taskName) {
   loadingCount += 1;
   console.log("LOADING START", taskName, loadingCount);
   updateLoadingOverlay();
-  if (loadingTimeoutId) window.clearTimeout(loadingTimeoutId);
-  loadingTimeoutId = window.setTimeout(() => {
-    console.warn("LOADING TIMEOUT FORCE HIDE", taskName);
+  if (loadingTimer) window.clearTimeout(loadingTimer);
+  loadingTimer = window.setTimeout(() => {
+    console.warn("LOADING FORCE TIMEOUT", taskName);
     forceHideLoading();
-    showAppMessage("読み込みが長時間継続したため自動解除しました。", true);
-  }, 10000);
+  }, 8000);
 }
 
 function endLoading(taskName) {
   loadingCount = Math.max(0, loadingCount - 1);
   console.log("LOADING END", taskName, loadingCount);
-  if (loadingCount === 0 && loadingTimeoutId) {
-    window.clearTimeout(loadingTimeoutId);
-    loadingTimeoutId = null;
+  if (loadingCount === 0 && loadingTimer) {
+    window.clearTimeout(loadingTimer);
+    loadingTimer = null;
   }
   updateLoadingOverlay();
 }
 
 function forceHideLoading() {
   loadingCount = 0;
-  if (loadingTimeoutId) {
-    window.clearTimeout(loadingTimeoutId);
-    loadingTimeoutId = null;
+  if (loadingTimer) {
+    window.clearTimeout(loadingTimer);
+    loadingTimer = null;
   }
   updateLoadingOverlay();
 }
