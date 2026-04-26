@@ -30,6 +30,7 @@ const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 const state = {
   clients: [],
   cases: [],
+  workTemplates: [],
   estimates: [],
   estimateItems: [],
   sales: [],
@@ -51,7 +52,7 @@ const state = {
   estimateStatusFilter: "all",
   estimateExpiredFilter: "all",
 };
-const editState = { clientId: null, caseId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null };
+const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null };
 
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
@@ -83,6 +84,7 @@ const subtabPanels = Array.from(document.querySelectorAll(".subtab-panel"));
 const panels = {
   clients: document.getElementById("tab-clients"),
   cases: document.getElementById("tab-cases"),
+  "work-templates": document.getElementById("tab-work-templates"),
   estimates: document.getElementById("tab-estimates"),
   sales: document.getElementById("tab-sales"),
   expenses: document.getElementById("tab-expenses"),
@@ -91,6 +93,7 @@ const panels = {
 const dashboardSection = document.querySelector(".dashboard");
 const subtabState = {
   cases: "dashboard",
+  "work-templates": "entry",
   estimates: "create",
   sales: "entry",
   expenses: "entry",
@@ -157,6 +160,7 @@ const caseClientSelect = document.getElementById("case-client-id");
 const estimateClientSelect = document.getElementById("estimate-client-id");
 
 const caseForm = document.getElementById("case-form");
+const caseTemplateSelect = document.getElementById("case-template-id");
 const caseList = document.getElementById("case-list");
 const caseEmpty = document.getElementById("case-empty");
 const clearBtn = document.getElementById("clear-btn");
@@ -202,6 +206,11 @@ const dailyReportFilterClearBtn = document.getElementById("daily-report-filter-c
 const dailyReportFilterCount = document.getElementById("daily-report-filter-count");
 
 const caseItemTemplate = document.getElementById("case-item-template");
+const workTemplateForm = document.getElementById("work-template-form");
+const workTemplateSubmitBtn = document.getElementById("work-template-submit-btn");
+const workTemplatesList = document.getElementById("work-templates-list");
+const workTemplatesEmpty = document.getElementById("work-templates-empty");
+const workTemplateItemTemplate = document.getElementById("work-template-item-template");
 const saleItemTemplate = document.getElementById("sale-item-template");
 const expenseItemTemplate = document.getElementById("expense-item-template");
 const fixedExpenseItemTemplate = document.getElementById("fixed-expense-item-template");
@@ -225,9 +234,9 @@ let isLoggingOut = false;
 let eventsBound = false;
 let loadingCount = 0;
 let loadingTimeoutId = null;
-const BACKUP_TABLE_KEYS = ["clients", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
-const RESTORE_INSERT_ORDER = ["clients", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
-const RESTORE_DELETE_ORDER = ["estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "estimates", "cases", "clients"];
+const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
+const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
+const RESTORE_DELETE_ORDER = ["estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "estimates", "cases", "work_templates", "clients"];
 
 initialize();
 
@@ -290,6 +299,7 @@ function bindEvents() {
 
   clientForm?.addEventListener("submit", handleClientSubmit);
   caseForm.addEventListener("submit", handleCaseSubmit);
+  workTemplateForm?.addEventListener("submit", handleWorkTemplateSubmit);
   saleForm.addEventListener("submit", handleSaleSubmit);
   expenseForm.addEventListener("submit", handleExpenseSubmit);
   fixedExpenseForm.addEventListener("submit", handleFixedExpenseSubmit);
@@ -299,6 +309,7 @@ function bindEvents() {
   clearBtn.addEventListener("click", handleClearAll);
   clientsList?.addEventListener("click", handleClientListAction);
   caseList.addEventListener("click", handleCaseListAction);
+  workTemplatesList?.addEventListener("click", handleWorkTemplateListAction);
   salesList.addEventListener("click", handleSalesListAction);
   expensesList.addEventListener("click", handleExpensesListAction);
   fixedExpensesList.addEventListener("click", handleFixedExpensesListAction);
@@ -350,6 +361,7 @@ function bindEvents() {
   estimateItemsWrap?.addEventListener("click", handleEstimateItemsClick);
   estimateList?.addEventListener("click", handleEstimateListAction);
   caseClientSelect?.addEventListener("change", syncCaseCustomerFromClient);
+  caseTemplateSelect?.addEventListener("change", handleCaseTemplateChange);
   estimateClientSelect?.addEventListener("change", syncEstimateCustomerFromClient);
   estimateCustomerSearch?.addEventListener("input", (event) => {
     state.estimateCustomerQuery = String(event.target.value || "").trim().toLowerCase();
@@ -600,8 +612,9 @@ async function handleLogout() {
 async function loadAllData() {
   if (!currentUser || isLoggingOut) return;
 
-  const [clientsRes, casesRes, estimatesRes, estimateItemsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes] = await Promise.all([
+  const [clientsRes, workTemplatesRes, casesRes, estimatesRes, estimateItemsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes] = await Promise.all([
     sbClient.from("clients").select("*").eq("user_id", currentUser.id),
+    sbClient.from("work_templates").select("*").eq("user_id", currentUser.id),
     sbClient.from("cases").select("*").eq("user_id", currentUser.id),
     sbClient.from("estimates").select("*").eq("user_id", currentUser.id),
     sbClient.from("estimate_items").select("*").eq("user_id", currentUser.id),
@@ -612,6 +625,7 @@ async function loadAllData() {
   ]);
 
   if (clientsRes.error) throw clientsRes.error;
+  if (workTemplatesRes.error) throw workTemplatesRes.error;
   if (casesRes.error) throw casesRes.error;
   if (estimatesRes.error) throw estimatesRes.error;
   if (estimateItemsRes.error) throw estimateItemsRes.error;
@@ -621,6 +635,11 @@ async function loadAllData() {
   if (dailyReportsRes.error) throw dailyReportsRes.error;
 
   state.clients = (clientsRes.data || []).map(mapClientFromDb);
+  state.workTemplates = (workTemplatesRes.data || []).map(mapWorkTemplateFromDb);
+  if (!state.workTemplates.length) {
+    const seeded = await seedDefaultWorkTemplates();
+    if (seeded.length) state.workTemplates = seeded;
+  }
   state.cases = (casesRes.data || []).map(mapCaseFromDb);
   state.estimates = (estimatesRes.data || []).map(mapEstimateFromDb);
   state.estimateItems = (estimateItemsRes.data || []).map(mapEstimateItemFromDb);
@@ -706,11 +725,14 @@ async function handleCaseSubmit(event) {
   const payload = {
     user_id: currentUser.id,
     client_id: selectedClientId,
+    template_id: caseForm.elements.caseTemplateId.value || null,
     customer_name: selectedClient?.name || customerName,
     case_name: caseName,
     estimate_amount: normalizeAmount(caseForm.elements.amount.value),
     received_date: caseForm.elements.receivedDate.value || null,
     due_date: caseForm.elements.dueDate.value || null,
+    required_documents: asTrimmedText(caseForm.elements.requiredDocuments.value) || null,
+    task_list: asTrimmedText(caseForm.elements.taskList.value) || null,
     work_memo: asTrimmedText(caseForm.elements.workMemo.value) || null,
     next_action_date: caseForm.elements.nextActionDate.value || null,
     next_action: asTrimmedText(caseForm.elements.nextAction.value) || null,
@@ -752,6 +774,44 @@ async function handleCaseSubmit(event) {
     showAppMessage(`案件保存に失敗しました。${error?.message || ""}`, true);
   } finally {
     console.log("ACTION FINALLY", actionName);
+    forceHideLoading();
+  }
+}
+
+async function handleWorkTemplateSubmit(event) {
+  event.preventDefault();
+  if (!currentUser || !workTemplateForm) return;
+  const name = asTrimmedText(workTemplateForm.elements.templateName.value);
+  if (!name) return;
+  const payload = {
+    user_id: currentUser.id,
+    name,
+    default_due_days: normalizeAmount(workTemplateForm.elements.templateDefaultDueDays.value),
+    required_documents: asTrimmedText(workTemplateForm.elements.templateRequiredDocuments.value) || null,
+    default_tasks: asTrimmedText(workTemplateForm.elements.templateDefaultTasks.value) || null,
+    memo: asTrimmedText(workTemplateForm.elements.templateMemo.value) || null,
+  };
+  const taskName = editState.workTemplateId ? "業務テンプレート更新" : "業務テンプレート登録";
+  const actionName = taskName;
+  try {
+    await withLoading(taskName, async () => {
+      if (editState.workTemplateId) {
+        const { data, error } = await sbClient.from("work_templates").update(payload).eq("id", editState.workTemplateId).eq("user_id", currentUser.id).select().single();
+        if (error) throw error;
+        if (!data) throw new Error("更新結果を取得できませんでした。");
+        await refreshAfterMutation(actionName, "業務テンプレートを更新しました。");
+        resetWorkTemplateForm();
+        return;
+      }
+      const { data, error } = await sbClient.from("work_templates").insert(payload).select().single();
+      if (error) throw error;
+      if (!data) throw new Error("登録結果を取得できませんでした。");
+      await refreshAfterMutation(actionName, "業務テンプレートを登録しました。");
+      resetWorkTemplateForm();
+    }, { triggerButton: event.submitter });
+  } catch (error) {
+    showAppMessage(`業務テンプレート保存に失敗しました。${error?.message || ""}`, true);
+  } finally {
     forceHideLoading();
   }
 }
@@ -1053,11 +1113,14 @@ async function startCaseEdit(caseId) {
     activateTab("cases");
     editState.caseId = target.id;
     caseForm.elements.caseClientId.value = target.clientId || "";
+    caseForm.elements.caseTemplateId.value = target.templateId || "";
     caseForm.elements.customerName.value = target.customerName;
     caseForm.elements.caseName.value = target.caseName;
     caseForm.elements.amount.value = target.estimateAmount ?? "";
     caseForm.elements.receivedDate.value = target.receivedDate || "";
     caseForm.elements.dueDate.value = target.dueDate || "";
+    caseForm.elements.requiredDocuments.value = target.requiredDocuments || "";
+    caseForm.elements.taskList.value = target.taskList || "";
     caseForm.elements.workMemo.value = sanitizeLegacyEstimateMemo(target.workMemo) || "";
     caseForm.elements.nextActionDate.value = target.nextActionDate || "";
     caseForm.elements.nextAction.value = target.nextAction || "";
@@ -1067,6 +1130,56 @@ async function startCaseEdit(caseId) {
     caseForm.elements.status.value = normalizeStatus(target.status);
     caseSubmitBtn.textContent = "案件を更新";
     caseForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function handleCaseTemplateChange(event) {
+  const templateId = event?.target?.value || "";
+  if (!templateId || !caseForm) return;
+  const found = state.workTemplates.find((entry) => entry.id === templateId);
+  if (!found) return;
+  const today = new Date();
+  const dueDate = Number.isFinite(found.defaultDueDays) && found.defaultDueDays >= 0
+    ? toDateString(new Date(today.getTime() + found.defaultDueDays * 24 * 60 * 60 * 1000))
+    : "";
+  if (!asTrimmedText(caseForm.elements.caseName.value)) {
+    caseForm.elements.caseName.value = found.name;
+  }
+  if (dueDate) caseForm.elements.dueDate.value = dueDate;
+  caseForm.elements.requiredDocuments.value = found.requiredDocuments || "";
+  caseForm.elements.taskList.value = convertTasksToChecklist(found.defaultTasks);
+  if (!asTrimmedText(caseForm.elements.workMemo.value)) {
+    caseForm.elements.workMemo.value = found.memo || "";
+  }
+}
+
+async function handleWorkTemplateListAction(event) {
+  const btn = event.target.closest("button");
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const item = btn.closest("[data-id]");
+  if (!item || !currentUser) return;
+  const id = item.dataset.id;
+  if (!id) return;
+  if (btn.classList.contains("edit-btn")) {
+    startWorkTemplateEdit(id);
+    return;
+  }
+  if (btn.classList.contains("delete-btn")) {
+    await deleteWorkTemplate(id);
+  }
+}
+
+function startWorkTemplateEdit(templateId) {
+  const target = state.workTemplates.find((entry) => entry.id === templateId);
+  if (!target || !workTemplateForm) return;
+  editState.workTemplateId = target.id;
+  workTemplateForm.elements.templateName.value = target.name;
+  workTemplateForm.elements.templateDefaultDueDays.value = target.defaultDueDays ?? "";
+  workTemplateForm.elements.templateRequiredDocuments.value = target.requiredDocuments || "";
+  workTemplateForm.elements.templateDefaultTasks.value = target.defaultTasks || "";
+  workTemplateForm.elements.templateMemo.value = target.memo || "";
+  workTemplateSubmitBtn.textContent = "テンプレートを更新";
+  activateTab("work-templates");
+  workTemplateForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 
@@ -1409,6 +1522,30 @@ async function deleteCase(id) {
   }
 }
 
+async function deleteWorkTemplate(id) {
+  if (!currentUser) return;
+  if (!window.confirm("この業務テンプレートを削除しますか？")) return;
+  const taskName = "業務テンプレート削除";
+  startLoading(taskName);
+  try {
+    const caseUpdateRes = await sbClient.from("cases")
+      .update({ template_id: null })
+      .eq("template_id", id)
+      .eq("user_id", currentUser.id);
+    if (caseUpdateRes.error) throw caseUpdateRes.error;
+    const { error } = await sbClient.from("work_templates").delete().eq("id", id).eq("user_id", currentUser.id);
+    if (error) throw error;
+    if (editState.workTemplateId === id) resetWorkTemplateForm();
+    await loadAllData();
+    renderAfterDataChanged();
+    showAppMessage("業務テンプレートを削除しました。", false);
+  } catch (error) {
+    showAppMessage(`業務テンプレート削除に失敗しました。${error?.message || ""}`, true);
+  } finally {
+    forceHideLoading();
+  }
+}
+
 async function deleteSale(id) {
   if (!currentUser) return;
   if (!id) {
@@ -1547,13 +1684,13 @@ async function deleteDailyReport(id) {
 
 async function deleteAllData() {
   if (!currentUser) return;
-  if (!window.confirm("顧客・見積・案件・売上・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
+  if (!window.confirm("顧客・業務テンプレート・見積・案件・売上・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
   const taskName = "全件削除";
   startLoading(taskName);
   try {
     clearAppMessage();
     console.log("DELETE START", taskName, "all");
-    const [estimateItemsRes, estimatesRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes, clientsRes] = await Promise.all([
+    const [estimateItemsRes, estimatesRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes, workTemplatesRes, clientsRes] = await Promise.all([
       sbClient.from("estimate_items").delete().eq("user_id", currentUser.id),
       sbClient.from("estimates").delete().eq("user_id", currentUser.id),
       sbClient.from("sales").delete().eq("user_id", currentUser.id),
@@ -1561,6 +1698,7 @@ async function deleteAllData() {
       sbClient.from("fixed_expenses").delete().eq("user_id", currentUser.id),
       sbClient.from("daily_reports").delete().eq("user_id", currentUser.id),
       sbClient.from("cases").delete().eq("user_id", currentUser.id),
+      sbClient.from("work_templates").delete().eq("user_id", currentUser.id),
       sbClient.from("clients").delete().eq("user_id", currentUser.id),
     ]);
 
@@ -1571,10 +1709,12 @@ async function deleteAllData() {
     if (fixedExpensesRes.error) throw fixedExpensesRes.error;
     if (dailyReportsRes.error) throw dailyReportsRes.error;
     if (casesRes.error) throw casesRes.error;
+    if (workTemplatesRes.error) throw workTemplatesRes.error;
     if (clientsRes.error) throw clientsRes.error;
     console.log("DELETE DB DONE", taskName, "all");
     resetClientForm();
     resetCaseForm();
+    resetWorkTemplateForm();
     resetEstimateForm();
     resetSaleForm();
     resetExpenseForm();
@@ -1597,11 +1737,14 @@ async function deleteAllData() {
 function handleExportCasesCsv() {
   const rows = state.cases.map((entry) => ({
     client_id: entry.clientId || "",
+    template_id: entry.templateId || "",
     customer_name: entry.customerName,
     case_name: entry.caseName,
     estimate_amount: entry.estimateAmount ?? "",
     received_date: entry.receivedDate || "",
     due_date: entry.dueDate || "",
+    required_documents: entry.requiredDocuments || "",
+    task_list: entry.taskList || "",
     status: normalizeStoredStatus(entry.status),
     work_memo: sanitizeLegacyEstimateMemo(entry.workMemo) || "",
     next_action_date: entry.nextActionDate || "",
@@ -1610,7 +1753,7 @@ function handleExportCasesCsv() {
     invoice_url: entry.invoiceUrl || "",
     receipt_url: entry.receiptUrl || "",
   }));
-  downloadCsvFile("cases.csv", ["client_id", "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status", "work_memo", "next_action_date", "next_action", "document_url", "invoice_url", "receipt_url"], rows);
+  downloadCsvFile("cases.csv", ["client_id", "template_id", "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "required_documents", "task_list", "status", "work_memo", "next_action_date", "next_action", "document_url", "invoice_url", "receipt_url"], rows);
 }
 
 function handleExportSalesCsv() {
@@ -2128,6 +2271,8 @@ function safeRender(name, fn) {
 function renderAfterDataChanged() {
   safeRender("clients", renderClients);
   safeRender("clientOptions", renderClientOptions);
+  safeRender("workTemplates", renderWorkTemplates);
+  safeRender("workTemplateOptions", renderWorkTemplateOptions);
   safeRender("caseOptions", renderCaseOptions);
   safeRender("cases", renderCases);
   safeRender("estimates", renderEstimates);
@@ -2231,6 +2376,7 @@ function normalizeTabKey(tabKey) {
   if (["clients", "client", "顧客"].includes(key)) return "clients";
   if (["estimates", "estimate", "見積", "見積もり"].includes(key)) return "estimates";
   if (["cases", "案件"].includes(key)) return "cases";
+  if (["work-templates", "workTemplates", "template", "templates", "業務テンプレート", "テンプレート"].includes(key)) return "work-templates";
   if (["sales", "売上"].includes(key)) return "sales";
   if (["expenses", "経費"].includes(key)) return "expenses";
   return "cases";
@@ -2846,6 +2992,18 @@ function renderCaseOptions() {
   reportCaseSelect.innerHTML = `<option value="">案件なし</option>${options}`;
 }
 
+function renderWorkTemplateOptions() {
+  if (!caseTemplateSelect) return;
+  const currentValue = caseTemplateSelect.value;
+  const options = state.workTemplates
+    .slice()
+    .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
+    .map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)}${Number.isFinite(entry.defaultDueDays) ? `（${entry.defaultDueDays}日）` : ""}</option>`)
+    .join("");
+  caseTemplateSelect.innerHTML = `<option value="">テンプレートを選択してください</option>${options}`;
+  if (currentValue) caseTemplateSelect.value = currentValue;
+}
+
 function renderClientOptions() {
   if (!caseClientSelect && !estimateClientSelect) return;
   const options = state.clients
@@ -2890,6 +3048,24 @@ function renderClients() {
     clientsList.appendChild(li);
   });
   clientsEmpty.hidden = sorted.length > 0;
+}
+
+function renderWorkTemplates() {
+  if (!workTemplatesList || !workTemplatesEmpty || !workTemplateItemTemplate) return;
+  workTemplatesList.innerHTML = "";
+  const sorted = state.workTemplates.slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+  sorted.forEach((entry) => {
+    const node = workTemplateItemTemplate.content.cloneNode(true);
+    const item = node.querySelector(".item");
+    const title = node.querySelector(".title");
+    const metas = node.querySelectorAll(".meta");
+    item.dataset.id = entry.id;
+    title.textContent = entry.name;
+    if (metas[0]) metas[0].textContent = `標準期限: ${Number.isFinite(entry.defaultDueDays) ? `${entry.defaultDueDays}日後` : "未設定"} / 必要書類: ${truncateText(entry.requiredDocuments || "未設定", 80)}`;
+    if (metas[1]) metas[1].textContent = `標準タスク: ${truncateText(entry.defaultTasks || "未設定", 90)} / メモ: ${truncateText(entry.memo || "未設定", 60)}`;
+    workTemplatesList.appendChild(node);
+  });
+  workTemplatesEmpty.hidden = sorted.length > 0;
 }
 
 function renderDailyReports() {
@@ -3289,6 +3465,8 @@ function renderCases() {
     const rowActions = node.querySelector(".row-actions");
     const totals = profitsByCaseId[entry.id] || { sales: 0, expenses: 0, profit: 0 };
     const nextActionInfo = getNextActionInfo(entry);
+    const templateName = state.workTemplates.find((template) => template.id === entry.templateId)?.name || "未設定";
+    const incompleteTasks = getIncompleteTaskCount(entry.taskList);
 
     item.dataset.id = entry.id;
     title.textContent = `${entry.customerName}｜${entry.caseName}`;
@@ -3299,7 +3477,7 @@ function renderCases() {
     ].filter(Boolean).join(" / ");
     meta.innerHTML = `見積: ${formatCurrency(entry.estimateAmount)} / ステータス: ${escapeHtml(entry.status)} / 受付日: ${formatDate(entry.receivedDate)} / 期限日: ${formatDate(entry.dueDate)} / 次回対応日: ${formatDate(entry.nextActionDate)} / 次回対応内容: ${escapeHtml(entry.nextAction || "未設定")}${urlLinks ? ` / ${urlLinks}` : ""}`;
     if (caseWorkMeta) {
-      caseWorkMeta.textContent = `作業メモ: ${truncateText(sanitizeLegacyEstimateMemo(entry.workMemo) || "未設定", 60)}`;
+      caseWorkMeta.textContent = `テンプレート: ${templateName} / 必要書類: ${truncateText(entry.requiredDocuments || "未設定", 50)} / タスク: ${truncateText(entry.taskList || "未設定", 50)} / 未完了タスク: ${incompleteTasks}件 / 作業メモ: ${truncateText(sanitizeLegacyEstimateMemo(entry.workMemo) || "未設定", 40)}`;
       caseWorkMeta.classList.remove("next-action-overdue", "next-action-within3", "next-action-within7");
       if (nextActionInfo) caseWorkMeta.classList.add(nextActionInfo.urgencyClass);
     }
@@ -3565,8 +3743,15 @@ function resetCaseForm() {
   resetEditMode("case");
   caseForm.reset();
   if (caseForm?.elements?.caseClientId) caseForm.elements.caseClientId.value = "";
+  if (caseForm?.elements?.caseTemplateId) caseForm.elements.caseTemplateId.value = "";
   caseForm.elements.status.value = "未着手";
   caseSubmitBtn.textContent = "案件を追加";
+}
+
+function resetWorkTemplateForm() {
+  resetEditMode("workTemplate");
+  workTemplateForm?.reset();
+  if (workTemplateSubmitBtn) workTemplateSubmitBtn.textContent = "テンプレートを登録";
 }
 
 function resetSaleForm() {
@@ -3598,6 +3783,7 @@ function resetDailyReportForm() {
 function resetEditMode(target) {
   if (target === "client") editState.clientId = null;
   if (target === "case") editState.caseId = null;
+  if (target === "workTemplate") editState.workTemplateId = null;
   if (target === "sale") editState.saleId = null;
   if (target === "expense") editState.expenseId = null;
   if (target === "fixedExpense") editState.fixedExpenseId = null;
@@ -4969,11 +5155,14 @@ async function importRowsByType(importType, tableData) {
         payloads.push({
           user_id: currentUser.id,
           client_id: asTrimmedText(row.client_id) || null,
+          template_id: asTrimmedText(row.template_id) || null,
           customer_name: customerName,
           case_name: caseName,
           estimate_amount: parseFlexibleAmount(row.estimate_amount),
           received_date: parseFlexibleDate(row.received_date),
           due_date: parseFlexibleDate(row.due_date),
+          required_documents: asTrimmedText(row.required_documents) || null,
+          task_list: asTrimmedText(row.task_list) || null,
           status: normalizeStoredStatus(row.status),
           work_memo: asTrimmedText(row.work_memo) || null,
           next_action_date: parseFlexibleDate(row.next_action_date),
@@ -5132,22 +5321,63 @@ function escapeHtml(text) {
     .replaceAll("'", "&#039;");
 }
 
+function splitMultilineItems(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function convertTasksToChecklist(text) {
+  const rows = splitMultilineItems(text);
+  if (!rows.length) return "";
+  return rows.map((line) => (/^\[( |x|X)\]/.test(line) ? line : `[ ] ${line}`)).join("\n");
+}
+
+function parseTaskList(taskList) {
+  return splitMultilineItems(taskList).map((line) => {
+    const done = /^\[(x|X)\]/.test(line) || /^✅/.test(line);
+    const task = line.replace(/^\[( |x|X)\]\s*/, "").replace(/^✅\s*/, "").trim();
+    return { done, task: task || "（名称未設定）" };
+  });
+}
+
+function getIncompleteTaskCount(taskList) {
+  return parseTaskList(taskList).filter((entry) => !entry.done).length;
+}
+
 function mapCaseFromDb(row) {
   return {
     id: row.id,
     clientId: row.client_id || null,
+    templateId: row.template_id || null,
     customerName: row.customer_name || "",
     caseName: row.case_name || "",
     estimateAmount: normalizeAmount(row.estimate_amount),
     receivedDate: row.received_date || "",
     dueDate: row.due_date || "",
     status: normalizeStoredStatus(row.status),
+    requiredDocuments: row.required_documents || "",
+    taskList: row.task_list || "",
     workMemo: row.work_memo || "",
     nextActionDate: row.next_action_date || "",
     nextAction: row.next_action || "",
     documentUrl: row.document_url || "",
     invoiceUrl: row.invoice_url || "",
     receiptUrl: row.receipt_url || "",
+    createdAt: Date.parse(row.created_at) || Date.now(),
+    updatedAt: Date.parse(row.updated_at) || Date.now(),
+  };
+}
+
+function mapWorkTemplateFromDb(row) {
+  return {
+    id: row.id,
+    name: row.name || "",
+    defaultDueDays: Number.isFinite(Number(row.default_due_days)) ? Number(row.default_due_days) : null,
+    requiredDocuments: row.required_documents || "",
+    defaultTasks: row.default_tasks || "",
+    memo: row.memo || "",
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
   };
@@ -5186,6 +5416,39 @@ async function cleanupLegacyEstimateMemoMarkers() {
     if (error) throw error;
     entry.workMemo = cleanedMemo;
   }));
+}
+
+async function seedDefaultWorkTemplates() {
+  if (!currentUser) return [];
+  const defaults = [
+    {
+      user_id: currentUser.id,
+      name: "建設業許可",
+      default_due_days: 30,
+      required_documents: "登記事項証明書\n納税証明書\n決算書\n経管資料\n専技資料",
+      default_tasks: "要件確認\n必要書類案内\n書類回収\n申請書作成\n提出\n補正対応",
+      memo: "建設業許可の標準テンプレート",
+    },
+    {
+      user_id: currentUser.id,
+      name: "車庫証明",
+      default_due_days: 7,
+      required_documents: "自認書または使用承諾書\n配置図\n所在図\n車検証情報",
+      default_tasks: "書類確認\n現地確認\n警察署提出\n受取",
+      memo: "車庫証明の標準テンプレート",
+    },
+    {
+      user_id: currentUser.id,
+      name: "古物商許可",
+      default_due_days: 40,
+      required_documents: "住民票\n身分証明書\n略歴書\n誓約書\nURL資料",
+      default_tasks: "ヒアリング\n必要書類案内\n申請書作成\n警察署提出\n補正対応",
+      memo: "古物商許可の標準テンプレート",
+    },
+  ];
+  const { data, error } = await sbClient.from("work_templates").insert(defaults).select("*");
+  if (error) throw error;
+  return (data || []).map(mapWorkTemplateFromDb);
 }
 
 function mapEstimateFromDb(row) {
@@ -5454,6 +5717,7 @@ function resetViewState() {
 function resetEditState() {
   editState.clientId = null;
   editState.caseId = null;
+  editState.workTemplateId = null;
   editState.saleId = null;
   editState.expenseId = null;
   editState.fixedExpenseId = null;
@@ -5464,6 +5728,7 @@ function resetEditState() {
 function clearAppState() {
   currentUser = null;
   state.clients = [];
+  state.workTemplates = [];
   state.cases = [];
   state.estimates = [];
   state.estimateItems = [];
@@ -5475,6 +5740,7 @@ function clearAppState() {
   resetEditState();
   resetClientForm();
   resetCaseForm();
+  resetWorkTemplateForm();
   resetEstimateForm();
   resetSaleForm();
   resetExpenseForm();

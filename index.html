@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-    <script src="app.js?v=20260425-client-referral-analytics" defer></script>
+    <script src="app.js?v=20260426-work-templates" defer></script>
   </head>
   <body>
     <div id="loading-overlay" class="loading-overlay" hidden>
@@ -136,6 +136,7 @@
           <button type="button" class="tab-btn" data-tab="clients">顧客</button>
           <button type="button" class="tab-btn" data-tab="estimates">見積</button>
           <button type="button" class="tab-btn active" data-tab="cases">案件</button>
+          <button type="button" class="tab-btn" data-tab="work-templates">業務テンプレート</button>
           <button type="button" class="tab-btn" data-tab="sales">売上</button>
           <button type="button" class="tab-btn" data-tab="expenses">経費</button>
           <button type="button" class="tab-btn" data-tab="daily-reports">日報</button>
@@ -415,6 +416,12 @@
                   <select id="case-client-id" name="caseClientId"></select>
                 </label>
                 <label>
+                  業務テンプレート
+                  <select id="case-template-id" name="caseTemplateId">
+                    <option value="">テンプレートを選択してください</option>
+                  </select>
+                </label>
+                <label>
                   顧客名 <span class="required">必須</span>
                   <input id="customer-name" name="customerName" type="text" required maxlength="80" />
                 </label>
@@ -436,6 +443,14 @@
                     <input id="due-date" name="dueDate" type="date" />
                   </label>
                 </div>
+                <label>
+                  必要書類
+                  <textarea id="required-documents" name="requiredDocuments" rows="3" maxlength="4000" placeholder="1行に1つ、または読点区切りで入力"></textarea>
+                </label>
+                <label>
+                  タスクリスト
+                  <textarea id="task-list" name="taskList" rows="4" maxlength="4000" placeholder="[ ] 要件確認&#10;[ ] 書類回収"></textarea>
+                </label>
                 <label>
                   作業メモ
                   <textarea id="work-memo" name="workMemo" rows="4" maxlength="2000" placeholder="対応履歴・注意点などを記録"></textarea>
@@ -508,6 +523,27 @@
               <p id="case-filter-count" class="filter-count">表示中 0件 / 全0件</p>
               <div id="case-empty" class="empty">案件はまだ登録されていません。</div>
               <ul id="case-list" class="item-list"></ul>
+            </section>
+          </div>
+        </section>
+
+        <section id="tab-work-templates" class="tab-panel">
+          <div class="layout two-col">
+            <section class="panel">
+              <h2>業務テンプレート登録</h2>
+              <form id="work-template-form" class="form">
+                <label>テンプレート名 <span class="required">必須</span><input id="template-name" name="templateName" type="text" required maxlength="120" /></label>
+                <label>標準期限（日数）<input id="template-default-due-days" name="templateDefaultDueDays" type="number" min="0" step="1" placeholder="例: 30" /></label>
+                <label>必要書類<textarea id="template-required-documents" name="templateRequiredDocuments" rows="4" maxlength="4000" placeholder="登記事項証明書&#10;納税証明書"></textarea></label>
+                <label>標準タスク<textarea id="template-default-tasks" name="templateDefaultTasks" rows="5" maxlength="4000" placeholder="要件確認&#10;必要書類案内&#10;書類回収"></textarea></label>
+                <label>作業メモ<textarea id="template-memo" name="templateMemo" rows="3" maxlength="2000"></textarea></label>
+                <button id="work-template-submit-btn" type="submit">テンプレートを登録</button>
+              </form>
+            </section>
+            <section class="panel">
+              <h2>業務テンプレート一覧</h2>
+              <div id="work-templates-empty" class="empty">業務テンプレートはまだありません。</div>
+              <ul id="work-templates-list" class="item-list"></ul>
             </section>
           </div>
         </section>
@@ -859,6 +895,17 @@
           <button type="button" class="edit-btn secondary-btn">編集</button>
           <button type="button" class="danger-btn delete-btn">削除</button>
         </div>
+      </li>
+    </template>
+
+    <template id="work-template-item-template">
+      <li class="item">
+        <div>
+          <p class="title"></p>
+          <p class="meta"></p>
+          <p class="meta"></p>
+        </div>
+        <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
       </li>
     </template>
   </body>
