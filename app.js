@@ -398,6 +398,7 @@ function bindEvents() {
   todayTaskBody?.addEventListener("click", handleTodayTaskAction);
   pendingEstimatesBody?.addEventListener("click", handlePendingEstimateAction);
   document.addEventListener("click", handleReminderRecordClick);
+  document.addEventListener("click", handleRecordPaymentClick);
   caseSearchInput?.addEventListener("input", handleCaseSearchInput);
   caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
   caseDeadlineFilterSelect?.addEventListener("change", handleCaseDeadlineFilterChange);
@@ -715,6 +716,7 @@ async function loadAllDataSafely() {
       return fallback;
     }
   };
+  const safeSelectTable = async (tableName, mapFn, fallback = []) => loadTable(tableName, mapFn, { optional: true, fallback });
 
   state.clients = await loadTable("clients", mapClientFromDb);
   state.workTemplates = await loadTable("work_templates", mapWorkTemplateFromDb);
@@ -727,7 +729,7 @@ async function loadAllDataSafely() {
   state.estimates = await loadTable("estimates", mapEstimateFromDb);
   state.estimateItems = await loadTable("estimate_items", mapEstimateItemFromDb);
   state.sales = await loadTable("sales", mapSaleFromDb);
-  state.payments = await loadTable("payments", mapPaymentFromDb, { optional: true, fallback: [] });
+  state.payments = await safeSelectTable("payments", mapPaymentFromDb, []);
   state.expenses = await loadTable("expenses", mapExpenseFromDb);
   state.fixedExpenses = await loadTable("fixed_expenses", mapFixedExpenseFromDb);
   state.dailyReports = await loadTable("daily_reports", mapDailyReportFromDb);
@@ -1496,10 +1498,6 @@ async function handleSalesListAction(event) {
     await deleteSale(id);
     return;
   }
-  if (btn.classList.contains("register-payment-btn")) {
-    await handlePaymentRegistration(id);
-    return;
-  }
   if (btn.classList.contains("delete-payment-btn")) {
     const paymentId = btn.dataset.paymentId;
     if (!paymentId) return;
@@ -1536,10 +1534,6 @@ function handleUnpaidListAction(event) {
   if (!saleId) return;
   if (btn.classList.contains("edit-sale-btn")) {
     editSale(saleId).catch(() => {});
-    return;
-  }
-  if (btn.classList.contains("register-payment-btn")) {
-    handlePaymentRegistration(saleId).catch(() => {});
     return;
   }
   if (btn.classList.contains("delete-payment-btn")) {
@@ -1643,6 +1637,17 @@ async function handleReminderRecordClick(event) {
   await handleRecordReminder(saleId);
 }
 
+async function handleRecordPaymentClick(event) {
+  const button = event.target.closest(".record-payment-btn");
+  if (!(button instanceof HTMLButtonElement)) return;
+  const saleId = button.dataset.saleId || button.closest("[data-sale-id]")?.dataset.saleId || button.closest("[data-id]")?.dataset.id;
+  if (!saleId) {
+    showAppMessage("入金対象の売上IDを取得できませんでした。", true);
+    return;
+  }
+  await handleRecordPayment(saleId);
+}
+
 function handleBillingLeakAlertAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
@@ -1725,8 +1730,11 @@ async function handleRecordReminder(saleId) {
   }
 }
 
-async function handlePaymentRegistration(saleId) {
-  if (!currentUser) return;
+async function handleRecordPayment(saleId) {
+  if (!currentUser) {
+    showAppMessage("ログイン状態を確認できません。", true);
+    return;
+  }
   const sale = state.sales.find((entry) => entry.id === saleId);
   if (!sale) {
     showAppMessage("対象の売上が見つかりません。", true);
@@ -1740,23 +1748,29 @@ async function handlePaymentRegistration(saleId) {
     showAppMessage("入金日の形式が不正です。YYYY-MM-DD形式で入力してください。", true);
     return;
   }
-  const amountInput = window.prompt("入金額を入力してください（数字のみ）", "");
-  if (amountInput === null) return;
-  const amount = parseFlexibleAmount(amountInput);
-  if (!Number.isFinite(amount) || amount <= 0) {
-    showAppMessage("入金額は0より大きい数値を入力してください。", true);
+
+  const amountInput = window.prompt("入金額を入力してください", "");
+  if (!amountInput) return;
+  const amount = parseNumberInput(amountInput);
+  if (!amount || amount <= 0) {
+    showAppMessage("入金額を正しく入力してください。", true);
     return;
   }
-  const methodInput = window.prompt(`入金方法を入力してください（${PAYMENT_METHODS.join("・")}）`, PAYMENT_METHODS[1]);
+
+  const methodInput = window.prompt("入金方法を入力してください（現金・振込・その他）", "振込");
   if (!methodInput) return;
   const method = normalizePaymentMethod(methodInput);
-  const memoInput = window.prompt("メモ（任意）を入力してください", "");
+
+  const memoInput = window.prompt("メモを入力してください", "");
   if (memoInput === null) return;
   const memo = asTrimmedText(memoInput) || null;
 
   startLoading("入金登録");
   try {
-    const payload = {
+    clearAppMessage();
+    console.log("PAYMENT START", { saleId, paymentDate, amount, method, memo });
+
+    const paymentPayload = {
       user_id: currentUser.id,
       sale_id: saleId,
       payment_date: paymentDate,
@@ -1764,19 +1778,51 @@ async function handlePaymentRegistration(saleId) {
       method,
       memo,
     };
-    const { data, error } = await sbClient.from("payments").insert(payload).select().single();
-    if (error) throw error;
-    if (!data) throw new Error("入金登録結果を取得できませんでした。");
-    await syncSalePaymentSummary(saleId);
-    await loadAllData();
+
+    const { data: paymentData, error: paymentError } = await sbClient
+      .from("payments")
+      .insert(paymentPayload)
+      .select()
+      .single();
+    if (paymentError) throw paymentError;
+    if (!paymentData) throw new Error("入金登録結果を取得できませんでした。");
+
+    const existingPayments = (state.payments || []).filter((entry) => entry.saleId === saleId);
+    const existingPaidAmount = existingPayments.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const newPaidAmount = existingPaidAmount + amount;
+    const invoiceAmount = Number(sale.invoiceAmount || 0);
+    const paymentStatus = calculatePaymentStatus(invoiceAmount, newPaidAmount);
+
+    const salePayload = {
+      paid_amount: newPaidAmount,
+      paid_date: paymentDate,
+      payment_status: paymentStatus,
+      is_unpaid: paymentStatus !== "入金済",
+    };
+
+    const { data: saleData, error: saleError } = await sbClient
+      .from("sales")
+      .update(salePayload)
+      .eq("id", saleId)
+      .eq("user_id", currentUser.id)
+      .select()
+      .single();
+
+    if (saleError) throw saleError;
+    if (!saleData) throw new Error("売上の入金情報を更新できませんでした。");
+
+    await loadAllDataSafely();
     renderAfterDataChanged();
+
     showAppMessage("入金を登録しました。", false);
   } catch (error) {
-    showAppMessage(`入金登録に失敗しました。${formatSupabaseError(error)}`, true);
+    console.error("入金登録に失敗しました。", error);
+    showAppMessage(`入金登録に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
   } finally {
     forceHideLoading();
   }
 }
+
 
 async function deletePayment(paymentId) {
   if (!currentUser) return;
@@ -3562,7 +3608,7 @@ function renderUnpaidAlert(filter = {}) {
         <td>${paymentHistory}</td>
         <td>
           <button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button>
-          <button type="button" class="secondary-btn register-payment-btn" data-sale-id="${sale.id}">入金登録</button>
+          <button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-sale-id="${sale.id}">入金登録</button>
           ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : ""}
         </td>
       `;
@@ -3597,7 +3643,7 @@ function renderUnpaidList() {
       <td>${escapeHtml(sale.reminderMethod || "-")}</td>
       <td>${escapeHtml(sale.reminderMemo || "-")}</td>
       <td>${paymentHistory}</td>
-      <td><button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button> <button type="button" class="secondary-btn register-payment-btn" data-sale-id="${sale.id}">入金登録</button> ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : ""}</td>
+      <td><button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button> <button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-sale-id="${sale.id}">入金登録</button> ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : ""}</td>
     `;
     tr.classList.add(getSaleRowClass(sale));
     unpaidListBody.appendChild(tr);
@@ -4909,7 +4955,7 @@ function renderSales() {
         <td>${escapeHtml(reminderMemo)}</td>
         <td>${paymentHistory}</td>
         <td>${canRecordReminder ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : "-"}</td>
-        <td><button type="button" class="secondary-btn register-payment-btn">入金登録</button></td>
+        <td><button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-sale-id="${sale.id}">入金登録</button></td>
         <td><button type="button" class="edit-btn secondary-btn">編集</button></td>
         <td><button type="button" class="danger-btn delete-btn">削除</button></td>
       `;
@@ -7194,10 +7240,10 @@ function mapPaymentFromDb(row) {
     userId: row.user_id,
     saleId: row.sale_id,
     paymentDate: row.payment_date || null,
-    amount: normalizeAmount(row.amount) ?? 0,
-    method: normalizePaymentMethod(row.method),
+    amount: Number(row.amount || 0),
+    method: row.method || "",
     memo: row.memo || "",
-    createdAt: Date.parse(row.created_at) || null,
+    createdAt: row.created_at || null,
   };
 }
 
