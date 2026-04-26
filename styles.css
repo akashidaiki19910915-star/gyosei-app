@@ -751,6 +751,28 @@ tbody tr:last-child td {
   font-weight: 700;
 }
 
+.client-rank-badge {
+  display: inline-block;
+  min-width: 1.6rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+}
+
+.client-rank-badge.rank-A {
+  background: #16a34a;
+}
+
+.client-rank-badge.rank-B {
+  background: #2563eb;
+}
+
+.client-rank-badge.rank-C {
+  background: #6b7280;
+}
+
 .dashboard.alerts-only .case-dashboard-block {
   display: none;
 }

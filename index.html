@@ -347,6 +347,23 @@
             </table>
           </div>
           <section class="panel case-dashboard-block analytics-panel">
+            <h3 class="subheading analytics-heading">重要顧客（Aランク）</h3>
+            <div id="important-clients-empty" class="empty">Aランク顧客はまだありません。</div>
+            <div id="important-clients-wrap" class="table-wrap" hidden>
+              <table>
+                <thead>
+                  <tr>
+                    <th>顧客名</th>
+                    <th>売上</th>
+                    <th>利益</th>
+                    <th>最終対応日</th>
+                  </tr>
+                </thead>
+                <tbody id="important-clients-body"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="panel case-dashboard-block analytics-panel">
             <div class="panel-title-row analytics-header-row">
               <h3 class="subheading analytics-heading">顧客別・紹介元別分析</h3>
               <div class="csv-actions">
@@ -363,12 +380,13 @@
                 <thead>
                   <tr>
                     <th>顧客名</th>
+                    <th>ランク</th>
                     <th>案件数</th>
                     <th>売上合計</th>
                     <th>経費合計</th>
                     <th>利益</th>
                     <th>未入金額</th>
-                    <th>最終案件日</th>
+                    <th>最終対応日</th>
                   </tr>
                 </thead>
                 <tbody id="client-analysis-body"></tbody>
