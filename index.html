@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-    <script src="app.js?v=20260426-daily-report-submit-fix" defer></script>
+    <script src="app.js?v=20260426-payment-control-upgrade" defer></script>
   </head>
   <body>
     <div id="loading-overlay" class="loading-overlay" hidden>
@@ -241,7 +241,7 @@
           </section>
           <section id="unpaid-alert-card" class="unpaid-alert-card case-alert-block" aria-live="polite">
             <div class="unpaid-alert-header">
-              <h3>未入金アラート</h3>
+              <h3>未入金管理</h3>
               <p id="unpaid-alert-period" class="unpaid-alert-period"></p>
             </div>
             <p id="unpaid-alert-summary" class="unpaid-alert-summary"></p>
@@ -250,12 +250,15 @@
               <table class="unpaid-alert-table">
                 <thead>
                   <tr>
-                    <th>対象案件</th>
+                    <th>顧客名</th>
+                    <th>案件名</th>
                     <th>請求額</th>
                     <th>入金額</th>
                     <th>残額</th>
-                    <th>ステータス</th>
                     <th>支払期限</th>
+                    <th>ステータス</th>
+                    <th>日数</th>
+                    <th>編集</th>
                   </tr>
                 </thead>
                 <tbody id="unpaid-alert-body"></tbody>
@@ -333,8 +336,10 @@
                   <th>請求額</th>
                   <th>入金額</th>
                   <th>残額</th>
-                  <th>ステータス</th>
                   <th>支払期限</th>
+                  <th>入金日</th>
+                  <th>ステータス</th>
+                  <th>日数</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -684,8 +689,12 @@
               <h2>売上登録</h2>
               <form id="sale-form" class="form">
                 <label>
-                  対象案件 <span class="required">必須</span>
+                  案件 <span class="required">必須</span>
                   <select id="sale-case-id" name="saleCaseId" required></select>
+                </label>
+                <label>
+                  請求番号
+                  <input id="sale-invoice-number" name="invoiceNumber" type="text" readonly />
                 </label>
                 <label>
                   請求額（円） <span class="required">必須</span>
@@ -704,10 +713,10 @@
                   <input id="sale-due-date" name="dueDate" type="date" />
                 </label>
                 <label>
-                  請求書備考（出力用）
+                  備考
                   <textarea id="sale-invoice-memo" name="invoiceMemo" rows="2" maxlength="2000" placeholder="請求書出力時に使用する備考"></textarea>
                 </label>
-                <p class="meta">請求番号は登録時に自動採番されます（形式: S-YYYYMM-001）。</p>
+                <p class="meta">請求番号は自動採番済みの番号を使用します（形式: S-YYYYMM-001）。</p>
                 <button type="submit">売上を登録</button>
               </form>
             </section>
@@ -723,7 +732,25 @@
               </div>
               <p id="sales-filter-count" class="filter-count">表示中 0件 / 全0件</p>
               <div id="sales-empty" class="empty">売上データはまだありません。</div>
-              <ul id="sales-list" class="item-list"></ul>
+              <div id="sales-list-wrap" class="table-wrap" hidden>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>顧客名</th>
+                      <th>案件名</th>
+                      <th>請求額</th>
+                      <th>入金額</th>
+                      <th>残額</th>
+                      <th>入金ステータス</th>
+                      <th>支払期限</th>
+                      <th>入金日</th>
+                      <th>編集</th>
+                      <th>削除</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sales-list-body"></tbody>
+                </table>
+              </div>
             </section>
             <section class="panel subtab-panel" data-parent-tab="sales" data-subtab="unpaid" hidden>
               <h2>未入金</h2>
@@ -937,17 +964,6 @@
         <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
       </li>
     </template>
-
-    <template id="sale-item-template">
-      <li class="item">
-        <div>
-          <p class="title"></p>
-          <p class="meta"></p>
-        </div>
-        <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
-      </li>
-    </template>
-
     <template id="expense-item-template">
       <li class="item">
         <div>

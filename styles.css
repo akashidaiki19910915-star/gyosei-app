@@ -632,8 +632,17 @@ button:hover { background: var(--primary-dark); }
   background: #fff7ed;
 }
 
+.sale-row-unpaid td {
+  background: #fefce8;
+}
+
 .sale-status-overdue,
 .sale-status-unpaid {
+  color: #a16207;
+  font-weight: 700;
+}
+
+.sale-status-overdue {
   color: #b91c1c;
   font-weight: 700;
 }
