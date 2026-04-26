@@ -79,6 +79,7 @@ alter table sales add column if not exists paid_amount bigint default 0;
 alter table sales add column if not exists payment_status text;
 alter table sales add column if not exists due_date date;
 alter table sales add column if not exists invoice_number text;
+alter table sales add column if not exists estimate_id uuid;
 ```
 
 ## 複数端末で同じデータを閲覧する条件
