@@ -403,8 +403,12 @@
                     <th>顧客数</th>
                     <th>案件数</th>
                     <th>売上合計</th>
+                    <th>経費合計</th>
                     <th>利益</th>
                     <th>未入金額</th>
+                    <th>平均単価</th>
+                    <th>利益率</th>
+                    <th>判定</th>
                   </tr>
                 </thead>
                 <tbody id="referral-analysis-body"></tbody>
@@ -437,7 +441,23 @@
                 <label>住所<input id="client-address" name="clientAddress" type="text" maxlength="200" /></label>
                 <label>電話番号<input id="client-tel" name="clientTel" type="text" maxlength="40" /></label>
                 <label>メール<input id="client-email" name="clientEmail" type="email" maxlength="120" /></label>
-                <label>紹介元<input id="client-referral-source" name="clientReferralSource" type="text" maxlength="120" /></label>
+                <label>紹介元
+                  <input id="client-referral-source" name="clientReferralSource" type="text" maxlength="120" list="client-referral-source-options" placeholder="紹介元を選択または入力" />
+                  <datalist id="client-referral-source-options">
+                    <option value="紹介"></option>
+                    <option value="商工会議所"></option>
+                    <option value="D-Biz"></option>
+                    <option value="ミツモア"></option>
+                    <option value="ココナラ"></option>
+                    <option value="ホームページ"></option>
+                    <option value="SNS"></option>
+                    <option value="チラシ"></option>
+                    <option value="飛び込み営業"></option>
+                    <option value="既存顧客"></option>
+                    <option value="家族/知人"></option>
+                    <option value="その他"></option>
+                  </datalist>
+                </label>
                 <label>メモ<textarea id="client-memo" name="clientMemo" rows="3" maxlength="2000"></textarea></label>
                 <button id="client-submit-btn" type="submit">顧客を登録</button>
               </form>

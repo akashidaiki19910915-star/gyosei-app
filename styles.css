@@ -751,6 +751,21 @@ tbody tr:last-child td {
   font-weight: 700;
 }
 
+.referral-margin-good {
+  color: #15803d;
+  font-weight: 700;
+}
+
+.referral-margin-normal {
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.referral-margin-negative {
+  color: var(--danger);
+  font-weight: 700;
+}
+
 .client-rank-badge {
   display: inline-block;
   min-width: 1.6rem;
