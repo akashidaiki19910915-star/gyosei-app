@@ -119,13 +119,20 @@ create table if not exists daily_reports (
   user_id uuid not null,
   report_date date not null,
   case_id uuid,
+  client_id uuid,
+  interaction_type text,
   work_content text not null,
   work_minutes int default 0,
   next_action text,
+  next_action_date date,
   memo text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+alter table daily_reports add column if not exists client_id uuid;
+alter table daily_reports add column if not exists interaction_type text;
+alter table daily_reports add column if not exists next_action_date date;
 
 alter table daily_reports enable row level security;
 

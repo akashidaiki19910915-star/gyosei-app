@@ -1062,54 +1062,73 @@ async function handleFixedExpenseSubmit(event) {
 
 async function handleDailyReportSubmit(event) {
   event.preventDefault();
-  if (!currentUser) return;
+  if (!currentUser || !dailyReportForm) return;
 
-  const reportDate = dailyReportForm.elements.reportDate.value;
-  const workContent = asTrimmedText(dailyReportForm.elements.reportWorkContent.value);
-  if (!reportDate || !workContent) return;
+  const reportDate = dailyReportForm.elements.reportDate?.value || "";
+  const clientId = dailyReportForm.elements.reportClientId?.value || "";
+  const caseId = dailyReportForm.elements.reportCaseId?.value || "";
+  const interactionType = normalizeDailyReportInteractionType(dailyReportForm.elements.reportInteractionType?.value);
+  const workContent = asTrimmedText(dailyReportForm.elements.reportWorkContent?.value);
+  const workMinutes = normalizeAmount(dailyReportForm.elements.reportWorkMinutes?.value) ?? 0;
+  const nextAction = asTrimmedText(dailyReportForm.elements.reportNextAction?.value);
+  const nextActionDate = dailyReportForm.elements.reportNextActionDate?.value || "";
+  const memo = asTrimmedText(dailyReportForm.elements.reportMemo?.value);
+
+  if (!reportDate) {
+    showAppMessage("日付を入力してください。", true);
+    return;
+  }
+  if (!workContent) {
+    showAppMessage("作業内容を入力してください。", true);
+    return;
+  }
 
   const payload = {
     user_id: currentUser.id,
     report_date: reportDate,
-    case_id: reportCaseSelect.value || null,
-    client_id: reportClientSelect?.value || null,
-    interaction_type: normalizeDailyReportInteractionType(reportInteractionTypeSelect?.value),
+    client_id: clientId || null,
+    case_id: caseId || null,
+    interaction_type: interactionType || "作業",
     work_content: workContent,
-    work_minutes: normalizeAmount(dailyReportForm.elements.reportWorkMinutes.value) ?? 0,
-    next_action: asTrimmedText(dailyReportForm.elements.reportNextAction.value) || null,
-    next_action_date: dailyReportForm.elements.reportNextActionDate.value || null,
-    memo: asTrimmedText(dailyReportForm.elements.reportMemo.value) || null,
+    work_minutes: workMinutes,
+    next_action: nextAction || null,
+    next_action_date: nextActionDate || null,
+    memo: memo || null,
   };
 
-  const taskName = editState.dailyReportId ? "日報更新" : "日報登録";
   const isEdit = Boolean(editState.dailyReportId);
-  const actionName = taskName;
-  console.log("ACTION START", actionName, editState.dailyReportId || "new");
-  console.log("PAYLOAD", payload);
+  const taskName = isEdit ? "日報更新" : "日報登録";
+  console.log("DAILY REPORT SUBMIT START");
+  console.log("DAILY REPORT PAYLOAD", payload);
   try {
     await withLoading(taskName, async () => {
-      if (editState.dailyReportId) {
+      if (isEdit) {
         const { data, error } = await sbClient.from("daily_reports").update(payload).eq("id", editState.dailyReportId).eq("user_id", currentUser.id).select().single();
         if (error) throw error;
-        if (!data) throw new Error("更新結果を取得できませんでした。");
-        console.log("DB DONE", actionName, editState.dailyReportId);
+        if (!data) throw new Error("日報更新結果を取得できませんでした。");
+        console.log("DAILY REPORT INSERT SUCCESS", data);
       } else {
         const { data, error } = await sbClient.from("daily_reports").insert(payload).select().single();
         if (error) throw error;
-        if (!data) throw new Error("登録結果を取得できませんでした。");
-        console.log("DB DONE", actionName, data.id || "new");
+        if (!data) throw new Error("日報登録結果を取得できませんでした。");
+        console.log("DAILY REPORT INSERT SUCCESS", data);
       }
       await loadAllData();
+      console.log("LOAD ALL DATA DONE");
       renderAfterDataChanged();
+      console.log("RENDER DONE");
       resetDailyReportForm();
       subtabState["daily-reports"] = "list";
       activateTab("daily-reports");
       showAppMessage(isEdit ? "日報を更新しました。" : "日報を登録しました。", false);
     }, { triggerButton: event.submitter });
   } catch (error) {
-    showAppMessage(`日報保存に失敗しました。${formatSupabaseError(error)}`, true);
+    showAppMessage(
+      `日報登録に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.trim(),
+      true
+    );
   } finally {
-    console.log("ACTION FINALLY", actionName);
+    console.log("DAILY REPORT FINALLY");
     forceHideLoading();
   }
 }
@@ -1656,7 +1675,10 @@ async function deleteSale(id) {
     showAppMessage("削除しました。", false);
   } catch (error) {
     console.error("削除に失敗しました。", error);
-    showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
+    showAppMessage(
+      `削除に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.trim(),
+      true
+    );
   } finally {
     console.log("ACTION FINALLY", taskName);
     forceHideLoading();
@@ -1981,7 +2003,7 @@ function handleExportAllCsv() {
       data_type: "daily_report",
       report_date: entry.reportDate || "",
       report_client_id: entry.clientId || "",
-      report_client_name: resolveDailyReportClientName(entry.clientId),
+      report_client_name: resolveDailyReportClientName(entry.clientId, entry.caseId),
       report_case_name: foundCase?.caseName || "",
       report_interaction_type: entry.interactionType || "",
       report_work_content: entry.workContent || "",
@@ -2137,7 +2159,7 @@ function exportExcel() {
     const dailyReportRows = state.dailyReports.map((entry) => ({
       report_date: entry.reportDate || "",
       client_id: entry.clientId || "",
-      client_name: resolveDailyReportClientName(entry.clientId),
+      client_name: resolveDailyReportClientName(entry.clientId, entry.caseId),
       case_name: resolveDailyReportCaseName(entry.caseId),
       interaction_type: entry.interactionType || "",
       work_content: entry.workContent || "",
@@ -3182,9 +3204,15 @@ function syncDailyReportClientLabel() {
 function renderClients() {
   if (!clientsList || !clientsEmpty) return;
   clientsList.innerHTML = "";
+  const caseById = new Map(state.cases.map((entry) => [entry.id, entry]));
   const sorted = state.clients.slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
   sorted.forEach((client) => {
-    const related = state.dailyReports.filter((entry) => entry.clientId === client.id);
+    const related = state.dailyReports.filter((entry) => {
+      if (entry.clientId === client.id) return true;
+      if (!entry.caseId) return false;
+      const linkedCase = caseById.get(entry.caseId);
+      return linkedCase?.clientId === client.id;
+    });
     const lastInteraction = related
       .map((entry) => entry.reportDate)
       .filter(Boolean)
@@ -3274,8 +3302,9 @@ function renderDailyReports() {
       <header class="daily-report-card-header">
         <div>
           <p class="daily-report-card-date">${formatDate(entry.reportDate)}</p>
+          <p class="daily-report-card-case">顧客: ${escapeHtml(resolveDailyReportClientName(entry.clientId, entry.caseId))}</p>
           <p class="daily-report-card-case">${escapeHtml(resolveDailyReportCaseName(entry.caseId))}</p>
-          <p class="daily-report-card-case">顧客: ${escapeHtml(resolveDailyReportClientName(entry.clientId))} / 種別: ${escapeHtml(entry.interactionType || "作業")}</p>
+          <p class="daily-report-card-case">対応種別: ${escapeHtml(entry.interactionType || "作業")}</p>
         </div>
         <div class="daily-report-card-actions">
           <button type="button" class="secondary-btn edit-daily-report-btn">編集</button>
@@ -3294,6 +3323,10 @@ function renderDailyReports() {
         <div class="daily-report-field">
           <dt>次回対応</dt>
           <dd>${escapeHtml(entry.nextAction || "未設定")}</dd>
+        </div>
+        <div class="daily-report-field-inline">
+          <dt>次回対応日</dt>
+          <dd>${entry.nextActionDate ? formatDate(entry.nextActionDate) : "未設定"}</dd>
         </div>
         <div class="daily-report-field">
           <dt>メモ</dt>
@@ -3331,7 +3364,7 @@ function renderDailyReports() {
 function matchesDailyReportSearch(entry, query) {
   const haystacks = [
     resolveDailyReportCaseName(entry.caseId),
-    resolveDailyReportClientName(entry.clientId),
+    resolveDailyReportClientName(entry.clientId, entry.caseId),
     entry.interactionType,
     entry.workContent,
     entry.nextAction,
@@ -3886,10 +3919,17 @@ function resolveDailyReportCaseName(caseId) {
   return found ? `${found.customerName}｜${found.caseName}` : "案件なし";
 }
 
-function resolveDailyReportClientName(clientId) {
-  if (!clientId) return "未設定";
-  const found = state.clients.find((client) => client.id === clientId);
-  return found?.name || "未設定";
+function resolveDailyReportClientName(clientId, caseId = null) {
+  const directClient = clientId ? state.clients.find((client) => client.id === clientId) : null;
+  if (directClient?.name) return directClient.name;
+
+  const linkedCase = caseId ? state.cases.find((entry) => entry.id === caseId) : null;
+  if (linkedCase?.clientId) {
+    const caseClient = state.clients.find((client) => client.id === linkedCase.clientId);
+    if (caseClient?.name) return caseClient.name;
+  }
+  if (linkedCase?.customerName) return linkedCase.customerName;
+  return "顧客なし";
 }
 
 async function startEstimateEdit(estimateId) {
@@ -5799,7 +5839,7 @@ function mapDailyReportFromDb(row) {
     reportDate: row.report_date || "",
     caseId: row.case_id || null,
     clientId: row.client_id || null,
-    interactionType: normalizeDailyReportInteractionType(row.interaction_type),
+    interactionType: normalizeDailyReportInteractionType(row.interaction_type || "作業"),
     workContent: row.work_content || "",
     workMinutes: normalizeAmount(row.work_minutes) ?? 0,
     nextAction: row.next_action || "",
