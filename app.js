@@ -222,6 +222,7 @@ const estimateExpiredFilter = document.getElementById("estimate-expired-filter")
 let currentUser = null;
 let isResuming = false;
 let isLoggingOut = false;
+let eventsBound = false;
 let loadingCount = 0;
 let loadingTimeoutId = null;
 const BACKUP_TABLE_KEYS = ["clients", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
@@ -279,6 +280,8 @@ async function initialize() {
 }
 
 function bindEvents() {
+  if (eventsBound) return;
+  eventsBound = true;
   tabs.forEach((btn) => btn.addEventListener("click", () => activateTab(btn.dataset.tab)));
   subtabButtons.forEach((btn) => btn.addEventListener("click", () => activateSubtab(btn.dataset.parentTab, btn.dataset.subtab)));
   authForm.addEventListener("submit", handleLogin);
@@ -1030,15 +1033,11 @@ async function handleCaseListAction(event) {
     return;
   }
   if (btn.classList.contains("case-print-btn")) {
-    await withLoading("帳票出力", async () => {
-      openInvoicePrintPreviewFromCase(id);
-    });
+    openInvoicePrintPreviewFromCase(id);
     return;
   }
   if (btn.classList.contains("case-xlsx-btn")) {
-    await withLoading("帳票出力", async () => {
-      exportInvoiceDataForCase(id);
-    });
+    exportInvoiceDataForCase(id);
     return;
   }
 
@@ -1803,15 +1802,23 @@ async function handleCsvImportSubmit(event) {
 }
 
 function handleExportExcel() {
-  withLoading("帳票出力", async () => {
+  try {
+    clearAppMessage();
     exportExcel();
-  }).catch(() => {});
+  } catch (error) {
+    console.error("Excel出力に失敗しました。", error);
+    showAppMessage("Excel出力に失敗しました。", true);
+  }
 }
 
 function handleExportAnalysisExcel() {
-  withLoading("分析出力", async () => {
+  try {
+    clearAppMessage();
     exportAnalysisExcel();
-  }).catch(() => {});
+  } catch (error) {
+    console.error("分析Excel出力に失敗しました。", error);
+    showAppMessage("分析Excel出力に失敗しました。", true);
+  }
 }
 
 function exportExcel() {
@@ -1983,13 +1990,13 @@ async function handleExcelImportSubmit(event) {
 async function handleExportBackupJson() {
   if (!currentUser) return;
   try {
-    await withLoading("バックアップ出力", async () => {
-      const payload = await buildBackupPayload();
-      const today = new Date().toISOString().slice(0, 10);
-      downloadJsonFile(`gyosei-app-backup-${today}.json`, payload);
-      showAppMessage("バックアップJSONを出力しました。", false);
-    }, { triggerButton: exportBackupJsonBtn });
+    clearAppMessage();
+    const payload = await buildBackupPayload();
+    const today = new Date().toISOString().slice(0, 10);
+    downloadJsonFile(`gyosei-app-backup-${today}.json`, payload);
+    showAppMessage("バックアップJSONを出力しました。", false);
   } catch (error) {
+    console.error("バックアップJSON出力に失敗しました。", error);
     showAppMessage(`バックアップJSONの出力に失敗しました。${error?.message || ""}`, true);
   } finally {
     forceHideLoading();
@@ -3194,10 +3201,10 @@ async function handleEstimateListAction(event) {
       forceHideLoading();
     }
   }
-  if (btn.classList.contains("estimate-estimate-print-btn")) return withLoading("帳票出力", async () => openEstimatePrintPreview(estimateId));
-  if (btn.classList.contains("estimate-print-btn")) return withLoading("帳票出力", async () => openInvoicePrintPreviewFromEstimate(estimateId));
-  if (btn.classList.contains("estimate-estimate-xlsx-btn")) return withLoading("帳票出力", async () => exportEstimateDataForEstimate(estimateId));
-  if (btn.classList.contains("estimate-xlsx-btn")) return withLoading("帳票出力", async () => exportInvoiceDataForEstimate(estimateId));
+  if (btn.classList.contains("estimate-estimate-print-btn")) return openEstimatePrintPreview(estimateId);
+  if (btn.classList.contains("estimate-print-btn")) return openInvoicePrintPreviewFromEstimate(estimateId);
+  if (btn.classList.contains("estimate-estimate-xlsx-btn")) return exportEstimateDataForEstimate(estimateId);
+  if (btn.classList.contains("estimate-xlsx-btn")) return exportInvoiceDataForEstimate(estimateId);
   if (btn.classList.contains("estimate-sale-btn")) {
     try {
       return await withLoading("見積から売上登録", async () => {
@@ -4715,7 +4722,7 @@ function downloadBlobFile(filename, blob) {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function buildCsvString(headers, rows) {
