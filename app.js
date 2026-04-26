@@ -318,7 +318,6 @@ async function initialize() {
 
 function bindEvents() {
   if (eventsBound) return;
-  eventsBound = true;
   tabs.forEach((btn) => btn.addEventListener("click", () => activateTab(btn.dataset.tab)));
   subtabButtons.forEach((btn) => btn.addEventListener("click", () => activateSubtab(btn.dataset.parentTab, btn.dataset.subtab)));
   authForm.addEventListener("submit", handleLogin);
@@ -411,6 +410,8 @@ function bindEvents() {
     state.estimateExpiredFilter = event.target.value || "all";
     renderEstimates();
   });
+  eventsBound = true;
+  console.log("EVENTS BOUND");
   activateTab("cases");
 }
 
@@ -753,6 +754,7 @@ function formatSupabaseError(error) {
 
 async function handleClientSubmit(event) {
   event.preventDefault();
+  console.log("CLIENT SUBMIT FIRED");
   if (!currentUser || !clientForm) return;
   const name = asTrimmedText(clientForm.elements.clientName.value);
   if (!name) return;
@@ -768,6 +770,7 @@ async function handleClientSubmit(event) {
   };
   const taskName = editState.clientId ? "顧客更新" : "顧客登録";
   const actionName = taskName;
+  console.log("EDIT STATE", editState);
   console.log("ACTION START", actionName, editState.clientId || "new");
   console.log("PAYLOAD", payload);
   try {
@@ -798,17 +801,18 @@ async function handleClientSubmit(event) {
 
 async function handleCaseSubmit(event) {
   event.preventDefault();
+  console.log("CASE SUBMIT FIRED");
   if (!currentUser || !ensureInitialDataReady("案件登録")) return;
 
   const taskName = editState.caseId ? "案件更新" : "案件登録";
   const isEdit = Boolean(editState.caseId);
-  console.log("CASE SUBMIT START");
   try {
     await withLoading(taskName, async () => {
       const payload = buildCasePayloadFromForm();
+      console.log("EDIT STATE", editState);
       const templateId = payload.template_id || "";
       console.log("CASE TEMPLATE VALUE", templateId);
-      console.log("CASE PAYLOAD", payload);
+      console.log("PAYLOAD", payload);
       if (!payload.customer_name || !payload.case_name) return;
 
       if (isEdit) {
@@ -842,19 +846,21 @@ async function handleCaseSubmit(event) {
 
 async function handleWorkTemplateSubmit(event) {
   event.preventDefault();
+  console.log("WORK TEMPLATE SUBMIT FIRED");
   if (!currentUser || !workTemplateForm) return;
   const name = asTrimmedText(workTemplateForm.elements.templateName.value);
   if (!name) return;
   const payload = {
     user_id: currentUser.id,
     name,
-    default_due_days: normalizeAmount(workTemplateForm.elements.templateDefaultDueDays.value),
+    default_due_days: parseNumberInput(workTemplateForm.elements.templateDefaultDueDays.value),
     required_documents: asTrimmedText(workTemplateForm.elements.templateRequiredDocuments.value) || null,
     default_tasks: asTrimmedText(workTemplateForm.elements.templateDefaultTasks.value) || null,
     memo: asTrimmedText(workTemplateForm.elements.templateMemo.value) || null,
   };
   const taskName = editState.workTemplateId ? "業務テンプレート更新" : "業務テンプレート登録";
   const actionName = taskName;
+  console.log("EDIT STATE", editState);
   try {
     await withLoading(taskName, async () => {
       if (editState.workTemplateId) {
@@ -880,13 +886,13 @@ async function handleWorkTemplateSubmit(event) {
 
 async function handleSaleSubmit(event) {
   event.preventDefault();
-  console.log("SALE SUBMIT START");
+  console.log("SALE SUBMIT FIRED");
   if (!currentUser || !state.cases.length) return;
 
-  const invoiceAmount = normalizeAmount(saleForm.elements.invoiceAmount.value);
-  if (invoiceAmount === null) return;
+  const invoiceAmount = parseNumberInput(saleForm.elements.invoiceAmount.value);
+  if (invoiceAmount <= 0) return;
 
-  const paidAmount = normalizeAmount(saleForm.elements.paidAmount.value);
+  const paidAmount = parseNumberInput(saleForm.elements.paidAmount.value);
   const caseId = saleCaseSelect.value;
   if (!caseId) return;
   const normalizedPaidAmount = paidAmount ?? 0;
@@ -910,6 +916,7 @@ async function handleSaleSubmit(event) {
 
   const taskName = editState.saleId ? "売上更新" : "売上登録";
   const actionName = taskName;
+  console.log("EDIT STATE", editState);
   console.log("ACTION START", actionName, editState.saleId || "new");
   console.log("PAYLOAD", payload);
   try {
@@ -945,14 +952,15 @@ async function handleSaleSubmit(event) {
 
 async function handleExpenseSubmit(event) {
   event.preventDefault();
+  console.log("EXPENSE SUBMIT FIRED");
   if (!currentUser) return;
 
   const expenseDate = expenseForm.elements.expenseDate.value;
   const content = expenseForm.elements.expenseContent.value.trim();
   const payee = asTrimmedText(expenseForm.elements.expensePayee.value) || null;
   const paymentMethod = normalizeExpensePaymentMethod(expenseForm.elements.expensePaymentMethod.value);
-  const amount = normalizeAmount(expenseForm.elements.expenseAmount.value);
-  if (!expenseDate || !content || amount === null) return;
+  const amount = parseNumberInput(expenseForm.elements.expenseAmount.value);
+  if (!expenseDate || !content || amount <= 0) return;
 
   const payload = {
     user_id: currentUser.id,
@@ -967,6 +975,7 @@ async function handleExpenseSubmit(event) {
 
   const taskName = editState.expenseId ? "経費更新" : "経費登録";
   const actionName = taskName;
+  console.log("EDIT STATE", editState);
   console.log("ACTION START", actionName, editState.expenseId || "new");
   console.log("PAYLOAD", payload);
   try {
@@ -1007,13 +1016,14 @@ async function handleExpenseSubmit(event) {
 
 async function handleFixedExpenseSubmit(event) {
   event.preventDefault();
+  console.log("FIXED EXPENSE SUBMIT FIRED");
   if (!currentUser) return;
 
   const content = fixedExpenseForm.elements.fixedExpenseContent.value.trim();
-  const amount = normalizeAmount(fixedExpenseForm.elements.fixedExpenseAmount.value);
+  const amount = parseNumberInput(fixedExpenseForm.elements.fixedExpenseAmount.value);
   const dayOfMonth = normalizeDayOfMonth(fixedExpenseForm.elements.fixedExpenseDayOfMonth.value);
   const startDate = fixedExpenseForm.elements.fixedExpenseStartDate.value;
-  if (!content || amount === null || !dayOfMonth || !startDate) return;
+  if (!content || amount <= 0 || !dayOfMonth || !startDate) return;
 
   const payload = {
     user_id: currentUser.id,
@@ -1026,6 +1036,7 @@ async function handleFixedExpenseSubmit(event) {
 
   const taskName = editState.fixedExpenseId ? "固定費更新" : "固定費登録";
   const actionName = taskName;
+  console.log("EDIT STATE", editState);
   console.log("ACTION START", actionName, editState.fixedExpenseId || "new");
   console.log("PAYLOAD", payload);
   try {
@@ -1063,15 +1074,15 @@ async function handleFixedExpenseSubmit(event) {
 
 async function handleDailyReportSubmit(event) {
   event.preventDefault();
+  console.log("DAILY REPORT SUBMIT FIRED");
   if (!currentUser || !dailyReportForm) return;
-  console.log("DAILY REPORT FORM SUBMIT FIRED");
 
   const reportDate = dailyReportForm.elements.reportDate?.value || "";
   const clientId = dailyReportForm.elements.reportClientId?.value || "";
   const caseId = dailyReportForm.elements.reportCaseId?.value || "";
   const interactionType = normalizeDailyReportInteractionType(dailyReportForm.elements.reportInteractionType?.value);
   const workContent = asTrimmedText(dailyReportForm.elements.reportWorkContent?.value);
-  const workMinutes = normalizeAmount(dailyReportForm.elements.reportWorkMinutes?.value) ?? 0;
+  const workMinutes = parseNumberInput(dailyReportForm.elements.reportWorkMinutes?.value);
   const nextAction = asTrimmedText(dailyReportForm.elements.reportNextAction?.value);
   const nextActionDate = dailyReportForm.elements.reportNextActionDate?.value || "";
   const memo = asTrimmedText(dailyReportForm.elements.reportMemo?.value);
@@ -1111,7 +1122,8 @@ async function handleDailyReportSubmit(event) {
 
   const isEdit = Boolean(editState.dailyReportId);
   const taskName = isEdit ? "日報更新" : "日報登録";
-  console.log("DAILY REPORT PAYLOAD", payload);
+  console.log("EDIT STATE", editState);
+  console.log("PAYLOAD", payload);
   try {
     await withLoading(taskName, async () => {
       if (isEdit) {
@@ -3217,22 +3229,28 @@ function renderClients() {
   if (!clientsList || !clientsEmpty) return;
   clientsList.innerHTML = "";
   const caseById = new Map(state.cases.map((entry) => [entry.id, entry]));
+  const todayTs = toDateOnlyTimestamp(toDateString(new Date()));
   const sorted = state.clients.slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
   sorted.forEach((client) => {
     const related = state.dailyReports.filter((entry) => {
       if (entry.clientId === client.id) return true;
-      if (!entry.caseId) return false;
-      const linkedCase = caseById.get(entry.caseId);
-      return linkedCase?.clientId === client.id;
+      const linkedCase = entry.caseId ? caseById.get(entry.caseId) : null;
+      if (!linkedCase) return false;
+      if (linkedCase?.clientId === client.id) return true;
+      return linkedCase?.customerName === client.name;
     });
     const lastInteraction = related
       .map((entry) => entry.reportDate)
       .filter(Boolean)
       .sort((a, b) => toSortTimestamp(b) - toSortTimestamp(a))[0] || "";
-    const nextInteraction = related
+    const nextCandidates = related
       .map((entry) => entry.nextActionDate)
-      .filter(Boolean)
+      .filter(Boolean);
+    const upcomingNext = nextCandidates
+      .filter((dateText) => toDateOnlyTimestamp(dateText) >= todayTs)
       .sort((a, b) => toSortTimestamp(a) - toSortTimestamp(b))[0] || "";
+    const nearestAny = nextCandidates.sort((a, b) => toSortTimestamp(a) - toSortTimestamp(b))[0] || "";
+    const nextInteraction = upcomingNext || nearestAny;
     const li = document.createElement("li");
     li.className = "item";
     li.dataset.id = client.id;
@@ -3429,7 +3447,7 @@ function getEstimateItemsFromForm() {
     .map((row, idx) => {
       const itemName = asTrimmedText(row.querySelector('[data-key="itemName"]')?.value);
       const quantity = parseDecimalInput(row.querySelector('[data-key="quantity"]')?.value);
-      const unitPrice = normalizeAmount(row.querySelector('[data-key="unitPrice"]')?.value) ?? 0;
+      const unitPrice = parseNumberInput(row.querySelector('[data-key="unitPrice"]')?.value);
       const amount = Math.floor((Number.isFinite(quantity) ? quantity : 0) * unitPrice);
       return { itemName, quantity, unitPrice, amount, sortOrder: idx };
     })
@@ -3440,7 +3458,7 @@ function recalcEstimateTotals() {
   let subtotal = 0;
   Array.from(estimateItemsWrap?.querySelectorAll(".estimate-item-row") || []).forEach((row) => {
     const quantity = parseDecimalInput(row.querySelector('[data-key="quantity"]')?.value);
-    const unitPrice = normalizeAmount(row.querySelector('[data-key="unitPrice"]')?.value) ?? 0;
+    const unitPrice = parseNumberInput(row.querySelector('[data-key="unitPrice"]')?.value);
     const amount = Math.floor((Number.isFinite(quantity) ? quantity : 0) * unitPrice);
     subtotal += amount;
     const amountEl = row.querySelector(".item-amount");
@@ -3456,6 +3474,7 @@ function recalcEstimateTotals() {
 
 async function handleEstimateSubmit(event) {
   event.preventDefault();
+  console.log("ESTIMATE SUBMIT FIRED");
   if (!currentUser) return;
   const customerName = asTrimmedText(estimateForm.elements.customerName.value);
   const estimateTitle = asTrimmedText(estimateForm.elements.estimateTitle.value);
@@ -3479,6 +3498,7 @@ async function handleEstimateSubmit(event) {
 
   const taskName = editState.estimateId ? "見積更新" : "見積登録";
   const actionName = taskName;
+  console.log("EDIT STATE", editState);
   console.log("ACTION START", actionName, editState.estimateId || "new");
   console.log("PAYLOAD", payload);
   try {
@@ -4974,6 +4994,10 @@ function normalizeAmount(raw) {
   return Math.floor(value);
 }
 
+function parseNumberInput(value) {
+  return Number(String(value || "").replace(/,/g, "").trim()) || 0;
+}
+
 function parseDecimalInput(raw) {
   if (raw === "" || raw === null || raw === undefined) return 0;
   const normalized = String(raw).replace(/,/g, "").trim();
@@ -5866,6 +5890,7 @@ function mapFixedExpenseFromDb(row) {
 function mapDailyReportFromDb(row) {
   return {
     id: row.id,
+    userId: row.user_id || null,
     reportDate: row.report_date || "",
     caseId: row.case_id || null,
     clientId: row.client_id || null,
