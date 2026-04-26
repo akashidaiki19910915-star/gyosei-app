@@ -4022,14 +4022,20 @@ async function handleEstimateConversionAction(options) {
     }
     return null;
   } finally {
-    if (isSuccess && successMessage) {
-      await loadAllData();
-      renderAfterDataChanged();
-      if (successTab) activateTab(successTab);
-      if (successTab && successSubtab) activateSubtab(successTab, successSubtab);
-      showAppMessage(successMessage, false);
+    try {
+      if (isSuccess && successMessage) {
+        await loadAllData();
+        renderAfterDataChanged();
+        if (successTab) activateTab(successTab);
+        if (successTab && successSubtab) activateSubtab(successTab, successSubtab);
+        showAppMessage(successMessage, false);
+      }
+    } catch (refreshError) {
+      console.error("変換後の再読み込みに失敗しました。", refreshError);
+      showAppMessage(`再読み込みに失敗しました。${formatSupabaseError(refreshError)}`, true);
+    } finally {
+      forceHideLoading();
     }
-    forceHideLoading();
   }
 }
 
