@@ -2,7 +2,7 @@ const SUPABASE_URL = "https://ueelzyftlbnvjvpsmpyt.supabase.co";
 const SUPABASE_KEY = "sb_publishable_0DrKsieUcCyEZN_HRg8LhQ_QqFTPMtp";
 const STATUS_ORDER = ["未着手", "進行中", "完了"];
 const STATUS_FILTER_KEYS = [...STATUS_ORDER, "その他"];
-const DEADLINE_FILTER_KEYS = ["all", "overdue", "within7", "within30"];
+const DEADLINE_FILTER_KEYS = ["all", "overdue", "within3", "within7", "within30"];
 const SALES_PAYMENT_STATUSES = ["未入金", "一部入金", "入金済"];
 const ESTIMATE_STATUS_ORDER = ["作成中", "提出済", "未回答", "受注", "失注"];
 const EXPENSE_PAYMENT_METHODS = ["現金", "クレジットカード", "銀行振込", "電子マネー", "口座振替", "その他"];
@@ -39,6 +39,7 @@ const state = {
   expenses: [],
   fixedExpenses: [],
   dailyReports: [],
+  caseTasks: [],
   selectedAggregation: "month",
   selectedMonth: toMonthKey(new Date()),
   selectedYear: new Date().getFullYear(),
@@ -55,7 +56,7 @@ const state = {
   estimateExpiredFilter: "all",
   isInitialDataReady: false,
 };
-const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null };
+const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null };
 
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
@@ -186,6 +187,12 @@ const caseStatusFilterSelect = document.getElementById("case-status-filter");
 const caseDeadlineFilterSelect = document.getElementById("case-deadline-filter");
 const caseFilterClearBtn = document.getElementById("case-filter-clear-btn");
 const caseFilterCount = document.getElementById("case-filter-count");
+const caseTaskForm = document.getElementById("case-task-form");
+const caseTaskCaseSelect = document.getElementById("case-task-case-id");
+const caseTaskSubmitBtn = document.getElementById("case-task-submit-btn");
+const caseTasksBody = document.getElementById("case-tasks-body");
+const caseTasksEmpty = document.getElementById("case-tasks-empty");
+const caseTasksListWrap = document.getElementById("case-tasks-list-wrap");
 
 const saleForm = document.getElementById("sale-form");
 const saleCaseSelect = document.getElementById("sale-case-id");
@@ -253,9 +260,9 @@ let isLoggingOut = false;
 let eventsBound = false;
 let loadingCount = 0;
 let loadingTimeoutId = null;
-const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
-const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
-const RESTORE_DELETE_ORDER = ["estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "estimates", "cases", "work_templates", "clients"];
+const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
+const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
+const RESTORE_DELETE_ORDER = ["estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "case_tasks", "estimates", "cases", "work_templates", "clients"];
 const CASE_MUTATION_COLUMNS = [
   "user_id",
   "client_id",
@@ -350,6 +357,7 @@ function bindEvents() {
 
   clientForm?.addEventListener("submit", handleClientSubmit);
   caseForm.addEventListener("submit", handleCaseSubmit);
+  caseTaskForm?.addEventListener("submit", handleCaseTaskSubmit);
   workTemplateForm?.addEventListener("submit", handleWorkTemplateSubmit);
   console.log("SALE FORM FOUND", !!saleForm);
   console.log("EXPENSE FORM FOUND", !!expenseForm);
@@ -366,6 +374,7 @@ function bindEvents() {
   reportClientSelect?.addEventListener("change", syncDailyReportClientLabel);
   clientHistoryClientSelect?.addEventListener("change", renderClientHistory);
   caseList.addEventListener("click", handleCaseListAction);
+  caseTasksBody?.addEventListener("click", handleCaseTaskListAction);
   workTemplatesList?.addEventListener("click", handleWorkTemplateListAction);
   salesListBody?.addEventListener("click", handleSalesListAction);
   expensesList.addEventListener("click", handleExpensesListAction);
@@ -511,6 +520,8 @@ function handleDeadlineAlertClick(event) {
   }
   const caseId = button.dataset.caseId;
   if (caseId) startCaseEdit(caseId);
+  const taskId = button.dataset.taskId;
+  if (taskId) startCaseTaskEdit(taskId);
 }
 
 function handleNextActionAlertClick(event) {
@@ -619,6 +630,7 @@ async function applyAuthState() {
 
   await loadAllData();
   resetCaseForm();
+  resetCaseTaskForm();
   resetEstimateForm();
   resetSaleForm();
   resetExpenseForm();
@@ -679,10 +691,11 @@ async function handleLogout() {
 async function loadAllData() {
   if (!currentUser || isLoggingOut) return;
 
-  const [clientsRes, workTemplatesRes, casesRes, estimatesRes, estimateItemsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes] = await Promise.all([
+  const [clientsRes, workTemplatesRes, casesRes, caseTasksRes, estimatesRes, estimateItemsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes] = await Promise.all([
     sbClient.from("clients").select("*").eq("user_id", currentUser.id),
     sbClient.from("work_templates").select("*").eq("user_id", currentUser.id),
     sbClient.from("cases").select("*").eq("user_id", currentUser.id),
+    sbClient.from("case_tasks").select("*").eq("user_id", currentUser.id),
     sbClient.from("estimates").select("*").eq("user_id", currentUser.id),
     sbClient.from("estimate_items").select("*").eq("user_id", currentUser.id),
     sbClient.from("sales").select("*").eq("user_id", currentUser.id),
@@ -694,6 +707,7 @@ async function loadAllData() {
   if (clientsRes.error) throw new Error(`clients: ${formatSupabaseError(clientsRes.error)}`);
   if (workTemplatesRes.error) throw new Error(`work_templates: ${formatSupabaseError(workTemplatesRes.error)}`);
   if (casesRes.error) throw new Error(`cases: ${formatSupabaseError(casesRes.error)}`);
+  if (caseTasksRes.error) throw new Error(`case_tasks: ${formatSupabaseError(caseTasksRes.error)}`);
   if (estimatesRes.error) throw new Error(`estimates: ${formatSupabaseError(estimatesRes.error)}`);
   if (estimateItemsRes.error) throw new Error(`estimate_items: ${formatSupabaseError(estimateItemsRes.error)}`);
   if (salesRes.error) {
@@ -711,6 +725,7 @@ async function loadAllData() {
     if (seeded.length) state.workTemplates = seeded;
   }
   state.cases = (casesRes.data || []).map(mapCaseFromDb);
+  state.caseTasks = (caseTasksRes.data || []).map(mapCaseTaskFromDb);
   state.estimates = (estimatesRes.data || []).map(mapEstimateFromDb);
   state.estimateItems = (estimateItemsRes.data || []).map(mapEstimateItemFromDb);
   console.log("LOAD SALES RAW", salesRes.data);
@@ -859,6 +874,7 @@ async function handleCaseSubmit(event) {
         const { data, error } = await sbClient.from("cases").insert(payload).select().single();
         if (error) throw error;
         if (!data) throw new Error("案件登録結果を取得できませんでした。");
+        await createCaseTasksFromTemplate(data, payload.template_id);
         console.log("CASE INSERT SUCCESS", data);
       }
       await loadAllData();
@@ -916,6 +932,32 @@ async function handleWorkTemplateSubmit(event) {
     showAppMessage(`業務テンプレート保存に失敗しました。${formatSupabaseError(error)}`, true);
   } finally {
     forceHideLoading();
+  }
+}
+
+async function createCaseTasksFromTemplate(caseRow, templateId) {
+  if (!currentUser || !caseRow?.id || !templateId) return;
+  const template = state.workTemplates.find((entry) => entry.id === templateId);
+  if (!template) return;
+  const taskSource = asTrimmedText(template.defaultTasks) || asTrimmedText(template.taskList);
+  const taskLines = splitMultilineItems(taskSource);
+  if (!taskLines.length) return;
+  const dueDate = caseRow.due_date || null;
+  for (const line of taskLines) {
+    const title = asTrimmedText(line);
+    if (!title) continue;
+    const payload = {
+      user_id: currentUser.id,
+      case_id: caseRow.id,
+      task_title: title,
+      task_memo: null,
+      due_date: dueDate,
+      status: "未完了",
+      completed_at: null,
+    };
+    const { data, error } = await sbClient.from("case_tasks").insert(payload).select().single();
+    if (error) throw error;
+    if (!data) throw new Error("案件タスクの自動作成結果を取得できませんでした。");
   }
 }
 
@@ -1308,6 +1350,60 @@ async function startCaseEdit(caseId) {
     caseForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function startCaseTaskEdit(taskId) {
+  if (!caseTaskForm) return;
+  const target = state.caseTasks.find((entry) => entry.id === taskId);
+  if (!target) return;
+  editState.caseTaskId = target.id;
+  caseTaskForm.elements.caseTaskCaseId.value = target.caseId || "";
+  caseTaskForm.elements.caseTaskTitle.value = target.taskTitle || "";
+  caseTaskForm.elements.caseTaskMemo.value = target.taskMemo || "";
+  caseTaskForm.elements.caseTaskDueDate.value = target.dueDate || "";
+  caseTaskForm.elements.caseTaskStatus.value = target.status === "完了" ? "完了" : "未完了";
+  if (caseTaskSubmitBtn) caseTaskSubmitBtn.textContent = "タスクを更新";
+  subtabState.cases = "tasks";
+  activateTab("cases");
+}
+
+async function completeCaseTask(taskId) {
+  if (!currentUser) return;
+  try {
+    await withLoading("案件タスク完了", async () => {
+      const payload = { status: "完了", completed_at: toDateString(new Date()) };
+      const { data, error } = await sbClient.from("case_tasks").update(payload).eq("id", taskId).eq("user_id", currentUser.id).select().single();
+      if (error) throw error;
+      if (!data) throw new Error("更新結果を取得できませんでした。");
+      await loadAllData();
+      renderAfterDataChanged();
+      showAppMessage("案件タスクを完了にしました。", false);
+    });
+  } catch (error) {
+    showAppMessage(`案件タスク完了に失敗しました。${formatSupabaseError(error)}`, true);
+  } finally {
+    forceHideLoading();
+  }
+}
+
+async function deleteCaseTask(taskId) {
+  if (!currentUser) return;
+  if (!window.confirm("この案件タスクを削除しますか？")) return;
+  try {
+    await withLoading("案件タスク削除", async () => {
+      const { data, error } = await sbClient.from("case_tasks").delete().eq("id", taskId).eq("user_id", currentUser.id).select().single();
+      if (error) throw error;
+      if (!data) throw new Error("削除結果を取得できませんでした。");
+      await loadAllData();
+      renderAfterDataChanged();
+      if (editState.caseTaskId === taskId) resetCaseTaskForm();
+      showAppMessage("案件タスクを削除しました。", false);
+    });
+  } catch (error) {
+    showAppMessage(`案件タスク削除に失敗しました。${formatSupabaseError(error)}`, true);
+  } finally {
+    forceHideLoading();
+  }
+}
+
 function handleCaseTemplateChange(event) {
   const templateId = event?.target?.value || "";
   if (!templateId || !caseForm) return;
@@ -1421,6 +1517,10 @@ function handleTodayTaskAction(event) {
   const taskId = btn.dataset.taskId;
   const target = btn.dataset.taskTarget;
   if (!taskId || !target) return;
+  if (target === "case-task-complete") {
+    completeCaseTask(taskId).catch(() => {});
+    return;
+  }
   if (target === "case") {
     startCaseEdit(taskId).catch(() => {});
     return;
@@ -1429,8 +1529,68 @@ function handleTodayTaskAction(event) {
     editSale(taskId).catch(() => {});
     return;
   }
+  if (target === "case-task") {
+    startCaseTaskEdit(taskId);
+    return;
+  }
   if (target === "daily-report") {
     editDailyReport(taskId).catch(() => {});
+  }
+}
+
+async function handleCaseTaskSubmit(event) {
+  event.preventDefault();
+  if (!currentUser || !caseTaskForm || !ensureInitialDataReady("案件タスク登録")) return;
+  const payload = {
+    user_id: currentUser.id,
+    case_id: caseTaskForm.elements.caseTaskCaseId.value || null,
+    task_title: asTrimmedText(caseTaskForm.elements.caseTaskTitle.value),
+    task_memo: asTrimmedText(caseTaskForm.elements.caseTaskMemo.value) || null,
+    due_date: caseTaskForm.elements.caseTaskDueDate.value || null,
+    status: caseTaskForm.elements.caseTaskStatus.value === "完了" ? "完了" : "未完了",
+    completed_at: null,
+  };
+  if (!payload.task_title) return;
+  if (payload.status === "完了") payload.completed_at = toDateString(new Date());
+  const taskName = editState.caseTaskId ? "案件タスク更新" : "案件タスク登録";
+  try {
+    await withLoading(taskName, async () => {
+      if (editState.caseTaskId) {
+        const { data, error } = await sbClient.from("case_tasks").update(payload).eq("id", editState.caseTaskId).eq("user_id", currentUser.id).select().single();
+        if (error) throw error;
+        if (!data) throw new Error("更新結果を取得できませんでした。");
+      } else {
+        const { data, error } = await sbClient.from("case_tasks").insert(payload).select().single();
+        if (error) throw error;
+        if (!data) throw new Error("登録結果を取得できませんでした。");
+      }
+      await loadAllData();
+      renderAfterDataChanged();
+      resetCaseTaskForm();
+      showAppMessage(editState.caseTaskId ? "案件タスクを更新しました。" : "案件タスクを登録しました。", false);
+    }, { triggerButton: event.submitter });
+  } catch (error) {
+    showAppMessage(`案件タスク保存に失敗しました。${formatSupabaseError(error)}`, true);
+  } finally {
+    forceHideLoading();
+  }
+}
+
+function handleCaseTaskListAction(event) {
+  const btn = event.target.closest("button");
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const taskId = btn.dataset.taskId;
+  if (!taskId) return;
+  if (btn.classList.contains("edit-case-task-btn")) {
+    startCaseTaskEdit(taskId);
+    return;
+  }
+  if (btn.classList.contains("complete-case-task-btn")) {
+    completeCaseTask(taskId).catch(() => {});
+    return;
+  }
+  if (btn.classList.contains("delete-case-task-btn")) {
+    deleteCaseTask(taskId).catch(() => {});
   }
 }
 
@@ -1772,6 +1932,8 @@ async function deleteCase(id) {
 
     const salesDeleteRes = await sbClient.from("sales").delete().eq("case_id", id).eq("user_id", currentUser.id);
     if (salesDeleteRes.error) throw salesDeleteRes.error;
+    const caseTasksDeleteRes = await sbClient.from("case_tasks").delete().eq("case_id", id).eq("user_id", currentUser.id);
+    if (caseTasksDeleteRes.error) throw caseTasksDeleteRes.error;
     const expensesDeleteRes = await sbClient.from("expenses").delete().eq("case_id", id).eq("user_id", currentUser.id);
     if (expensesDeleteRes.error) throw expensesDeleteRes.error;
     const reportsUpdateRes = await sbClient.from("daily_reports").update({ case_id: null }).eq("case_id", id).eq("user_id", currentUser.id);
@@ -2097,6 +2259,7 @@ function handleExportAllCsv() {
     "date", "content", "amount", "payee", "payment_method",
     "day_of_month", "start_date", "active",
     "report_date", "report_client_id", "report_client_name", "report_case_name", "report_interaction_type", "report_work_content", "report_work_minutes", "report_next_action", "report_next_action_date", "report_memo",
+    "task_case_name", "task_title", "task_memo", "task_due_date", "task_status", "task_completed_at",
   ];
   const rows = [];
 
@@ -2201,6 +2364,19 @@ function handleExportAllCsv() {
       report_memo: entry.memo || "",
     });
   });
+  state.caseTasks.forEach((entry) => {
+    const foundCase = state.cases.find((c) => c.id === entry.caseId);
+    rows.push({
+      data_type: "case_task",
+      customer_name: foundCase?.customerName || "顧客不明",
+      task_case_name: foundCase?.caseName || "案件なし",
+      task_title: entry.taskTitle || "",
+      task_memo: entry.taskMemo || "",
+      task_due_date: entry.dueDate || "",
+      task_status: entry.status || "未完了",
+      task_completed_at: entry.completedAt || "",
+    });
+  });
 
   downloadCsvFile("all_data.csv", headers, rows);
 }
@@ -2293,6 +2469,7 @@ function exportExcel() {
     const expenseHeaders = ["case_name", "date", "content", "amount", "payee", "payment_method", "receipt_url"];
     const fixedExpenseHeaders = ["content", "amount", "day_of_month", "start_date", "active"];
     const dailyReportHeaders = ["report_date", "client_id", "client_name", "case_name", "interaction_type", "work_content", "work_minutes", "next_action", "next_action_date", "memo"];
+    const caseTaskHeaders = ["customer_name", "case_name", "task_title", "task_memo", "due_date", "status", "completed_at"];
     const clientRows = state.clients.map((entry) => ({
       name: entry.name || "",
       client_type: entry.clientType || "",
@@ -2367,6 +2544,18 @@ function exportExcel() {
       next_action_date: entry.nextActionDate || "",
       memo: entry.memo || "",
     }));
+    const caseTaskRows = state.caseTasks.map((entry) => {
+      const linkedCase = state.cases.find((row) => row.id === entry.caseId);
+      return {
+        customer_name: linkedCase?.customerName || "顧客不明",
+        case_name: linkedCase?.caseName || "案件なし",
+        task_title: entry.taskTitle || "",
+        task_memo: entry.taskMemo || "",
+        due_date: entry.dueDate || "",
+        status: entry.status || "未完了",
+        completed_at: entry.completedAt || "",
+      };
+    });
 
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(clientRows, clientHeaders), "顧客");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(caseRows, caseHeaders), "案件");
@@ -2374,6 +2563,7 @@ function exportExcel() {
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(expenseRows, expenseHeaders), "経費");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(fixedExpenseRows, fixedExpenseHeaders), "固定費");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(dailyReportRows, dailyReportHeaders), "日報");
+    XLSX.utils.book_append_sheet(workbook, createExcelSheet(caseTaskRows, caseTaskHeaders), "案件タスク");
     XLSX.writeFile(workbook, "gyosei-app-export.xlsx");
     showAppMessage("Excelファイルを出力しました。", false);
   } catch (error) {
@@ -2616,14 +2806,16 @@ function renderAfterDataChanged() {
   safeRender("workTemplates", renderWorkTemplates);
   safeRender("workTemplateOptions", renderWorkTemplateOptions);
   safeRender("caseOptions", renderCaseOptions);
+  safeRender("caseTasks", renderCaseTasks);
+  safeRender("caseTaskAlerts", renderCaseTaskAlerts);
   safeRender("cases", renderCases);
   safeRender("estimates", renderEstimates);
   safeRender("sales", renderSales);
   safeRender("expenses", renderExpenses);
   safeRender("fixedExpenses", renderFixedExpenses);
   safeRender("dailyReports", renderDailyReports);
-  safeRender("dashboard", renderDashboard);
   safeRender("todayTasks", renderTodayTasks);
+  safeRender("dashboard", renderDashboard);
   safeRender("unpaidAlerts", renderUnpaidAlerts);
   safeRender("billingLeakAlerts", renderBillingLeakAlerts);
   safeRender("deadlineAlerts", renderDeadlineAlerts);
@@ -2636,6 +2828,15 @@ function renderAfterDataChanged() {
 function renderTodayTasks() {
   if (!todayTaskCard || !todayTaskSummary || !todayTaskBody || !todayTaskEmpty || !todayTaskListWrap) return;
   renderTodayTaskCard();
+}
+
+function renderCaseTasks() {
+  renderCaseTaskOptions();
+  renderCaseTasksTable();
+}
+
+function renderCaseTaskAlerts() {
+  renderDeadlineAlertCard();
 }
 
 function renderUnpaidAlerts() {
@@ -2830,12 +3031,11 @@ function renderTodayTaskCard() {
         <td>${escapeHtml(row.type)}</td>
         <td>${escapeHtml(row.customerName)}</td>
         <td>${escapeHtml(row.caseName)}</td>
-        <td>${row.remainingAmountLabel || "-"}</td>
+        <td>${escapeHtml(row.taskTitle || "-")}</td>
         <td>${row.dueDateLabel || formatDate(row.date)}</td>
-        <td>${row.lastReminderDateLabel || "-"}</td>
-        <td>${row.reminderCountLabel || "-"}</td>
+        <td>${escapeHtml(row.subInfo || "-")}</td>
         <td><button type="button" class="secondary-btn" data-task-target="${row.target}" data-task-id="${row.id}">編集</button></td>
-        <td>${row.showReminderButton ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${row.id}">督促記録</button>` : "-"}</td>
+        <td>${row.actionButtonHtml || (row.showReminderButton ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${row.id}">督促記録</button>` : "-")}</td>
       `;
       todayTaskBody.appendChild(tr);
     });
@@ -2877,15 +3077,32 @@ function buildTodayTasks() {
         type: sale.paymentStatus === "一部入金" ? "督促（一部入金）" : "督促（未入金）",
         customerName: linked?.customerName || "（削除済み顧客）",
         caseName: linked?.caseName || "（削除済み案件）",
+        taskTitle: "未入金督促",
         date: sale.dueDate || sale.paidDate || toDateString(sale.createdAt),
         urgencyClass,
-        remainingAmountLabel: formatCurrency(getRemainingAmount(sale)),
         dueDateLabel: sale.dueDate ? formatDate(sale.dueDate) : "未設定",
-        lastReminderDateLabel: sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "未記録",
-        reminderCountLabel: `${Number(sale.reminderCount || 0)}回`,
+        subInfo: `残額: ${formatCurrency(getRemainingAmount(sale))} / 最終督促: ${sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "未記録"} / ${Number(sale.reminderCount || 0)}回`,
         showReminderButton: isReminderRecordableSale(sale),
       });
     });
+  state.caseTasks.forEach((entry) => {
+    const dueTs = toDateOnlyTimestamp(entry.dueDate);
+    if (!entry.dueDate || entry.status === "完了" || !Number.isFinite(dueTs) || dueTs > todayLimit) return;
+    const linkedCase = state.cases.find((row) => row.id === entry.caseId);
+    tasks.push({
+      id: entry.id,
+      target: "case-task",
+      type: "案件タスク",
+      customerName: linkedCase?.customerName || "顧客不明",
+      caseName: linkedCase?.caseName || "案件なし",
+      taskTitle: entry.taskTitle || "未設定",
+      date: entry.dueDate,
+      dueDateLabel: formatDate(entry.dueDate),
+      subInfo: entry.status,
+      urgencyClass: getCaseTaskUrgencyClass(entry),
+      actionButtonHtml: `<button type="button" class="secondary-btn" data-task-target="case-task-complete" data-task-id="${entry.id}">完了</button>`,
+    });
+  });
   getBillingLeakCandidates().forEach((entry) => {
     tasks.push({
       id: entry.id, target: "case", type: "請求漏れ", customerName: entry.customerName, caseName: entry.caseName,
@@ -2915,7 +3132,7 @@ function buildTodayTasks() {
 function renderDeadlineAlertCard() {
   if (!deadlineAlertCard || !deadlineAlertSummary || !deadlineAlertBody || !deadlineAlertEmpty || !deadlineAlertListWrap) return;
   const targets = getDeadlineAlertTargets();
-  const counts = { overdue: 0, within7: 0, within30: 0 };
+  const counts = { overdue: 0, within3: 0, within7: 0, within30: 0 };
   targets.forEach((item) => {
     counts[item.deadlineStatus] += 1;
   });
@@ -2925,6 +3142,7 @@ function renderDeadlineAlertCard() {
 
   [
     { key: "overdue", label: "期限切れ", count: counts.overdue },
+    { key: "within3", label: "3日以内", count: counts.within3 },
     { key: "within7", label: "7日以内", count: counts.within7 },
     { key: "within30", label: "30日以内", count: counts.within30 },
   ].forEach((entry) => {
@@ -2952,28 +3170,50 @@ function renderDeadlineAlertCard() {
       const tr = document.createElement("tr");
       tr.className =
         entry.deadlineStatus === "overdue" ? "deadline-overdue" :
+        entry.deadlineStatus === "within3" ? "deadline-within3" :
         entry.deadlineStatus === "within7" ? "deadline-within7" :
         "deadline-within30";
       tr.innerHTML = `
         <td>${escapeHtml(entry.customerName)}</td>
         <td>${escapeHtml(entry.caseName)}</td>
         <td>${formatDate(entry.dueDate)}</td>
-        <td>${escapeHtml(entry.status)}</td>
+        <td>${escapeHtml(entry.label || entry.status)}</td>
         <td>${formatRemainingDays(entry.remainingDays)}</td>
-        <td><button type="button" class="secondary-btn" data-case-id="${entry.id}">編集</button></td>
+        <td>${entry.alertType === "case-task"
+    ? `<button type="button" class="secondary-btn edit-case-task-btn" data-task-id="${entry.id}">編集</button>`
+    : `<button type="button" class="secondary-btn" data-case-id="${entry.id}">編集</button>`}</td>
       `;
       deadlineAlertBody.appendChild(tr);
     });
 }
 
 function getDeadlineAlertTargets() {
-  return state.cases
+  const caseTargets = state.cases
     .map((entry) => {
       const info = getCaseDeadlineInfo(entry);
       if (!info) return null;
-      return { ...entry, ...info };
+      return { ...entry, ...info, alertType: "case", label: entry.status };
     })
     .filter(Boolean);
+  const taskTargets = state.caseTasks
+    .map((entry) => {
+      const info = getCaseTaskDeadlineInfo(entry);
+      if (!info) return null;
+      const linkedCase = state.cases.find((row) => row.id === entry.caseId);
+      return {
+        id: entry.id,
+        customerName: linkedCase?.customerName || "顧客不明",
+        caseName: linkedCase?.caseName || "案件なし",
+        dueDate: entry.dueDate,
+        status: entry.status,
+        deadlineStatus: info.deadlineStatus,
+        remainingDays: info.remainingDays,
+        alertType: "case-task",
+        label: `案件タスク: ${entry.taskTitle || "未設定"}`,
+      };
+    })
+    .filter(Boolean);
+  return [...caseTargets, ...taskTargets];
 }
 
 function getCaseDeadlineInfo(entry) {
@@ -2984,9 +3224,31 @@ function getCaseDeadlineInfo(entry) {
   if (!Number.isFinite(dueTimestamp) || !Number.isFinite(todayTimestamp)) return null;
   const remainingDays = Math.floor((dueTimestamp - todayTimestamp) / 86400000);
   if (remainingDays < 0) return { deadlineStatus: "overdue", remainingDays };
+  if (remainingDays <= 3) return { deadlineStatus: "within3", remainingDays };
   if (remainingDays <= 7) return { deadlineStatus: "within7", remainingDays };
   if (remainingDays <= 30) return { deadlineStatus: "within30", remainingDays };
   return null;
+}
+
+function getCaseTaskDeadlineInfo(entry) {
+  if (!entry?.dueDate) return null;
+  if (entry.status === "完了") return null;
+  const dueTimestamp = toDateOnlyTimestamp(entry.dueDate);
+  const todayTimestamp = getTodayTimestamp();
+  if (!Number.isFinite(dueTimestamp) || !Number.isFinite(todayTimestamp)) return null;
+  const remainingDays = Math.floor((dueTimestamp - todayTimestamp) / 86400000);
+  if (remainingDays < 0) return { deadlineStatus: "overdue", remainingDays };
+  if (remainingDays <= 3) return { deadlineStatus: "within3", remainingDays };
+  if (remainingDays <= 7) return { deadlineStatus: "within7", remainingDays };
+  return null;
+}
+
+function getCaseTaskUrgencyClass(entry) {
+  const info = getCaseTaskDeadlineInfo(entry);
+  if (!info) return "";
+  if (info.deadlineStatus === "overdue") return "task-overdue";
+  if (info.deadlineStatus === "within3") return "task-soon";
+  return "task-upcoming";
 }
 
 
@@ -3522,6 +3784,50 @@ function renderCaseOptions() {
   saleCaseSelect.disabled = false;
   expenseCaseSelect.innerHTML = `<option value="">案件に紐付けしない</option>${options}`;
   reportCaseSelect.innerHTML = `<option value="">案件なし</option>${options}`;
+  if (caseTaskCaseSelect) {
+    const currentValue = caseTaskCaseSelect.value;
+    caseTaskCaseSelect.innerHTML = `<option value="">案件なし</option>${options}`;
+    if (currentValue) caseTaskCaseSelect.value = currentValue;
+  }
+}
+
+function renderCaseTaskOptions() {
+  if (!caseTaskCaseSelect) return;
+  const options = state.cases
+    .slice()
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .map((c) => `<option value="${c.id}">${escapeHtml(c.customerName)}｜${escapeHtml(c.caseName)}</option>`)
+    .join("");
+  const currentValue = caseTaskCaseSelect.value;
+  caseTaskCaseSelect.innerHTML = `<option value="">案件なし</option>${options}`;
+  if (currentValue) caseTaskCaseSelect.value = currentValue;
+}
+
+function renderCaseTasksTable() {
+  if (!caseTasksBody || !caseTasksEmpty || !caseTasksListWrap) return;
+  caseTasksBody.innerHTML = "";
+  const rows = state.caseTasks.slice().sort((a, b) => toSortTimestamp(a.dueDate) - toSortTimestamp(b.dueDate));
+  caseTasksEmpty.hidden = rows.length > 0;
+  caseTasksListWrap.hidden = rows.length === 0;
+  rows.forEach((entry) => {
+    const linkedCase = state.cases.find((row) => row.id === entry.caseId);
+    const customerName = linkedCase?.customerName || "顧客不明";
+    const caseName = linkedCase?.caseName || "案件なし";
+    const tr = document.createElement("tr");
+    tr.className = getCaseTaskUrgencyClass(entry);
+    tr.innerHTML = `
+      <td>${escapeHtml(customerName)}</td>
+      <td>${escapeHtml(caseName)}</td>
+      <td>${escapeHtml(entry.taskTitle || "未設定")}</td>
+      <td>${formatDate(entry.dueDate)}</td>
+      <td>${escapeHtml(entry.status)}</td>
+      <td>${formatDate(entry.completedAt)}</td>
+      <td><button type="button" class="secondary-btn edit-case-task-btn" data-task-id="${entry.id}">編集</button></td>
+      <td>${entry.status !== "完了" ? `<button type="button" class="secondary-btn complete-case-task-btn" data-task-id="${entry.id}">完了</button>` : "-"}</td>
+      <td><button type="button" class="danger-btn delete-case-task-btn" data-task-id="${entry.id}">削除</button></td>
+    `;
+    caseTasksBody.appendChild(tr);
+  });
 }
 
 function renderWorkTemplateOptions() {
@@ -4559,6 +4865,13 @@ function resetCaseForm() {
   caseSubmitBtn.textContent = "案件を追加";
 }
 
+function resetCaseTaskForm() {
+  resetEditMode("caseTask");
+  caseTaskForm?.reset();
+  if (caseTaskSubmitBtn) caseTaskSubmitBtn.textContent = "タスクを追加";
+  if (caseTaskForm?.elements?.caseTaskStatus) caseTaskForm.elements.caseTaskStatus.value = "未完了";
+}
+
 function resetWorkTemplateForm() {
   resetEditMode("workTemplate");
   workTemplateForm?.reset();
@@ -4603,6 +4916,7 @@ function resetEditMode(target) {
   if (target === "fixedExpense") editState.fixedExpenseId = null;
   if (target === "dailyReport") editState.dailyReportId = null;
   if (target === "estimate") editState.estimateId = null;
+  if (target === "caseTask") editState.caseTaskId = null;
 }
 
 function normalizeEstimateStatus(status) {
@@ -5619,8 +5933,9 @@ function matchesDeadlineFilter(entry, filterKey) {
   const info = getCaseDeadlineInfo(entry);
   if (!info) return false;
   if (filterKey === "overdue") return info.deadlineStatus === "overdue";
+  if (filterKey === "within3") return info.deadlineStatus === "within3";
   if (filterKey === "within7") return info.deadlineStatus === "within7";
-  if (filterKey === "within30") return info.deadlineStatus === "within30" || info.deadlineStatus === "within7";
+  if (filterKey === "within30") return ["within30", "within7", "within3"].includes(info.deadlineStatus);
   return true;
 }
 
@@ -6038,6 +6353,10 @@ async function importWorkbookBySheet(workbook) {
   if (clientInteractionsData.rows.length) {
     mergeResult(await importRowsByType("client_interactions", clientInteractionsData));
   }
+  const caseTasksData = getSheetRows("案件タスク");
+  if (caseTasksData.rows.length) {
+    mergeResult(await importRowsByType("case_tasks", caseTasksData));
+  }
   return total;
 }
 
@@ -6238,6 +6557,40 @@ async function importRowsByType(importType, tableData) {
     return result;
   }
 
+  if (importType === "case_tasks") {
+    validateRequiredHeaders(headers, ["task_title", "status"]);
+    const payloads = [];
+    rows.forEach((row) => {
+      try {
+        const taskTitle = asTrimmedText(row.task_title);
+        if (!taskTitle) {
+          result.skippedCount += 1;
+          return;
+        }
+        const caseName = asTrimmedText(row.case_name);
+        const linkedCase = state.cases.find((entry) => entry.caseName === caseName && (!row.customer_name || entry.customerName === asTrimmedText(row.customer_name)));
+        const status = asTrimmedText(row.status) === "完了" ? "完了" : "未完了";
+        payloads.push({
+          user_id: currentUser.id,
+          case_id: linkedCase?.id || null,
+          task_title: taskTitle,
+          task_memo: asTrimmedText(row.task_memo) || null,
+          due_date: parseFlexibleDate(row.due_date),
+          status,
+          completed_at: status === "完了" ? parseFlexibleDate(row.completed_at) || toDateString(new Date()) : null,
+        });
+      } catch (_error) {
+        result.errorCount += 1;
+      }
+    });
+    if (payloads.length) {
+      const { error } = await sbClient.from("case_tasks").insert(payloads);
+      if (error) throw error;
+      result.insertedCount += payloads.length;
+    }
+    return result;
+  }
+
   if (importType === "client_interactions") {
     validateRequiredHeaders(headers, ["interaction_date", "summary"]);
     const payloads = [];
@@ -6329,6 +6682,21 @@ function mapCaseFromDb(row) {
     documentUrl: row.document_url || "",
     invoiceUrl: row.invoice_url || "",
     receiptUrl: row.receipt_url || "",
+    createdAt: Date.parse(row.created_at) || Date.now(),
+    updatedAt: Date.parse(row.updated_at) || Date.now(),
+  };
+}
+
+function mapCaseTaskFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    caseId: row.case_id || null,
+    taskTitle: row.task_title || "",
+    taskMemo: row.task_memo || "",
+    dueDate: row.due_date || "",
+    status: row.status === "完了" ? "完了" : "未完了",
+    completedAt: row.completed_at || "",
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
   };
@@ -6627,6 +6995,7 @@ function setDataMutationControlsEnabled(enabled) {
   const controls = [
     clientSubmitBtn,
     caseSubmitBtn,
+    caseTaskSubmitBtn,
     workTemplateSubmitBtn,
     estimateSubmitBtn,
     saleSubmitBtn,
@@ -6764,6 +7133,7 @@ function resetEditState() {
   editState.fixedExpenseId = null;
   editState.dailyReportId = null;
   editState.estimateId = null;
+  editState.caseTaskId = null;
 }
 
 function clearAppState() {
@@ -6772,6 +7142,7 @@ function clearAppState() {
   state.clients = [];
   state.workTemplates = [];
   state.cases = [];
+  state.caseTasks = [];
   state.estimates = [];
   state.estimateItems = [];
   state.sales = [];
@@ -6782,6 +7153,7 @@ function clearAppState() {
   resetEditState();
   resetClientForm();
   resetCaseForm();
+  resetCaseTaskForm();
   resetWorkTemplateForm();
   resetEstimateForm();
   resetSaleForm();
