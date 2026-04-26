@@ -132,7 +132,9 @@ create table if not exists daily_reports (
 
 alter table daily_reports add column if not exists client_id uuid;
 alter table daily_reports add column if not exists interaction_type text;
+alter table daily_reports add column if not exists next_action text;
 alter table daily_reports add column if not exists next_action_date date;
+alter table daily_reports add column if not exists memo text;
 
 alter table daily_reports enable row level security;
 
@@ -140,6 +142,23 @@ create policy "daily_reports_own" on daily_reports
 for all
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
+```
+
+日報の insert / update payload は以下のキーで統一しています（DBに未作成のカラムは先に上記SQLで追加してください）。
+
+```js
+{
+  user_id,
+  report_date,
+  client_id,
+  case_id,
+  interaction_type,
+  work_content,
+  work_minutes,
+  next_action,
+  next_action_date,
+  memo
+}
 ```
 
 ## 見積機能（見積作成・管理・請求データ出力）の追加SQL
