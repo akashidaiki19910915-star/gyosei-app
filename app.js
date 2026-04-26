@@ -338,10 +338,12 @@ function bindEvents() {
   caseForm.addEventListener("submit", handleCaseSubmit);
   workTemplateForm?.addEventListener("submit", handleWorkTemplateSubmit);
   console.log("SALE FORM FOUND", !!saleForm);
+  console.log("EXPENSE FORM FOUND", !!expenseForm);
+  console.log("DAILY REPORT FORM FOUND", !!dailyReportForm);
   saleForm?.addEventListener("submit", handleSaleSubmit);
   expenseForm?.addEventListener("submit", handleExpenseSubmit);
   fixedExpenseForm.addEventListener("submit", handleFixedExpenseSubmit);
-  dailyReportForm.addEventListener("submit", handleDailyReportSubmit);
+  dailyReportForm?.addEventListener("submit", handleDailyReportSubmit);
   estimateForm?.addEventListener("submit", handleEstimateSubmit);
 
   clearBtn.addEventListener("click", handleClearAll);
@@ -674,18 +676,18 @@ async function loadAllData() {
     sbClient.from("daily_reports").select("*").eq("user_id", currentUser.id),
   ]);
 
-  if (clientsRes.error) throw clientsRes.error;
-  if (workTemplatesRes.error) throw workTemplatesRes.error;
-  if (casesRes.error) throw casesRes.error;
-  if (estimatesRes.error) throw estimatesRes.error;
-  if (estimateItemsRes.error) throw estimateItemsRes.error;
+  if (clientsRes.error) throw new Error(`clients: ${formatSupabaseError(clientsRes.error)}`);
+  if (workTemplatesRes.error) throw new Error(`work_templates: ${formatSupabaseError(workTemplatesRes.error)}`);
+  if (casesRes.error) throw new Error(`cases: ${formatSupabaseError(casesRes.error)}`);
+  if (estimatesRes.error) throw new Error(`estimates: ${formatSupabaseError(estimatesRes.error)}`);
+  if (estimateItemsRes.error) throw new Error(`estimate_items: ${formatSupabaseError(estimateItemsRes.error)}`);
   if (salesRes.error) {
     console.error("LOAD SALES ERROR", salesRes.error);
-    throw salesRes.error;
+    throw new Error(`sales: ${formatSupabaseError(salesRes.error)}`);
   }
-  if (expensesRes.error) throw expensesRes.error;
-  if (fixedExpensesRes.error) throw fixedExpensesRes.error;
-  if (dailyReportsRes.error) throw dailyReportsRes.error;
+  if (expensesRes.error) throw new Error(`expenses: ${formatSupabaseError(expensesRes.error)}`);
+  if (fixedExpensesRes.error) throw new Error(`fixed_expenses: ${formatSupabaseError(fixedExpensesRes.error)}`);
+  if (dailyReportsRes.error) throw new Error(`daily_reports: ${formatSupabaseError(dailyReportsRes.error)}`);
 
   state.clients = (clientsRes.data || []).map(mapClientFromDb);
   state.workTemplates = (workTemplatesRes.data || []).map(mapWorkTemplateFromDb);
@@ -922,9 +924,6 @@ async function handleSaleSubmit(event) {
     const paidDate = document.getElementById("paid-date")?.value || null;
     const dueDate = document.getElementById("sale-due-date")?.value || document.getElementById("due-date")?.value || null;
 
-    if (!caseId) {
-      throw new Error("対象案件を選択してください。");
-    }
     if (!invoiceAmount || invoiceAmount <= 0) {
       throw new Error("請求額を入力してください。");
     }
@@ -2495,7 +2494,7 @@ function safeRender(name, fn) {
     if (typeof fn === "function") fn();
   } catch (error) {
     console.error(`render failed: ${name}`, error);
-    showAppMessage(`画面更新中にエラーが発生しました: ${name}`, true);
+    showAppMessage(`画面更新中にエラーが発生しました: ${name} ${error?.message || ""}`, true);
   }
 }
 
@@ -4025,36 +4024,46 @@ function renderYearlyBreakdown(salesByMonth, expenseByMonth) {
 function renderSales() {
   if (!salesListBody || !salesEmpty || !salesListWrap) return;
   salesListBody.innerHTML = "";
-  const sorted = state.sales.slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+  const sales = Array.isArray(state.sales) ? state.sales : [];
+  const sorted = sales.slice().sort((a, b) => (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0));
   const filteredSales = sorted.filter((sale) => {
     if (!state.salesSearchQuery) return true;
     return matchesSalesSearch(sale, state.salesSearchQuery);
   });
 
   filteredSales.forEach((sale) => {
-    const linkedCase = state.cases.find((entry) => entry.id === sale.caseId);
-    const customerLabel = linkedCase
-      ? (linkedCase.customerName || "顧客不明")
-      : "案件なし";
-    const caseLabel = linkedCase
-      ? (linkedCase.caseName || "案件名不明")
-      : "案件なし";
-    const tr = document.createElement("tr");
-    tr.dataset.id = sale.id;
-    tr.classList.add(getSaleRowClass(sale));
-    tr.innerHTML = `
-      <td>${escapeHtml(customerLabel)}</td>
-      <td>${escapeHtml(caseLabel)}<br /><small>${escapeHtml(sale.invoiceNumber || "請求番号なし")}</small></td>
-      <td>${formatCurrency(sale.invoiceAmount)}</td>
-      <td>${formatCurrency(sale.paidAmount)}</td>
-      <td>${formatCurrency(getRemainingAmount(sale))}</td>
-      <td><span class="${getSaleStatusClass(sale)}">${escapeHtml(sale.paymentStatus)}</span></td>
-      <td>${formatDate(sale.dueDate)}</td>
-      <td>${formatDate(sale.paidDate)}</td>
-      <td><button type="button" class="edit-btn secondary-btn">編集</button></td>
-      <td><button type="button" class="danger-btn delete-btn">削除</button></td>
-    `;
-    salesListBody.appendChild(tr);
+    try {
+      if (!sale || typeof sale !== "object") return;
+      const invoiceAmount = Number(sale.invoiceAmount || 0);
+      const paidAmount = Number(sale.paidAmount || 0);
+      const remainingAmount = Math.max(0, invoiceAmount - paidAmount);
+      const paymentStatus = sale.paymentStatus || calculatePaymentStatus(invoiceAmount, paidAmount);
+      const linkedCase = sale.caseId ? state.cases.find((entry) => entry.id === sale.caseId) : null;
+      const linkedClient = linkedCase?.clientId ? state.clients.find((entry) => entry.id === linkedCase.clientId) : null;
+      const customerLabel = linkedClient?.name || linkedCase?.customerName || "顧客不明";
+      const caseLabel = linkedCase?.caseName || linkedCase?.name || "案件なし";
+      const dueDateLabel = sale.dueDate ? formatDate(sale.dueDate) : "未設定";
+      const paidDateLabel = sale.paidDate ? formatDate(sale.paidDate) : "未設定";
+      const safeSale = { ...sale, invoiceAmount, paidAmount, paymentStatus };
+      const tr = document.createElement("tr");
+      tr.dataset.id = sale.id || "";
+      tr.classList.add(getSaleRowClass(safeSale));
+      tr.innerHTML = `
+        <td>${escapeHtml(customerLabel)}</td>
+        <td>${escapeHtml(caseLabel)}<br /><small>${escapeHtml(sale.invoiceNumber || "未採番")}</small></td>
+        <td>${formatCurrency(invoiceAmount)}</td>
+        <td>${formatCurrency(paidAmount)}</td>
+        <td>${formatCurrency(remainingAmount)}</td>
+        <td><span class="${getSaleStatusClass(safeSale)}">${escapeHtml(paymentStatus)}</span></td>
+        <td>${dueDateLabel}</td>
+        <td>${paidDateLabel}</td>
+        <td><button type="button" class="edit-btn secondary-btn">編集</button></td>
+        <td><button type="button" class="danger-btn delete-btn">削除</button></td>
+      `;
+      salesListBody.appendChild(tr);
+    } catch (error) {
+      console.error("renderSales item failed", sale, error);
+    }
   });
 
   if (salesFilterCount) {
@@ -6096,6 +6105,7 @@ function mapEstimateItemFromDb(row) {
 
 function mapSaleFromDb(row) {
   // DB拡張が未適用の場合は以下を実行してください:
+  // alter table sales alter column case_id drop not null;
   // alter table sales add column if not exists paid_amount bigint default 0;
   // alter table sales add column if not exists payment_status text;
   // alter table sales add column if not exists due_date date;
