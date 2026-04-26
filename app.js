@@ -337,6 +337,7 @@ function bindEvents() {
   clientForm?.addEventListener("submit", handleClientSubmit);
   caseForm.addEventListener("submit", handleCaseSubmit);
   workTemplateForm?.addEventListener("submit", handleWorkTemplateSubmit);
+  console.log("SALE FORM FOUND", !!saleForm);
   saleForm?.addEventListener("submit", handleSaleSubmit);
   expenseForm?.addEventListener("submit", handleExpenseSubmit);
   fixedExpenseForm.addEventListener("submit", handleFixedExpenseSubmit);
@@ -692,7 +693,9 @@ async function loadAllData() {
   state.cases = (casesRes.data || []).map(mapCaseFromDb);
   state.estimates = (estimatesRes.data || []).map(mapEstimateFromDb);
   state.estimateItems = (estimateItemsRes.data || []).map(mapEstimateItemFromDb);
+  console.log("LOAD SALES RAW", salesRes.data);
   state.sales = (salesRes.data || []).map(mapSaleFromDb);
+  console.log("LOAD SALES MAPPED", state.sales);
   state.expenses = (expensesRes.data || []).map(mapExpenseFromDb);
   state.fixedExpenses = (fixedExpensesRes.data || []).map(mapFixedExpenseFromDb);
   state.dailyReports = (dailyReportsRes.data || []).map(mapDailyReportFromDb);
@@ -899,30 +902,32 @@ async function handleWorkTemplateSubmit(event) {
 async function handleSaleSubmit(event) {
   event.preventDefault();
   console.log("SALE SUBMIT FIRED");
-  if (!currentUser || !saleForm || !state.cases.length) return;
+  if (!currentUser || !saleForm) return;
 
   const invoiceAmount = parseNumberInput(saleForm.elements.invoiceAmount.value);
   if (invoiceAmount <= 0) return;
 
   const paidAmount = parseNumberInput(saleForm.elements.paidAmount.value);
-  const caseId = saleCaseSelect.value;
-  if (!caseId) return;
+  const caseId = saleCaseSelect?.value || "";
   const normalizedPaidAmount = paidAmount ?? 0;
-  const paymentStatus = getSalePaymentStatus(invoiceAmount, normalizedPaidAmount);
+  const paymentStatus = calculatePaymentStatus(invoiceAmount, normalizedPaidAmount);
+  const paidDate = saleForm.elements.paidDate.value || null;
+  const dueDate = saleForm.elements.dueDate.value || null;
+  console.log("SALE VALUES", { caseId, invoiceAmount, paidAmount: normalizedPaidAmount, paidDate, dueDate, invoiceNumber: saleInvoiceNumberInput?.value || "" });
 
   const invoiceNumber = editState.saleId
     ? (state.sales.find((entry) => entry.id === editState.saleId)?.invoiceNumber || null)
     : await getNextMonthlyNumber("sales", "invoice_number", "S");
   const payload = {
     user_id: currentUser.id,
-    case_id: caseId,
+    case_id: caseId || null,
     invoice_amount: invoiceAmount,
     paid_amount: normalizedPaidAmount,
-    paid_date: saleForm.elements.paidDate.value || null,
-    due_date: saleForm.elements.dueDate.value || null,
+    paid_date: paidDate,
+    due_date: dueDate,
     payment_status: paymentStatus,
     is_unpaid: paymentStatus !== "入金済",
-    invoice_number: invoiceNumber,
+    invoice_number: invoiceNumber || null,
   };
   console.log("SALE PAYLOAD", payload);
 
@@ -936,11 +941,14 @@ async function handleSaleSubmit(event) {
       if (editState.saleId) {
         const { data, error } = await sbClient.from("sales").update(payload).eq("id", editState.saleId).eq("user_id", currentUser.id).select().single();
         if (error) throw error;
-        if (!data) throw new Error("更新結果を取得できませんでした。");
-        console.log("DB DONE", actionName, editState.saleId);
+        if (!data) throw new Error("売上更新結果を取得できませんでした。");
+        console.log("SALE INSERT SUCCESS", data);
         await loadAllData();
+        console.log("SALES COUNT AFTER LOAD", state.sales.length);
         renderAfterDataChanged();
+        console.log("RENDER AFTER SALE DONE");
         resetSaleForm();
+        editState.saleId = null;
         subtabState.sales = "list";
         activateSubtab("sales", "list");
         showAppMessage("売上を更新しました。", false);
@@ -948,18 +956,24 @@ async function handleSaleSubmit(event) {
       }
 
       const { data, error } = await sbClient.from("sales").insert(payload).select().single();
-      if (error) throw error;
+      if (error) {
+        console.error("SALE INSERT ERROR", error);
+        throw error;
+      }
       if (!data) throw new Error("売上登録結果を取得できませんでした。");
-      console.log("DB DONE", actionName, data.id || "new");
+      console.log("SALE INSERT SUCCESS", data);
       await loadAllData();
+      console.log("SALES COUNT AFTER LOAD", state.sales.length);
       renderAfterDataChanged();
+      console.log("RENDER AFTER SALE DONE");
       resetSaleForm();
+      editState.saleId = null;
       subtabState.sales = "list";
       activateSubtab("sales", "list");
       showAppMessage("売上を登録しました。", false);
     }, { triggerButton: event.submitter });
   } catch (error) {
-    showAppMessage(`売上保存に失敗しました。${error?.message || ""}`, true);
+    showAppMessage(`売上登録に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
   } finally {
     console.log("ACTION FINALLY", actionName);
     forceHideLoading();
@@ -3308,8 +3322,8 @@ function renderCaseOptions() {
     .map((c) => `<option value="${c.id}">${escapeHtml(c.customerName)}｜${escapeHtml(c.caseName)}</option>`)
     .join("");
 
-  saleCaseSelect.innerHTML = state.cases.length ? options : '<option value="">案件を先に登録してください</option>';
-  saleCaseSelect.disabled = !state.cases.length;
+  saleCaseSelect.innerHTML = `<option value="">案件なし</option>${options}`;
+  saleCaseSelect.disabled = false;
   expenseCaseSelect.innerHTML = `<option value="">案件に紐付けしない</option>${options}`;
   reportCaseSelect.innerHTML = `<option value="">案件なし</option>${options}`;
 }
@@ -4015,8 +4029,8 @@ function renderSales() {
     tr.dataset.id = sale.id;
     tr.classList.add(getSaleRowClass(sale));
     tr.innerHTML = `
-      <td>${escapeHtml(linkedCase?.customerName || "（削除済み顧客）")}</td>
-      <td>${escapeHtml(linkedCase?.caseName || "（削除済み案件）")}<br /><small>${escapeHtml(sale.invoiceNumber || "請求番号なし")}</small></td>
+      <td>${escapeHtml(linkedCase?.customerName || "案件なし")}</td>
+      <td>${escapeHtml(linkedCase?.caseName || "案件なし")}<br /><small>${escapeHtml(sale.invoiceNumber || "請求番号なし")}</small></td>
       <td>${formatCurrency(sale.invoiceAmount)}</td>
       <td>${formatCurrency(sale.paidAmount)}</td>
       <td>${formatCurrency(getRemainingAmount(sale))}</td>
@@ -4037,6 +4051,7 @@ function renderSales() {
   salesEmpty.textContent = filteredSales.length || !state.salesSearchQuery
     ? "売上データはまだありません。"
     : "条件に一致する売上データはありません。";
+  console.log("RENDER SALES DONE");
 }
 
 function renderExpenses() {
@@ -5285,16 +5300,20 @@ function formatRemainingDays(remainingDays) {
   return `残り${remainingDays}日`;
 }
 
-function getSalePaymentStatus(invoiceAmount, paidAmount) {
+function calculatePaymentStatus(invoiceAmount, paidAmount) {
   const normalizedInvoice = Math.max(Number(invoiceAmount) || 0, 0);
   const normalizedPaid = Math.max(Number(paidAmount) || 0, 0);
-  if (normalizedPaid === 0) return "未入金";
+  if (!normalizedPaid || normalizedPaid <= 0) return "未入金";
   if (normalizedPaid < normalizedInvoice) return "一部入金";
   return "入金済";
 }
 
+function getSalePaymentStatus(invoiceAmount, paidAmount) {
+  return calculatePaymentStatus(invoiceAmount, paidAmount);
+}
+
 function normalizeSalePaymentStatus(value, invoiceAmount, paidAmount) {
-  return getSalePaymentStatus(invoiceAmount, paidAmount);
+  return value || calculatePaymentStatus(invoiceAmount, paidAmount);
 }
 
 function isSaleOverdue(sale) {
@@ -6069,19 +6088,20 @@ function mapSaleFromDb(row) {
   // alter table sales add column if not exists invoice_number text;
   const invoiceAmount = normalizeAmount(row.invoice_amount) ?? 0;
   const paidAmount = normalizeAmount(row.paid_amount) ?? 0;
-  const paymentStatus = normalizeSalePaymentStatus(row.payment_status, invoiceAmount, paidAmount);
+  const paymentStatus = row.payment_status || calculatePaymentStatus(invoiceAmount, paidAmount);
   return {
     id: row.id,
-    caseId: row.case_id,
+    userId: row.user_id,
+    caseId: row.case_id || null,
     invoiceNumber: row.invoice_number || "",
     invoiceAmount,
     paidAmount,
-    paidDate: row.paid_date || "",
-    dueDate: row.due_date || "",
+    paidDate: row.paid_date || null,
+    dueDate: row.due_date || null,
     paymentStatus,
-    isUnpaid: paymentStatus !== "入金済",
-    createdAt: Date.parse(row.created_at) || Date.now(),
-    updatedAt: Date.parse(row.updated_at) || Date.now(),
+    isUnpaid: row.is_unpaid !== false,
+    createdAt: Date.parse(row.created_at) || null,
+    updatedAt: Date.parse(row.updated_at) || null,
   };
 }
 
