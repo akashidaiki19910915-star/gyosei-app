@@ -80,6 +80,10 @@ alter table sales add column if not exists payment_status text;
 alter table sales add column if not exists due_date date;
 alter table sales add column if not exists invoice_number text;
 alter table sales add column if not exists estimate_id uuid;
+alter table sales add column if not exists reminder_count int default 0;
+alter table sales add column if not exists last_reminder_date date;
+alter table sales add column if not exists reminder_method text;
+alter table sales add column if not exists reminder_memo text;
 ```
 
 ## 複数端末で同じデータを閲覧する条件
