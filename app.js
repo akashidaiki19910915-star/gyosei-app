@@ -327,6 +327,7 @@ async function initialize() {
 
 function bindEvents() {
   if (eventsBound) return;
+  bindCommaInputFields();
   tabs.forEach((btn) => btn.addEventListener("click", () => activateTab(btn.dataset.tab)));
   subtabButtons.forEach((btn) => btn.addEventListener("click", () => activateSubtab(btn.dataset.parentTab, btn.dataset.subtab)));
   authForm.addEventListener("submit", handleLogin);
@@ -336,8 +337,8 @@ function bindEvents() {
   clientForm?.addEventListener("submit", handleClientSubmit);
   caseForm.addEventListener("submit", handleCaseSubmit);
   workTemplateForm?.addEventListener("submit", handleWorkTemplateSubmit);
-  saleForm.addEventListener("submit", handleSaleSubmit);
-  expenseForm.addEventListener("submit", handleExpenseSubmit);
+  saleForm?.addEventListener("submit", handleSaleSubmit);
+  expenseForm?.addEventListener("submit", handleExpenseSubmit);
   fixedExpenseForm.addEventListener("submit", handleFixedExpenseSubmit);
   dailyReportForm.addEventListener("submit", handleDailyReportSubmit);
   estimateForm?.addEventListener("submit", handleEstimateSubmit);
@@ -898,7 +899,7 @@ async function handleWorkTemplateSubmit(event) {
 async function handleSaleSubmit(event) {
   event.preventDefault();
   console.log("SALE SUBMIT FIRED");
-  if (!currentUser || !state.cases.length) return;
+  if (!currentUser || !saleForm || !state.cases.length) return;
 
   const invoiceAmount = parseNumberInput(saleForm.elements.invoiceAmount.value);
   if (invoiceAmount <= 0) return;
@@ -939,10 +940,10 @@ async function handleSaleSubmit(event) {
         console.log("DB DONE", actionName, editState.saleId);
         await loadAllData();
         renderAfterDataChanged();
-        showAppMessage("売上を更新しました。", false);
         resetSaleForm();
         subtabState.sales = "list";
-        activateTab("sales");
+        activateSubtab("sales", "list");
+        showAppMessage("売上を更新しました。", false);
         return;
       }
 
@@ -952,10 +953,10 @@ async function handleSaleSubmit(event) {
       console.log("DB DONE", actionName, data.id || "new");
       await loadAllData();
       renderAfterDataChanged();
-      showAppMessage("売上を登録しました。", false);
       resetSaleForm();
       subtabState.sales = "list";
-      activateTab("sales");
+      activateSubtab("sales", "list");
+      showAppMessage("売上を登録しました。", false);
     }, { triggerButton: event.submitter });
   } catch (error) {
     showAppMessage(`売上保存に失敗しました。${error?.message || ""}`, true);
@@ -973,7 +974,7 @@ function setSaleInvoiceNumberDisplay(value = "") {
 async function handleExpenseSubmit(event) {
   event.preventDefault();
   console.log("EXPENSE SUBMIT FIRED");
-  if (!currentUser) return;
+  if (!currentUser || !expenseForm) return;
 
   const expenseDate = expenseForm.elements.expenseDate.value;
   const content = expenseForm.elements.expenseContent.value.trim();
@@ -1000,31 +1001,39 @@ async function handleExpenseSubmit(event) {
   console.log("PAYLOAD", payload);
   try {
     await withLoading(taskName, async () => {
-    if (editState.expenseId) {
-      const currentExpense = state.expenses.find((entry) => entry.id === editState.expenseId);
-      const updatePayload = { ...payload };
-      if (currentExpense?.fixedExpenseId) updatePayload.fixed_expense_id = currentExpense.fixedExpenseId;
-      const { data, error } = await sbClient.from("expenses").update(updatePayload).eq("id", editState.expenseId).eq("user_id", currentUser.id).select().single();
+      if (editState.expenseId) {
+        const currentExpense = state.expenses.find((entry) => entry.id === editState.expenseId);
+        const updatePayload = { ...payload };
+        if (currentExpense?.fixedExpenseId) updatePayload.fixed_expense_id = currentExpense.fixedExpenseId;
+        const { data, error } = await sbClient.from("expenses").update(updatePayload).eq("id", editState.expenseId).eq("user_id", currentUser.id).select().single();
+        if (error) {
+          showAppMessage(`経費更新に失敗しました。\n詳細: ${error.message || error}`, true);
+          throw error;
+        }
+        if (!data) throw new Error("更新結果を取得できませんでした。");
+        console.log("DB DONE", actionName, editState.expenseId);
+        await loadAllData();
+        renderAfterDataChanged();
+        resetExpenseForm();
+        subtabState.expenses = "list";
+        activateSubtab("expenses", "list");
+        showAppMessage("経費を更新しました。", false);
+        return;
+      }
+
+      const { data, error } = await sbClient.from("expenses").insert(payload).select().single();
       if (error) {
-        showAppMessage(`経費更新に失敗しました。\n詳細: ${error.message || error}`, true);
+        showAppMessage(`経費登録に失敗しました。\n詳細: ${error.message || error}`, true);
         throw error;
       }
-      if (!data) throw new Error("更新結果を取得できませんでした。");
-      console.log("DB DONE", actionName, editState.expenseId);
-      await refreshAfterMutation(actionName, "経費を更新しました。");
+      if (!data) throw new Error("登録結果を取得できませんでした。");
+      console.log("DB DONE", actionName, data.id || "new");
+      await loadAllData();
+      renderAfterDataChanged();
       resetExpenseForm();
-      return;
-    }
-
-    const { data, error } = await sbClient.from("expenses").insert(payload).select().single();
-    if (error) {
-      showAppMessage(`経費登録に失敗しました。\n詳細: ${error.message || error}`, true);
-      throw error;
-    }
-    if (!data) throw new Error("登録結果を取得できませんでした。");
-    console.log("DB DONE", actionName, data.id || "new");
-    await refreshAfterMutation(actionName, "経費を登録しました。");
-    resetExpenseForm();
+      subtabState.expenses = "list";
+      activateSubtab("expenses", "list");
+      showAppMessage("経費を登録しました。", false);
     }, { triggerButton: event.submitter });
   } catch (error) {
     showAppMessage(`経費保存に失敗しました。${error?.message || ""}`, true);
@@ -1247,7 +1256,7 @@ async function startCaseEdit(caseId) {
     caseForm.elements.caseTemplateId.value = target.templateId || "";
     caseForm.elements.customerName.value = target.customerName;
     caseForm.elements.caseName.value = target.caseName;
-    caseForm.elements.amount.value = target.estimateAmount ?? "";
+    caseForm.elements.amount.value = formatNumberInput(target.estimateAmount ?? "");
     caseForm.elements.receivedDate.value = target.receivedDate || "";
     caseForm.elements.dueDate.value = target.dueDate || "";
     caseForm.elements.requiredDocuments.value = target.requiredDocuments || "";
@@ -1413,8 +1422,8 @@ async function startSaleEdit(saleId) {
     activateTab("sales");
     editState.saleId = target.id;
     saleCaseSelect.value = target.caseId;
-    saleForm.elements.invoiceAmount.value = target.invoiceAmount;
-    saleForm.elements.paidAmount.value = target.paidAmount ?? "";
+    saleForm.elements.invoiceAmount.value = formatNumberInput(target.invoiceAmount);
+    saleForm.elements.paidAmount.value = formatNumberInput(target.paidAmount ?? "");
     saleForm.elements.paidDate.value = target.paidDate || "";
     saleForm.elements.dueDate.value = target.dueDate || "";
     setSaleInvoiceNumberDisplay(target.invoiceNumber || "");
@@ -1433,7 +1442,7 @@ async function startExpenseEdit(expenseId) {
     expenseForm.elements.expenseContent.value = target.content;
     expenseForm.elements.expensePayee.value = target.payee || "";
     expenseForm.elements.expensePaymentMethod.value = target.paymentMethod || "";
-    expenseForm.elements.expenseAmount.value = target.amount;
+    expenseForm.elements.expenseAmount.value = formatNumberInput(target.amount);
     expenseForm.elements.expenseReceiptUrl.value = target.receiptUrl || "";
     expenseCaseSelect.value = target.caseId || "";
     expenseSubmitBtn.textContent = "経費を更新";
@@ -1446,7 +1455,7 @@ function openSaleFormForCase(caseId) {
   activateTab("sales");
   resetSaleForm();
   saleCaseSelect.value = targetCase.id;
-  saleForm.elements.invoiceAmount.value = targetCase.estimateAmount ?? "";
+  saleForm.elements.invoiceAmount.value = formatNumberInput(targetCase.estimateAmount ?? "");
   saleForm.elements.paidAmount.value = "";
   saleForm.elements.paidDate.value = "";
   saleForm.elements.dueDate.value = "";
@@ -1460,7 +1469,7 @@ async function startFixedExpenseEdit(fixedExpenseId) {
     activateTab("expenses");
     editState.fixedExpenseId = target.id;
     fixedExpenseForm.elements.fixedExpenseContent.value = target.content;
-    fixedExpenseForm.elements.fixedExpenseAmount.value = target.amount;
+    fixedExpenseForm.elements.fixedExpenseAmount.value = formatNumberInput(target.amount);
     fixedExpenseForm.elements.fixedExpenseDayOfMonth.value = target.dayOfMonth;
     fixedExpenseForm.elements.fixedExpenseStartDate.value = target.startDate || "";
     fixedExpenseForm.elements.fixedExpenseActive.checked = Boolean(target.active);
@@ -3560,6 +3569,7 @@ function addEstimateItemRow(defaultItem = {}) {
     <button type="button" class="danger-btn estimate-item-remove-btn">削除</button>
   `;
   estimateItemsWrap.appendChild(row);
+  bindCommaInput(row.querySelector('[data-key="unitPrice"]'));
   recalcEstimateTotals();
 }
 
@@ -5142,6 +5152,44 @@ function parseNumberInput(value) {
   return Number(String(value || "").replace(/,/g, "").trim()) || 0;
 }
 
+function formatNumberInput(value) {
+  const num = String(value || "").replace(/[^\d]/g, "");
+  if (!num) return "";
+  return num.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function bindCommaInput(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  if (input.dataset.commaBound === "true") return;
+  input.dataset.commaBound = "true";
+  input.addEventListener("input", () => {
+    const cursor = input.selectionStart ?? input.value.length;
+    const beforeLength = input.value.length;
+    input.value = formatNumberInput(input.value);
+    const afterLength = input.value.length;
+    const diff = afterLength - beforeLength;
+    const nextCursor = Math.max(0, cursor + diff);
+    input.setSelectionRange(nextCursor, nextCursor);
+  });
+  input.value = formatNumberInput(input.value);
+}
+
+function isCommaInputTarget(input) {
+  if (!(input instanceof HTMLInputElement)) return false;
+  if (input.type !== "text") return false;
+  if (input.readOnly) return false;
+  if (input.dataset.commaFormat === "true") return true;
+  const key = `${input.id || ""} ${input.name || ""}`.toLowerCase();
+  if (key.includes("invoice-number") || key.includes("invoicenumber")) return false;
+  return /(amount|price|invoice|paid|total|unit)/.test(key);
+}
+
+function bindCommaInputFields(root = document) {
+  const scope = root instanceof HTMLElement || root instanceof Document ? root : document;
+  const targets = Array.from(scope.querySelectorAll('input[type="text"]')).filter(isCommaInputTarget);
+  targets.forEach((input) => bindCommaInput(input));
+}
+
 function parseDecimalInput(raw) {
   if (raw === "" || raw === null || raw === undefined) return 0;
   const normalized = String(raw).replace(/,/g, "").trim();
@@ -6040,7 +6088,7 @@ function mapSaleFromDb(row) {
 function mapExpenseFromDb(row) {
   return {
     id: row.id,
-    date: row.date || "",
+    date: row.date || row.expense_date || "",
     content: row.content || "",
     amount: normalizeAmount(row.amount) ?? 0,
     payee: row.payee || "",
