@@ -2986,10 +2986,13 @@ function renderUnpaidAlert(filter = {}) {
     .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
     .forEach((sale) => {
       const linkedCase = state.cases.find((entry) => entry.id === sale.caseId);
+      const linkedEstimate = sale.estimateId ? state.estimates.find((entry) => entry.id === sale.estimateId) : null;
+      const customerName = linkedCase?.customerName || linkedEstimate?.customerName || "顧客不明";
+      const caseName = linkedCase?.caseName || "案件なし";
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td>${escapeHtml(linkedCase?.customerName || "（削除済み顧客）")}</td>
-        <td>${escapeHtml(linkedCase?.caseName || "（削除済み案件）")}</td>
+        <td>${escapeHtml(customerName)}</td>
+        <td>${escapeHtml(caseName)}</td>
         <td>${formatCurrency(sale.invoiceAmount)}</td>
         <td>${formatCurrency(sale.paidAmount)}</td>
         <td>${formatCurrency(getRemainingAmount(sale))}</td>
@@ -3372,7 +3375,9 @@ function getBillingLeakCandidates() {
 
 function getCollectionTargetSales() {
   return state.sales.filter((sale) => {
-    return sale.paymentStatus !== "入金済";
+    return sale.paymentStatus !== "入金済"
+      || sale.isUnpaid === true
+      || Number(sale.paidAmount || 0) < Number(sale.invoiceAmount || 0);
   });
 }
 
@@ -3801,7 +3806,7 @@ function renderEstimates() {
           <p class="meta"><span>見積日:</span> ${formatDate(entry.estimateDate)}</p>
           <p class="meta"><span>有効期限:</span> ${formatDate(entry.validUntil)}</p>
           <p class="meta"><span>ステータス:</span> ${escapeHtml(entry.status)}</p>
-          <p class="meta"><span>合計金額:</span> ${formatCurrency(entry.total)}</p>
+          <p class="meta"><span>合計金額:</span> ${formatCurrency(entry.totalAmount ?? entry.total ?? 0)}</p>
           <p class="meta"><span>明細件数:</span> ${itemCount}件</p>
           <p class="meta"><span>案件化:</span> ${casedLabel}</p>
         </div>
@@ -3814,7 +3819,7 @@ function renderEstimates() {
         <button type="button" class="secondary-btn estimate-print-btn">請求書出力</button>
         <button type="button" class="secondary-btn estimate-estimate-xlsx-btn">見積Excel</button>
         <button type="button" class="secondary-btn estimate-xlsx-btn">請求Excel</button>
-        <button type="button" class="secondary-btn estimate-create-invoice-btn" ${hasCreatedInvoice ? "disabled" : ""}>${hasCreatedInvoice ? "請求済み" : "請求作成"}</button>
+        <button type="button" class="secondary-btn create-invoice-btn" ${hasCreatedInvoice ? "disabled" : ""}>${hasCreatedInvoice ? "請求済み" : "請求作成"}</button>
       </div>
     `;
     estimateList.appendChild(li);
@@ -3828,20 +3833,21 @@ function isEstimateExpired(entry) {
 }
 
 async function handleEstimateListAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement) || !currentUser) return;
-  const item = btn.closest("[data-id]");
+  const button = event.target.closest("button");
+  if (!(button instanceof HTMLButtonElement) || !currentUser) return;
+  const item = button.closest("[data-id]");
   const estimateId = item?.dataset.id;
+  console.log("ESTIMATE LIST BUTTON CLICKED", button.className, estimateId);
   if (!estimateId) {
     showAppMessage("対象データIDを取得できませんでした。", true);
     return;
   }
-  if (btn.classList.contains("estimate-edit-btn")) return startEstimateEdit(estimateId);
-  if (btn.classList.contains("estimate-delete-btn")) {
+  if (button.classList.contains("estimate-edit-btn")) return startEstimateEdit(estimateId);
+  if (button.classList.contains("estimate-delete-btn")) {
     await deleteEstimate(estimateId);
     return;
   }
-  if (btn.classList.contains("estimate-case-btn")) {
+  if (button.classList.contains("estimate-case-btn")) {
     try {
       return await withLoading("見積案件化", async () => {
         const estimate = state.estimates.find((entry) => entry.id === estimateId);
@@ -3857,34 +3863,71 @@ async function handleEstimateListAction(event) {
       forceHideLoading();
     }
   }
-  if (btn.classList.contains("estimate-estimate-print-btn")) return openEstimatePrintPreview(estimateId);
-  if (btn.classList.contains("estimate-print-btn")) return openInvoicePrintPreviewFromEstimate(estimateId);
-  if (btn.classList.contains("estimate-estimate-xlsx-btn")) return exportEstimateDataForEstimate(estimateId);
-  if (btn.classList.contains("estimate-xlsx-btn")) return exportInvoiceDataForEstimate(estimateId);
-  if (btn.classList.contains("estimate-create-invoice-btn")) {
-    try {
-      return await withLoading("見積から請求作成", async () => {
-        await handleCreateInvoiceFromEstimate(estimateId);
-      });
-    } finally {
-      forceHideLoading();
-    }
+  if (button.classList.contains("estimate-estimate-print-btn")) return openEstimatePrintPreview(estimateId);
+  if (button.classList.contains("estimate-print-btn")) return openInvoicePrintPreviewFromEstimate(estimateId);
+  if (button.classList.contains("estimate-estimate-xlsx-btn")) return exportEstimateDataForEstimate(estimateId);
+  if (button.classList.contains("estimate-xlsx-btn")) return exportInvoiceDataForEstimate(estimateId);
+  if (button.classList.contains("create-invoice-btn") || button.classList.contains("estimate-create-invoice-btn")) {
+    console.log("CREATE INVOICE CLICKED", estimateId);
+    await handleCreateInvoiceFromEstimate(estimateId);
   }
 }
 
 async function handleCreateInvoiceFromEstimate(estimateId) {
+  if (!currentUser) {
+    showAppMessage("ログイン状態を確認できません。", true);
+    return;
+  }
+  if (!estimateId) {
+    showAppMessage("対象見積IDを取得できませんでした。", true);
+    return;
+  }
+  startLoading("請求作成");
   try {
-    await registerSaleFromEstimate(estimateId);
-    console.log("DB success", "見積から請求作成");
-    await loadAllData();
-    renderAfterDataChanged();
-    showAppMessage("請求を作成しました。");
-  } catch (error) {
-    if (error?.code === "DUPLICATE_ESTIMATE_INVOICE" || String(error?.message || "").includes("すでに請求済み")) {
-      showAppMessage("すでに請求済みです。", true);
+    clearAppMessage();
+    console.log("CREATE INVOICE START", estimateId);
+    const estimate = state.estimates.find((entry) => entry.id === estimateId);
+    if (!estimate) throw new Error("対象見積が見つかりません。");
+    const existingSale = state.sales.find((sale) => sale.estimateId === estimateId);
+    if (existingSale) {
+      showAppMessage("この見積はすでに請求作成済みです。", true);
       return;
     }
-    throw error;
+    const invoiceAmount = Number(estimate.totalAmount || estimate.total || estimate.amount || estimate.estimateAmount || 0);
+    if (!invoiceAmount || invoiceAmount <= 0) {
+      throw new Error("見積金額が0円のため請求を作成できません。");
+    }
+    const payload = {
+      user_id: currentUser.id,
+      estimate_id: estimate.id,
+      case_id: estimate.caseId || null,
+      invoice_amount: invoiceAmount,
+      paid_amount: 0,
+      paid_date: null,
+      due_date: addDaysToDate(new Date(), 7),
+      payment_status: "未入金",
+      is_unpaid: true,
+      invoice_number: await generateInvoiceNumberIfNeeded(),
+    };
+    console.log("CREATE INVOICE PAYLOAD", payload);
+    const { data, error } = await sbClient.from("sales").insert(payload).select().single();
+    if (error) {
+      console.error("CREATE INVOICE SUPABASE ERROR", error);
+      throw error;
+    }
+    if (!data) throw new Error("請求作成結果を取得できませんでした。");
+    console.log("CREATE INVOICE SUCCESS", data);
+    await loadAllData();
+    console.log("SALES AFTER CREATE INVOICE", state.sales);
+    renderAfterDataChanged();
+    activateTab("sales");
+    activateSubtab("sales", "list");
+    showAppMessage("請求を作成しました。", false);
+  } catch (error) {
+    console.error("請求作成に失敗しました。", error);
+    showAppMessage(`請求作成に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
+  } finally {
+    forceHideLoading();
   }
 }
 
@@ -4340,7 +4383,7 @@ async function ensureCaseFromEstimate(estimateId, force = false) {
     client_id: estimate.clientId || null,
     customer_name: estimate.customerName,
     case_name: estimate.estimateTitle,
-    estimate_amount: estimate.total,
+    estimate_amount: estimate.totalAmount ?? estimate.total ?? 0,
     received_date: toDateString(new Date()),
     due_date: null,
     status: "未着手",
@@ -5098,15 +5141,14 @@ async function registerSaleFromEstimate(estimateId) {
     duplicatedError.code = "DUPLICATE_ESTIMATE_INVOICE";
     throw duplicatedError;
   }
-  const today = new Date();
-  const dueDate = toDateString(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7));
+  const dueDate = addDaysToDate(new Date(), 7);
   const caseId = estimate.caseId || await ensureCaseFromEstimate(estimateId, true);
   const payload = {
     user_id: currentUser.id,
     estimate_id: estimate.id,
     case_id: caseId || null,
     invoice_number: await getNextMonthlyNumber("sales", "invoice_number", "S"),
-    invoice_amount: estimate.total || 0,
+    invoice_amount: estimate.totalAmount || estimate.total || 0,
     paid_amount: 0,
     paid_date: null,
     due_date: dueDate,
@@ -5116,6 +5158,10 @@ async function registerSaleFromEstimate(estimateId) {
   const { data, error } = await sbClient.from("sales").insert(payload).select().single();
   if (error) throw error;
   if (!data) throw new Error("登録結果を取得できませんでした。");
+}
+
+async function generateInvoiceNumberIfNeeded() {
+  return getNextMonthlyNumber("sales", "invoice_number", "S");
 }
 
 function buildDailyReportSummary() {
@@ -5270,6 +5316,12 @@ function toDateString(dateSource) {
   const date = dateSource instanceof Date ? dateSource : new Date(dateSource);
   if (Number.isNaN(date.getTime())) return "";
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function addDaysToDate(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 function normalizeAmount(raw) {
@@ -6145,6 +6197,7 @@ async function seedDefaultWorkTemplates() {
 }
 
 function mapEstimateFromDb(row) {
+  const totalAmount = normalizeAmount(row.total) ?? 0;
   return {
     id: row.id,
     clientId: row.client_id || null,
@@ -6158,7 +6211,8 @@ function mapEstimateFromDb(row) {
     memo: row.memo || "",
     subtotal: normalizeAmount(row.subtotal) ?? 0,
     tax: normalizeAmount(row.tax) ?? 0,
-    total: normalizeAmount(row.total) ?? 0,
+    totalAmount,
+    total: totalAmount,
     caseId: row.case_id || null,
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
