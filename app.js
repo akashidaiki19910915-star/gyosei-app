@@ -6,6 +6,7 @@ const DEADLINE_FILTER_KEYS = ["all", "overdue", "within7", "within30"];
 const SALES_PAYMENT_STATUSES = ["未入金", "一部入金", "入金済"];
 const ESTIMATE_STATUS_ORDER = ["作成中", "提出済", "受注", "失注"];
 const EXPENSE_PAYMENT_METHODS = ["現金", "クレジットカード", "銀行振込", "電子マネー", "口座振替", "その他"];
+const CLIENT_INTERACTION_TYPES = ["電話", "メール", "面談", "訪問", "LINE", "その他"];
 const OFFICE_INFO = {
   name: "あかし行政書士事務所",
   zip: "574-0044",
@@ -37,6 +38,7 @@ const state = {
   expenses: [],
   fixedExpenses: [],
   dailyReports: [],
+  clientInteractions: [],
   selectedAggregation: "month",
   selectedMonth: toMonthKey(new Date()),
   selectedYear: new Date().getFullYear(),
@@ -53,7 +55,7 @@ const state = {
   estimateExpiredFilter: "all",
   isInitialDataReady: false,
 };
-const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null };
+const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, clientInteractionId: null };
 
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
@@ -93,6 +95,7 @@ const panels = {
 };
 const dashboardSection = document.querySelector(".dashboard");
 const subtabState = {
+  clients: "entry",
   cases: "dashboard",
   "work-templates": "entry",
   estimates: "create",
@@ -159,6 +162,12 @@ const clientsEmpty = document.getElementById("clients-empty");
 const clientSubmitBtn = document.getElementById("client-submit-btn");
 const caseClientSelect = document.getElementById("case-client-id");
 const estimateClientSelect = document.getElementById("estimate-client-id");
+const clientInteractionForm = document.getElementById("client-interaction-form");
+const interactionClientSelect = document.getElementById("interaction-client-id");
+const interactionSubmitBtn = document.getElementById("interaction-submit-btn");
+const clientInteractionsBody = document.getElementById("client-interactions-body");
+const clientInteractionsWrap = document.getElementById("client-interactions-wrap");
+const clientInteractionsEmpty = document.getElementById("client-interactions-empty");
 
 const caseForm = document.getElementById("case-form");
 const caseTemplateSelect = document.getElementById("case-template-id");
@@ -235,9 +244,9 @@ let isLoggingOut = false;
 let eventsBound = false;
 let loadingCount = 0;
 let loadingTimeoutId = null;
-const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
-const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
-const RESTORE_DELETE_ORDER = ["estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "estimates", "cases", "work_templates", "clients"];
+const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "client_interactions"];
+const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "client_interactions"];
+const RESTORE_DELETE_ORDER = ["estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "client_interactions", "estimates", "cases", "work_templates", "clients"];
 const CASE_MUTATION_COLUMNS = [
   "user_id",
   "client_id",
@@ -318,6 +327,7 @@ function bindEvents() {
   logoutBtn.addEventListener("click", handleLogout);
 
   clientForm?.addEventListener("submit", handleClientSubmit);
+  clientInteractionForm?.addEventListener("submit", handleClientInteractionSubmit);
   caseForm.addEventListener("submit", handleCaseSubmit);
   workTemplateForm?.addEventListener("submit", handleWorkTemplateSubmit);
   saleForm.addEventListener("submit", handleSaleSubmit);
@@ -328,6 +338,7 @@ function bindEvents() {
 
   clearBtn.addEventListener("click", handleClearAll);
   clientsList?.addEventListener("click", handleClientListAction);
+  clientInteractionsBody?.addEventListener("click", handleClientInteractionListAction);
   caseList.addEventListener("click", handleCaseListAction);
   workTemplatesList?.addEventListener("click", handleWorkTemplateListAction);
   salesList.addEventListener("click", handleSalesListAction);
@@ -581,6 +592,7 @@ async function applyAuthState() {
   resetExpenseForm();
   resetFixedExpenseForm();
   resetDailyReportForm();
+  resetClientInteractionForm();
   renderAfterDataChanged();
   state.isInitialDataReady = true;
   setDataMutationControlsEnabled(true);
@@ -636,7 +648,7 @@ async function handleLogout() {
 async function loadAllData() {
   if (!currentUser || isLoggingOut) return;
 
-  const [clientsRes, workTemplatesRes, casesRes, estimatesRes, estimateItemsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes] = await Promise.all([
+  const [clientsRes, workTemplatesRes, casesRes, estimatesRes, estimateItemsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, clientInteractionsRes] = await Promise.all([
     sbClient.from("clients").select("*").eq("user_id", currentUser.id),
     sbClient.from("work_templates").select("*").eq("user_id", currentUser.id),
     sbClient.from("cases").select("*").eq("user_id", currentUser.id),
@@ -646,6 +658,7 @@ async function loadAllData() {
     sbClient.from("expenses").select("*").eq("user_id", currentUser.id),
     sbClient.from("fixed_expenses").select("*").eq("user_id", currentUser.id),
     sbClient.from("daily_reports").select("*").eq("user_id", currentUser.id),
+    sbClient.from("client_interactions").select("*").eq("user_id", currentUser.id),
   ]);
 
   if (clientsRes.error) throw clientsRes.error;
@@ -657,6 +670,7 @@ async function loadAllData() {
   if (expensesRes.error) throw expensesRes.error;
   if (fixedExpensesRes.error) throw fixedExpensesRes.error;
   if (dailyReportsRes.error) throw dailyReportsRes.error;
+  if (clientInteractionsRes.error) throw clientInteractionsRes.error;
 
   state.clients = (clientsRes.data || []).map(mapClientFromDb);
   state.workTemplates = (workTemplatesRes.data || []).map(mapWorkTemplateFromDb);
@@ -671,6 +685,7 @@ async function loadAllData() {
   state.expenses = (expensesRes.data || []).map(mapExpenseFromDb);
   state.fixedExpenses = (fixedExpensesRes.data || []).map(mapFixedExpenseFromDb);
   state.dailyReports = (dailyReportsRes.data || []).map(mapDailyReportFromDb);
+  state.clientInteractions = (clientInteractionsRes.data || []).map(mapClientInteractionFromDb);
   console.log("LOAD ALL DATA DONE");
   await cleanupLegacyEstimateMemoMarkers();
 
@@ -824,6 +839,48 @@ async function handleCaseSubmit(event) {
     showAppMessage(`案件保存に失敗しました。${formatSupabaseError(error)}`, true);
   } finally {
     console.log("CASE SUBMIT FINALLY");
+    forceHideLoading();
+  }
+}
+
+async function handleClientInteractionSubmit(event) {
+  event.preventDefault();
+  if (!currentUser || !clientInteractionForm) return;
+  const interactionDate = clientInteractionForm.elements.interactionDate.value;
+  const summary = asTrimmedText(clientInteractionForm.elements.interactionSummary.value);
+  if (!interactionDate || !summary) return;
+  const payload = {
+    user_id: currentUser.id,
+    client_id: clientInteractionForm.elements.interactionClientId.value || null,
+    interaction_date: interactionDate,
+    interaction_type: normalizeClientInteractionType(clientInteractionForm.elements.interactionType.value),
+    summary,
+    next_action: asTrimmedText(clientInteractionForm.elements.interactionNextAction.value) || null,
+    next_action_date: clientInteractionForm.elements.interactionNextActionDate.value || null,
+    memo: asTrimmedText(clientInteractionForm.elements.interactionMemo.value) || null,
+  };
+  const taskName = editState.clientInteractionId ? "対応履歴更新" : "対応履歴登録";
+  try {
+    await withLoading(taskName, async () => {
+      if (editState.clientInteractionId) {
+        const { error } = await sbClient.from("client_interactions").update(payload).eq("id", editState.clientInteractionId).eq("user_id", currentUser.id);
+        if (error) throw error;
+        await loadAllData();
+        renderAfterDataChanged();
+        showAppMessage("対応履歴を更新しました。", false);
+        resetClientInteractionForm();
+        return;
+      }
+      const { error } = await sbClient.from("client_interactions").insert(payload);
+      if (error) throw error;
+      await loadAllData();
+      renderAfterDataChanged();
+      showAppMessage("対応履歴を登録しました。", false);
+      resetClientInteractionForm();
+    }, { triggerButton: event.submitter });
+  } catch (error) {
+    showAppMessage(`対応履歴保存に失敗しました。${formatSupabaseError(error)}`, true);
+  } finally {
     forceHideLoading();
   }
 }
@@ -1109,6 +1166,7 @@ async function handleClientListAction(event) {
   if (btn.classList.contains("edit-client-btn")) {
     const target = state.clients.find((entry) => entry.id === id);
     if (!target || !clientForm) return;
+    subtabState.clients = "entry";
     activateTab("clients");
     editState.clientId = target.id;
     clientForm.elements.clientName.value = target.name || "";
@@ -1124,6 +1182,21 @@ async function handleClientListAction(event) {
   }
   if (btn.classList.contains("delete-client-btn")) {
     await deleteClient(id);
+  }
+}
+
+async function handleClientInteractionListAction(event) {
+  const btn = event.target.closest("button");
+  if (!(btn instanceof HTMLButtonElement) || !currentUser) return;
+  const row = btn.closest("[data-id]");
+  const id = row?.dataset.id;
+  if (!id) return;
+  if (btn.classList.contains("edit-client-interaction-btn")) {
+    startClientInteractionEdit(id);
+    return;
+  }
+  if (btn.classList.contains("delete-client-interaction-btn")) {
+    await deleteClientInteraction(id);
   }
 }
 
@@ -1298,6 +1371,10 @@ function handleTodayTaskAction(event) {
   }
   if (target === "sale") {
     editSale(taskId).catch(() => {});
+    return;
+  }
+  if (target === "client-interaction") {
+    startClientInteractionEdit(taskId);
   }
 }
 
@@ -1342,6 +1419,42 @@ async function startExpenseEdit(expenseId) {
     expenseCaseSelect.value = target.caseId || "";
     expenseSubmitBtn.textContent = "経費を更新";
     expenseForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function startClientInteractionEdit(interactionId) {
+  const target = state.clientInteractions.find((entry) => entry.id === interactionId);
+  if (!target || !clientInteractionForm) return;
+  subtabState.clients = "interactions";
+  activateTab("clients");
+  editState.clientInteractionId = target.id;
+  clientInteractionForm.elements.interactionDate.value = target.interactionDate || "";
+  clientInteractionForm.elements.interactionClientId.value = target.clientId || "";
+  clientInteractionForm.elements.interactionType.value = normalizeClientInteractionType(target.interactionType);
+  clientInteractionForm.elements.interactionSummary.value = target.summary || "";
+  clientInteractionForm.elements.interactionNextAction.value = target.nextAction || "";
+  clientInteractionForm.elements.interactionNextActionDate.value = target.nextActionDate || "";
+  clientInteractionForm.elements.interactionMemo.value = target.memo || "";
+  if (interactionSubmitBtn) interactionSubmitBtn.textContent = "対応履歴を更新";
+  clientInteractionForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function deleteClientInteraction(id) {
+  if (!currentUser || !id) return;
+  if (!window.confirm("この対応履歴を削除しますか？")) return;
+  try {
+    await withLoading("対応履歴削除", async () => {
+      const { error } = await sbClient.from("client_interactions").delete().eq("id", id).eq("user_id", currentUser.id);
+      if (error) throw error;
+      await loadAllData();
+      renderAfterDataChanged();
+      showAppMessage("対応履歴を削除しました。", false);
+      if (editState.clientInteractionId === id) resetClientInteractionForm();
+    });
+  } catch (error) {
+    showAppMessage(`対応履歴削除に失敗しました。${formatSupabaseError(error)}`, true);
+  } finally {
+    forceHideLoading();
+  }
 }
 
 
@@ -1501,6 +1614,13 @@ async function deleteClient(id) {
       .eq("client_id", id)
       .eq("user_id", currentUser.id);
     if (estimatesUpdateRes.error) throw estimatesUpdateRes.error;
+
+    const interactionUpdateRes = await sbClient
+      .from("client_interactions")
+      .update({ client_id: null })
+      .eq("client_id", id)
+      .eq("user_id", currentUser.id);
+    if (interactionUpdateRes.error) throw interactionUpdateRes.error;
 
     const clientDeleteRes = await sbClient
       .from("clients")
@@ -1735,19 +1855,20 @@ async function deleteDailyReport(id) {
 
 async function deleteAllData() {
   if (!currentUser) return;
-  if (!window.confirm("顧客・業務テンプレート・見積・案件・売上・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
+  if (!window.confirm("顧客・対応履歴・業務テンプレート・見積・案件・売上・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
   const taskName = "全件削除";
   startLoading(taskName);
   try {
     clearAppMessage();
     console.log("DELETE START", taskName, "all");
-    const [estimateItemsRes, estimatesRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes, workTemplatesRes, clientsRes] = await Promise.all([
+    const [estimateItemsRes, estimatesRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, clientInteractionsRes, casesRes, workTemplatesRes, clientsRes] = await Promise.all([
       sbClient.from("estimate_items").delete().eq("user_id", currentUser.id),
       sbClient.from("estimates").delete().eq("user_id", currentUser.id),
       sbClient.from("sales").delete().eq("user_id", currentUser.id),
       sbClient.from("expenses").delete().eq("user_id", currentUser.id),
       sbClient.from("fixed_expenses").delete().eq("user_id", currentUser.id),
       sbClient.from("daily_reports").delete().eq("user_id", currentUser.id),
+      sbClient.from("client_interactions").delete().eq("user_id", currentUser.id),
       sbClient.from("cases").delete().eq("user_id", currentUser.id),
       sbClient.from("work_templates").delete().eq("user_id", currentUser.id),
       sbClient.from("clients").delete().eq("user_id", currentUser.id),
@@ -1759,6 +1880,7 @@ async function deleteAllData() {
     if (estimatesRes.error) throw estimatesRes.error;
     if (fixedExpensesRes.error) throw fixedExpensesRes.error;
     if (dailyReportsRes.error) throw dailyReportsRes.error;
+    if (clientInteractionsRes.error) throw clientInteractionsRes.error;
     if (casesRes.error) throw casesRes.error;
     if (workTemplatesRes.error) throw workTemplatesRes.error;
     if (clientsRes.error) throw clientsRes.error;
@@ -1771,6 +1893,7 @@ async function deleteAllData() {
     resetExpenseForm();
     resetFixedExpenseForm();
     resetDailyReportForm();
+    resetClientInteractionForm();
     await loadAllData();
     console.log("DELETE LOAD DONE", taskName, "all");
     renderAfterDataChanged();
@@ -1859,6 +1982,7 @@ function handleExportAllCsv() {
     "estimate_number", "invoice_number", "invoice_amount", "paid_amount", "paid_date", "due_date", "payment_status", "is_unpaid",
     "date", "content", "amount", "payee", "payment_method",
     "day_of_month", "start_date", "active",
+    "interaction_date", "interaction_type", "summary", "interaction_next_action", "interaction_next_action_date", "interaction_memo",
   ];
   const rows = [];
 
@@ -1940,6 +2064,18 @@ function handleExportAllCsv() {
       day_of_month: entry.dayOfMonth ?? "",
       start_date: entry.startDate || "",
       active: entry.active ? "true" : "false",
+    });
+  });
+  state.clientInteractions.forEach((entry) => {
+    rows.push({
+      data_type: "client_interaction",
+      client_id: entry.clientId || "",
+      interaction_date: entry.interactionDate || "",
+      interaction_type: entry.interactionType || "",
+      summary: entry.summary || "",
+      interaction_next_action: entry.nextAction || "",
+      interaction_next_action_date: entry.nextActionDate || "",
+      interaction_memo: entry.memo || "",
     });
   });
 
@@ -2028,6 +2164,7 @@ function exportExcel() {
     const saleHeaders = ["case_name", "invoice_number", "invoice_amount", "paid_amount", "paid_date", "due_date", "payment_status", "is_unpaid"];
     const expenseHeaders = ["case_name", "date", "content", "amount", "payee", "payment_method", "receipt_url"];
     const fixedExpenseHeaders = ["content", "amount", "day_of_month", "start_date", "active"];
+    const clientInteractionHeaders = ["client_id", "interaction_date", "interaction_type", "summary", "next_action", "next_action_date", "memo"];
     const clientRows = state.clients.map((entry) => ({
       name: entry.name || "",
       client_type: entry.clientType || "",
@@ -2084,12 +2221,22 @@ function exportExcel() {
       start_date: entry.startDate || "",
       active: entry.active ? "true" : "false",
     }));
+    const clientInteractionRows = state.clientInteractions.map((entry) => ({
+      client_id: entry.clientId || "",
+      interaction_date: entry.interactionDate || "",
+      interaction_type: entry.interactionType || "",
+      summary: entry.summary || "",
+      next_action: entry.nextAction || "",
+      next_action_date: entry.nextActionDate || "",
+      memo: entry.memo || "",
+    }));
 
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(clientRows, clientHeaders), "顧客");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(caseRows, caseHeaders), "案件");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(saleRows, saleHeaders), "売上");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(expenseRows, expenseHeaders), "経費");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(fixedExpenseRows, fixedExpenseHeaders), "固定費");
+    XLSX.utils.book_append_sheet(workbook, createExcelSheet(clientInteractionRows, clientInteractionHeaders), "対応履歴");
     XLSX.writeFile(workbook, "gyosei-app-export.xlsx");
     showAppMessage("Excelファイルを出力しました。", false);
   } catch (error) {
@@ -2323,6 +2470,7 @@ function safeRender(name, fn) {
 function renderAfterDataChanged() {
   safeRender("clients", renderClients);
   safeRender("clientOptions", renderClientOptions);
+  safeRender("clientInteractions", renderClientInteractions);
   safeRender("workTemplates", renderWorkTemplates);
   safeRender("workTemplateOptions", renderWorkTemplateOptions);
   safeRender("caseOptions", renderCaseOptions);
@@ -2553,6 +2701,21 @@ function buildTodayTasks() {
     tasks.push({
       id: entry.id, target: "case", type: "請求漏れ", customerName: entry.customerName, caseName: entry.caseName,
       action: "売上登録が未実施", date: entry.updatedAt ? toDateString(entry.updatedAt) : toDateString(new Date()), urgencyClass: "task-soon",
+    });
+  });
+  state.clientInteractions.forEach((entry) => {
+    const nextDateTs = toDateOnlyTimestamp(entry.nextActionDate);
+    if (!entry.nextActionDate || !Number.isFinite(nextDateTs) || nextDateTs > todayLimit) return;
+    const foundClient = state.clients.find((client) => client.id === entry.clientId);
+    tasks.push({
+      id: entry.id,
+      target: "client-interaction",
+      type: "顧客対応",
+      customerName: foundClient?.name || "未設定",
+      caseName: "―",
+      action: entry.nextAction || "次回対応",
+      date: entry.nextActionDate,
+      urgencyClass: nextDateTs <= todayLimit ? "task-overdue" : "task-soon",
     });
   });
   return tasks;
@@ -3057,7 +3220,7 @@ function renderWorkTemplateOptions() {
 }
 
 function renderClientOptions() {
-  if (!caseClientSelect && !estimateClientSelect) return;
+  if (!caseClientSelect && !estimateClientSelect && !interactionClientSelect) return;
   const options = state.clients
     .slice()
     .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
@@ -3065,6 +3228,7 @@ function renderClientOptions() {
     .join("");
   if (caseClientSelect) caseClientSelect.innerHTML = `<option value="">選択しない</option>${options}`;
   if (estimateClientSelect) estimateClientSelect.innerHTML = `<option value="">選択しない</option>${options}`;
+  if (interactionClientSelect) interactionClientSelect.innerHTML = `<option value="">選択しない</option>${options}`;
 }
 
 function syncCaseCustomerFromClient() {
@@ -3086,6 +3250,15 @@ function renderClients() {
   clientsList.innerHTML = "";
   const sorted = state.clients.slice().sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
   sorted.forEach((client) => {
+    const related = state.clientInteractions.filter((entry) => entry.clientId === client.id);
+    const lastInteraction = related
+      .map((entry) => entry.interactionDate)
+      .filter(Boolean)
+      .sort((a, b) => toSortTimestamp(b) - toSortTimestamp(a))[0] || "";
+    const nextInteraction = related
+      .map((entry) => entry.nextActionDate)
+      .filter(Boolean)
+      .sort((a, b) => toSortTimestamp(a) - toSortTimestamp(b))[0] || "";
     const li = document.createElement("li");
     li.className = "item";
     li.dataset.id = client.id;
@@ -3094,12 +3267,38 @@ function renderClients() {
         <p class="title">${escapeHtml(client.name)}${client.clientType ? `（${escapeHtml(client.clientType)}）` : ""}</p>
         <p class="meta">住所: ${escapeHtml(client.address || "未設定")} / 電話: ${escapeHtml(client.tel || "未設定")} / メール: ${escapeHtml(client.email || "未設定")}</p>
         <p class="meta">紹介元: ${escapeHtml(client.referralSource || "未設定")} / メモ: ${escapeHtml(truncateText(client.memo || "未設定", 60))}</p>
+        <p class="meta">最終対応日: ${lastInteraction ? formatDate(lastInteraction) : "未設定"} / 次回対応日: ${nextInteraction ? formatDate(nextInteraction) : "未設定"} / 対応履歴件数: ${related.length}件</p>
       </div>
       <div class="row-actions"><button type="button" class="secondary-btn edit-client-btn">編集</button><button type="button" class="danger-btn delete-client-btn">削除</button></div>
     `;
     clientsList.appendChild(li);
   });
   clientsEmpty.hidden = sorted.length > 0;
+}
+
+function renderClientInteractions() {
+  if (!clientInteractionsBody || !clientInteractionsWrap || !clientInteractionsEmpty) return;
+  const clientMap = new Map(state.clients.map((entry) => [entry.id, entry]));
+  const sorted = state.clientInteractions.slice().sort((a, b) => toSortTimestamp(b.interactionDate) - toSortTimestamp(a.interactionDate));
+  clientInteractionsBody.innerHTML = "";
+  sorted.forEach((entry) => {
+    const tr = document.createElement("tr");
+    tr.dataset.id = entry.id;
+    tr.innerHTML = `
+      <td>${formatDate(entry.interactionDate)}</td>
+      <td>${escapeHtml(clientMap.get(entry.clientId)?.name || "未設定")}</td>
+      <td>${escapeHtml(entry.interactionType || "未設定")}</td>
+      <td>${escapeHtml(truncateText(entry.summary || "", 80))}</td>
+      <td>${escapeHtml(truncateText(entry.nextAction || "", 60))}</td>
+      <td>${entry.nextActionDate ? formatDate(entry.nextActionDate) : "未設定"}</td>
+      <td>${escapeHtml(truncateText(entry.memo || "", 60))}</td>
+      <td><button type="button" class="secondary-btn edit-client-interaction-btn">編集</button></td>
+      <td><button type="button" class="danger-btn delete-client-interaction-btn">削除</button></td>
+    `;
+    clientInteractionsBody.appendChild(tr);
+  });
+  clientInteractionsWrap.hidden = sorted.length === 0;
+  clientInteractionsEmpty.hidden = sorted.length > 0;
 }
 
 function renderWorkTemplates() {
@@ -3791,6 +3990,13 @@ function resetClientForm() {
   if (clientSubmitBtn) clientSubmitBtn.textContent = "顧客を登録";
 }
 
+function resetClientInteractionForm() {
+  resetEditMode("clientInteraction");
+  clientInteractionForm?.reset();
+  if (clientInteractionForm?.elements?.interactionDate) clientInteractionForm.elements.interactionDate.value = toDateString(new Date());
+  if (interactionSubmitBtn) interactionSubmitBtn.textContent = "対応履歴を登録";
+}
+
 function resetCaseForm() {
   resetEditMode("case");
   caseForm.reset();
@@ -3841,6 +4047,7 @@ function resetEditMode(target) {
   if (target === "fixedExpense") editState.fixedExpenseId = null;
   if (target === "dailyReport") editState.dailyReportId = null;
   if (target === "estimate") editState.estimateId = null;
+  if (target === "clientInteraction") editState.clientInteractionId = null;
 }
 
 function normalizeEstimateStatus(status) {
@@ -4784,6 +4991,12 @@ function normalizeStoredStatus(status) {
   return normalized || "未着手";
 }
 
+function normalizeClientInteractionType(type) {
+  const normalized = String(type || "").trim();
+  if (!normalized) return null;
+  return CLIENT_INTERACTION_TYPES.includes(normalized) ? normalized : "その他";
+}
+
 function getStatusCategory(status) {
   const normalized = normalizeStoredStatus(status);
   return STATUS_ORDER.includes(normalized) ? normalized : "その他";
@@ -4936,6 +5149,7 @@ function importTypeToLabel(type) {
   if (type === "sales") return "売上CSV";
   if (type === "expenses") return "経費CSV";
   if (type === "fixed_expenses") return "固定費CSV";
+  if (type === "client_interactions") return "対応履歴CSV";
   return "CSV";
 }
 
@@ -5165,6 +5379,10 @@ async function importWorkbookBySheet(workbook) {
   if (fixedExpensesData.rows.length) {
     mergeResult(await importRowsByType("fixed_expenses", fixedExpensesData));
   }
+  const clientInteractionsData = getSheetRows("対応履歴");
+  if (clientInteractionsData.rows.length) {
+    mergeResult(await importRowsByType("client_interactions", clientInteractionsData));
+  }
   return total;
 }
 
@@ -5361,6 +5579,39 @@ async function importRowsByType(importType, tableData) {
     return result;
   }
 
+  if (importType === "client_interactions") {
+    validateRequiredHeaders(headers, ["interaction_date", "summary"]);
+    const payloads = [];
+    rows.forEach((row) => {
+      try {
+        const interactionDate = parseFlexibleDate(row.interaction_date);
+        const summary = asTrimmedText(row.summary);
+        if (!interactionDate || !summary) {
+          result.errorCount += 1;
+          return;
+        }
+        payloads.push({
+          user_id: currentUser.id,
+          client_id: asTrimmedText(row.client_id) || null,
+          interaction_date: interactionDate,
+          interaction_type: normalizeClientInteractionType(row.interaction_type),
+          summary,
+          next_action: asTrimmedText(row.next_action || row.interaction_next_action) || null,
+          next_action_date: parseFlexibleDate(row.next_action_date || row.interaction_next_action_date),
+          memo: asTrimmedText(row.memo || row.interaction_memo) || null,
+        });
+      } catch (_error) {
+        result.errorCount += 1;
+      }
+    });
+    if (payloads.length) {
+      const { error } = await sbClient.from("client_interactions").insert(payloads);
+      if (error) throw error;
+      result.insertedCount += payloads.length;
+    }
+    return result;
+  }
+
   throw new Error("未対応のCSV取込種別です。");
 }
 
@@ -5444,6 +5695,21 @@ function mapClientFromDb(row) {
     tel: row.tel || "",
     email: row.email || "",
     referralSource: row.referral_source || "",
+    memo: row.memo || "",
+    createdAt: Date.parse(row.created_at) || Date.now(),
+    updatedAt: Date.parse(row.updated_at) || Date.now(),
+  };
+}
+
+function mapClientInteractionFromDb(row) {
+  return {
+    id: row.id,
+    clientId: row.client_id || null,
+    interactionDate: row.interaction_date || "",
+    interactionType: normalizeClientInteractionType(row.interaction_type),
+    summary: row.summary || "",
+    nextAction: row.next_action || "",
+    nextActionDate: row.next_action_date || "",
     memo: row.memo || "",
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
@@ -5656,6 +5922,7 @@ function setSubmitButtonsDisabled(disabled) {
 function setDataMutationControlsEnabled(enabled) {
   const controls = [
     clientSubmitBtn,
+    interactionSubmitBtn,
     caseSubmitBtn,
     workTemplateSubmitBtn,
     estimateSubmitBtn,
@@ -5794,6 +6061,7 @@ function resetEditState() {
   editState.fixedExpenseId = null;
   editState.dailyReportId = null;
   editState.estimateId = null;
+  editState.clientInteractionId = null;
 }
 
 function clearAppState() {
@@ -5808,6 +6076,7 @@ function clearAppState() {
   state.expenses = [];
   state.fixedExpenses = [];
   state.dailyReports = [];
+  state.clientInteractions = [];
   resetViewState();
   resetEditState();
   resetClientForm();
@@ -5818,6 +6087,7 @@ function clearAppState() {
   resetExpenseForm();
   resetFixedExpenseForm();
   resetDailyReportForm();
+  resetClientInteractionForm();
   clearAppMessage();
   clearLoadingState();
   setDataMutationControlsEnabled(false);
