@@ -384,6 +384,7 @@ function bindEvents() {
   nextActionAlertBody?.addEventListener("click", handleNextActionAlertClick);
   todayTaskBody?.addEventListener("click", handleTodayTaskAction);
   pendingEstimatesBody?.addEventListener("click", handlePendingEstimateAction);
+  document.addEventListener("click", handleReminderRecordClick);
   caseSearchInput?.addEventListener("input", handleCaseSearchInput);
   caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
   caseDeadlineFilterSelect?.addEventListener("change", handleCaseDeadlineFilterChange);
@@ -1380,9 +1381,6 @@ async function handleSalesListAction(event) {
     return;
   }
 
-  if (btn.classList.contains("record-reminder-btn")) {
-    await recordSaleReminder(id);
-  }
 }
 
 async function handleExpensesListAction(event) {
@@ -1415,9 +1413,6 @@ function handleUnpaidListAction(event) {
     editSale(saleId).catch(() => {});
     return;
   }
-  if (btn.classList.contains("record-reminder-btn")) {
-    recordSaleReminder(saleId).catch(() => {});
-  }
 }
 
 function handleTodayTaskAction(event) {
@@ -1434,13 +1429,20 @@ function handleTodayTaskAction(event) {
     editSale(taskId).catch(() => {});
     return;
   }
-  if (target === "sale-reminder") {
-    recordSaleReminder(taskId).catch(() => {});
-    return;
-  }
   if (target === "daily-report") {
     editDailyReport(taskId).catch(() => {});
   }
+}
+
+async function handleReminderRecordClick(event) {
+  const button = event.target.closest(".record-reminder-btn");
+  if (!(button instanceof HTMLButtonElement)) return;
+  const saleId = button.dataset.saleId || button.closest("[data-sale-id]")?.dataset.saleId || button.closest("[data-id]")?.dataset.id;
+  if (!saleId) {
+    showAppMessage("督促対象の売上IDを取得できませんでした。", true);
+    return;
+  }
+  await handleRecordReminder(saleId);
 }
 
 function handleBillingLeakAlertAction(event) {
@@ -1463,49 +1465,48 @@ function handlePendingEstimateAction(event) {
   }
 }
 
-async function recordSaleReminder(saleId) {
+async function handleRecordReminder(saleId) {
   if (!currentUser) {
     showAppMessage("ログイン状態を確認できません。", true);
     return;
   }
-  const target = state.sales.find((entry) => entry.id === saleId);
-  if (!target) {
-    showAppMessage("対象の売上データが見つかりません。", true);
+  const sale = state.sales.find((entry) => entry.id === saleId);
+  if (!sale) {
+    showAppMessage("対象の売上が見つかりません。", true);
     return;
   }
-  if (!isReminderRecordableSale(target)) {
+  if (!isReminderRecordableSale(sale)) {
     showAppMessage("督促記録は未入金または一部入金の売上のみ登録できます。", true);
     return;
   }
 
-  const defaultDate = toDateString(new Date());
-  const reminderDate = window.prompt("督促日を入力してください（YYYY-MM-DD）", target.lastReminderDate || defaultDate);
-  if (reminderDate === null) return;
+  const reminderDate = window.prompt("督促日を入力してください（YYYY-MM-DD）", toDateString(new Date()));
+  if (!reminderDate) return;
   const normalizedReminderDate = parseFlexibleDate(reminderDate);
   if (!normalizedReminderDate) {
     showAppMessage("督促日の形式が不正です。YYYY-MM-DD形式で入力してください。", true);
     return;
   }
 
-  const methodPrompt = `督促方法を入力してください（${REMINDER_METHODS.join(" / ")}）`;
-  const methodInput = window.prompt(methodPrompt, target.reminderMethod || REMINDER_METHODS[0]);
-  if (methodInput === null) return;
-  const normalizedMethod = normalizeReminderMethod(methodInput);
+  const methodPrompt = `督促方法を入力してください（${REMINDER_METHODS.join("・")}）`;
+  const reminderMethod = window.prompt(methodPrompt, sale.reminderMethod || REMINDER_METHODS[0]);
+  if (!reminderMethod) return;
+  const normalizedMethod = normalizeReminderMethod(reminderMethod);
 
-  const memoInput = window.prompt("督促メモを入力してください（任意）", target.reminderMemo || "");
-  if (memoInput === null) return;
-  const normalizedMemo = asTrimmedText(memoInput) || null;
+  const reminderMemo = window.prompt("督促メモを入力してください", sale.reminderMemo || "");
+  if (reminderMemo === null) return;
+  const normalizedMemo = asTrimmedText(reminderMemo) || "";
 
   startLoading("督促記録");
   try {
-    clearAppMessage();
+    const currentCount = Number(sale.reminderCount || 0);
     const payload = {
-      reminder_count: (Number(target.reminderCount) || 0) + 1,
+      reminder_count: currentCount + 1,
       last_reminder_date: normalizedReminderDate,
       reminder_method: normalizedMethod,
       reminder_memo: normalizedMemo,
-      updated_at: new Date().toISOString(),
     };
+    console.log("REMINDER PAYLOAD", saleId, payload);
     const { data, error } = await sbClient
       .from("sales")
       .update(payload)
@@ -1519,7 +1520,8 @@ async function recordSaleReminder(saleId) {
     renderAfterDataChanged();
     showAppMessage("督促記録を保存しました。", false);
   } catch (error) {
-    showAppMessage(`督促記録の保存に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
+    console.error("督促記録に失敗しました。", error);
+    showAppMessage(`督促記録に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
   } finally {
     forceHideLoading();
   }
@@ -2833,7 +2835,7 @@ function renderTodayTaskCard() {
         <td>${row.lastReminderDateLabel || "-"}</td>
         <td>${row.reminderCountLabel || "-"}</td>
         <td><button type="button" class="secondary-btn" data-task-target="${row.target}" data-task-id="${row.id}">編集</button></td>
-        <td>${row.showReminderButton ? `<button type="button" class="secondary-btn" data-task-target="sale-reminder" data-task-id="${row.id}">督促記録</button>` : "-"}</td>
+        <td>${row.showReminderButton ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${row.id}">督促記録</button>` : "-"}</td>
       `;
       todayTaskBody.appendChild(tr);
     });
@@ -4400,7 +4402,7 @@ function renderSales() {
         <td>${lastReminderDateLabel}</td>
         <td>${escapeHtml(reminderMethod)}</td>
         <td>${escapeHtml(reminderMemo)}</td>
-        <td>${canRecordReminder ? '<button type="button" class="secondary-btn record-reminder-btn">督促記録</button>' : '-'}</td>
+        <td>${canRecordReminder ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : "-"}</td>
         <td><button type="button" class="edit-btn secondary-btn">編集</button></td>
         <td><button type="button" class="danger-btn delete-btn">削除</button></td>
       `;
@@ -6504,9 +6506,9 @@ function mapSaleFromDb(row) {
     paymentStatus: row.payment_status || calculatePaymentStatus(invoiceAmount, paidAmount),
     isUnpaid: row.is_unpaid !== false,
     invoiceNumber: row.invoice_number || "",
-    reminderCount: parseFlexibleInteger(row.reminder_count, 0),
+    reminderCount: Number(row.reminder_count || 0),
     lastReminderDate: row.last_reminder_date || null,
-    reminderMethod: normalizeReminderMethod(row.reminder_method),
+    reminderMethod: row.reminder_method || "",
     reminderMemo: row.reminder_memo || "",
     createdAt: Date.parse(row.created_at) || null,
     updatedAt: Date.parse(row.updated_at) || null,
