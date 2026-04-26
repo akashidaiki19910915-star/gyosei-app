@@ -258,6 +258,7 @@ const RESTORE_DELETE_ORDER = ["estimate_items", "sales", "expenses", "fixed_expe
 const CASE_MUTATION_COLUMNS = [
   "user_id",
   "client_id",
+  "estimate_id",
   "customer_name",
   "case_name",
   "estimate_amount",
@@ -273,6 +274,18 @@ const CASE_MUTATION_COLUMNS = [
   "document_url",
   "invoice_url",
   "receipt_url",
+];
+const SALES_MUTATION_COLUMNS = [
+  "user_id",
+  "estimate_id",
+  "case_id",
+  "invoice_amount",
+  "paid_amount",
+  "paid_date",
+  "due_date",
+  "payment_status",
+  "is_unpaid",
+  "invoice_number",
 ];
 
 initialize();
@@ -1417,7 +1430,7 @@ function handleTodayTaskAction(event) {
 }
 
 function handleBillingLeakAlertAction(event) {
-  const btn = event.target;
+  const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
   const caseId = btn.dataset.caseId;
   if (!caseId) return;
@@ -3791,12 +3804,13 @@ function renderEstimates() {
       return true;
     });
   filtered.forEach((entry) => {
+    const isCaseCreated = state.cases.some((c) => c.estimateId === entry.id) || Boolean(entry.caseId);
     const hasCreatedInvoice = state.sales.some((sale) => sale.estimateId === entry.id);
     const li = document.createElement("li");
     li.className = "item estimate-card";
     li.dataset.id = entry.id;
     const itemCount = state.estimateItems.filter((row) => row.estimateId === entry.id).length;
-    const casedLabel = entry.caseId ? "案件化済み" : "未案件化";
+    const casedLabel = isCaseCreated ? "案件化済み" : "未案件化";
     li.innerHTML = `
       <div class="estimate-card-body">
         <p class="title estimate-card-title">${escapeHtml(entry.estimateTitle)}</p>
@@ -3814,7 +3828,7 @@ function renderEstimates() {
       <div class="row-actions estimate-card-actions">
         <button type="button" class="secondary-btn estimate-edit-btn">編集</button>
         <button type="button" class="danger-btn estimate-delete-btn">削除</button>
-        <button type="button" class="secondary-btn estimate-case-btn" ${entry.caseId ? "disabled" : ""}>案件化</button>
+        <button type="button" class="secondary-btn create-case-btn" ${isCaseCreated ? "disabled" : ""}>${isCaseCreated ? "案件化済み" : "案件化"}</button>
         <button type="button" class="secondary-btn estimate-estimate-print-btn">見積書出力</button>
         <button type="button" class="secondary-btn estimate-print-btn">請求書出力</button>
         <button type="button" class="secondary-btn estimate-estimate-xlsx-btn">見積Excel</button>
@@ -3847,21 +3861,10 @@ async function handleEstimateListAction(event) {
     await deleteEstimate(estimateId);
     return;
   }
-  if (button.classList.contains("estimate-case-btn")) {
-    try {
-      return await withLoading("見積案件化", async () => {
-        const estimate = state.estimates.find((entry) => entry.id === estimateId);
-        if (estimate?.caseId) {
-          showAppMessage("この見積はすでに案件化済みです。", true);
-          return;
-        }
-        await ensureCaseFromEstimate(estimateId, true);
-        console.log("DB success", "見積案件化");
-        await refreshAfterMutation("見積案件化", "案件化しました。");
-      });
-    } finally {
-      forceHideLoading();
-    }
+  if (button.classList.contains("create-case-btn")) {
+    console.log("CREATE CASE CLICKED", estimateId);
+    await handleCreateCaseFromEstimate(estimateId);
+    return;
   }
   if (button.classList.contains("estimate-estimate-print-btn")) return openEstimatePrintPreview(estimateId);
   if (button.classList.contains("estimate-print-btn")) return openInvoicePrintPreviewFromEstimate(estimateId);
@@ -3873,6 +3876,141 @@ async function handleEstimateListAction(event) {
   }
 }
 
+async function handleEstimateConversionAction(options) {
+  const {
+    estimateId,
+    loadingLabel,
+    actionLabel,
+    execute,
+    successMessage,
+    successTab,
+    successSubtab,
+  } = options;
+  if (!currentUser) {
+    showAppMessage("ログイン状態を確認できません。", true);
+    return null;
+  }
+  if (!estimateId) {
+    showAppMessage("対象見積IDを取得できませんでした。", true);
+    return null;
+  }
+  let isSuccess = false;
+  startLoading(loadingLabel);
+  try {
+    clearAppMessage();
+    const result = await execute();
+    isSuccess = true;
+    return result;
+  } catch (error) {
+    console.error(`${actionLabel}に失敗しました。`, error);
+    if (["DUPLICATE_ESTIMATE_CASE", "DUPLICATE_ESTIMATE_INVOICE"].includes(error?.code)) {
+      showAppMessage(error.message || "すでに作成済みです。", true);
+    } else {
+      showAppMessage(`${actionLabel}に失敗しました。${formatSupabaseError(error)}`, true);
+    }
+    return null;
+  } finally {
+    if (isSuccess && successMessage) {
+      await loadAllData();
+      renderAfterDataChanged();
+      if (successTab) activateTab(successTab);
+      if (successTab && successSubtab) activateSubtab(successTab, successSubtab);
+      showAppMessage(successMessage, false);
+    }
+    forceHideLoading();
+  }
+}
+
+async function createCaseFromEstimate(estimateId) {
+  const estimate = state.estimates.find((entry) => entry.id === estimateId);
+  if (!estimate) throw new Error("対象見積が見つかりません。");
+  const existingCase = state.cases.find((c) => c.estimateId === estimateId || c.id === estimate.caseId);
+  if (existingCase) {
+    const duplicatedError = new Error("この見積はすでに案件化済みです。");
+    duplicatedError.code = "DUPLICATE_ESTIMATE_CASE";
+    throw duplicatedError;
+  }
+  const customerName = estimate.customerName || estimate.customer_name || "顧客不明";
+  const caseName = estimate.subject || estimate.caseName || estimate.title || estimate.estimateTitle || "見積から作成した案件";
+  const estimateAmount = Number(estimate.totalAmount || estimate.total || estimate.amount || estimate.estimateAmount || 0);
+  const rawPayload = {
+    user_id: currentUser.id,
+    client_id: estimate.clientId || null,
+    estimate_id: estimate.id,
+    customer_name: customerName,
+    case_name: caseName,
+    estimate_amount: estimateAmount,
+    received_date: new Date().toISOString().slice(0, 10),
+    due_date: null,
+    status: "未着手",
+    work_memo: "見積から案件化",
+    next_action_date: null,
+    next_action: null,
+    template_id: null,
+    required_documents: null,
+    task_list: null,
+    document_url: null,
+    invoice_url: null,
+    receipt_url: null,
+  };
+  const payload = pickObjectKeys(rawPayload, CASE_MUTATION_COLUMNS);
+  console.log("CREATE CASE PAYLOAD", payload);
+  const { data, error } = await sbClient.from("cases").insert(payload).select().single();
+  if (error) throw error;
+  if (!data) throw new Error("案件化の登録結果を取得できませんでした。");
+  const updateRes = await sbClient.from("estimates").update({ case_id: data.id }).eq("id", estimateId).eq("user_id", currentUser.id);
+  if (updateRes.error) throw updateRes.error;
+  return data;
+}
+
+async function handleCreateCaseFromEstimate(estimateId) {
+  console.log("CREATE CASE START", estimateId);
+  return handleEstimateConversionAction({
+    estimateId,
+    loadingLabel: "案件化",
+    actionLabel: "案件化",
+    successMessage: "見積から案件を作成しました。",
+    successTab: "cases",
+    successSubtab: "list",
+    execute: async () => {
+      const data = await createCaseFromEstimate(estimateId);
+      console.log("CREATE CASE SUCCESS", data);
+      return data;
+    },
+  });
+}
+
+async function createInvoiceFromEstimate(estimateId) {
+  const estimate = state.estimates.find((entry) => entry.id === estimateId);
+  if (!estimate) throw new Error("対象見積が見つかりません。");
+  const existingSale = state.sales.find((sale) => sale.estimateId === estimateId);
+  if (existingSale) {
+    const duplicatedError = new Error("この見積はすでに請求作成済みです。");
+    duplicatedError.code = "DUPLICATE_ESTIMATE_INVOICE";
+    throw duplicatedError;
+  }
+  const invoiceAmount = Number(estimate.totalAmount || estimate.total || estimate.amount || estimate.estimateAmount || 0);
+  if (!invoiceAmount || invoiceAmount <= 0) throw new Error("見積金額が0円のため請求を作成できません。");
+  const rawPayload = {
+    user_id: currentUser.id,
+    estimate_id: estimate.id,
+    case_id: estimate.caseId || null,
+    invoice_amount: invoiceAmount,
+    paid_amount: 0,
+    paid_date: null,
+    due_date: addDaysToDate(new Date(), 7),
+    payment_status: "未入金",
+    is_unpaid: true,
+    invoice_number: await generateInvoiceNumberIfNeeded(),
+  };
+  const payload = pickObjectKeys(rawPayload, SALES_MUTATION_COLUMNS);
+  console.log("CREATE INVOICE PAYLOAD", payload);
+  const { data, error } = await sbClient.from("sales").insert(payload).select().single();
+  if (error) throw error;
+  if (!data) throw new Error("請求作成結果を取得できませんでした。");
+  return data;
+}
+
 async function handleCreateInvoiceFromEstimate(estimateId) {
   if (!currentUser) {
     showAppMessage("ログイン状態を確認できません。", true);
@@ -3882,53 +4020,20 @@ async function handleCreateInvoiceFromEstimate(estimateId) {
     showAppMessage("対象見積IDを取得できませんでした。", true);
     return;
   }
-  startLoading("請求作成");
-  try {
-    clearAppMessage();
-    console.log("CREATE INVOICE START", estimateId);
-    const estimate = state.estimates.find((entry) => entry.id === estimateId);
-    if (!estimate) throw new Error("対象見積が見つかりません。");
-    const existingSale = state.sales.find((sale) => sale.estimateId === estimateId);
-    if (existingSale) {
-      showAppMessage("この見積はすでに請求作成済みです。", true);
-      return;
-    }
-    const invoiceAmount = Number(estimate.totalAmount || estimate.total || estimate.amount || estimate.estimateAmount || 0);
-    if (!invoiceAmount || invoiceAmount <= 0) {
-      throw new Error("見積金額が0円のため請求を作成できません。");
-    }
-    const payload = {
-      user_id: currentUser.id,
-      estimate_id: estimate.id,
-      case_id: estimate.caseId || null,
-      invoice_amount: invoiceAmount,
-      paid_amount: 0,
-      paid_date: null,
-      due_date: addDaysToDate(new Date(), 7),
-      payment_status: "未入金",
-      is_unpaid: true,
-      invoice_number: await generateInvoiceNumberIfNeeded(),
-    };
-    console.log("CREATE INVOICE PAYLOAD", payload);
-    const { data, error } = await sbClient.from("sales").insert(payload).select().single();
-    if (error) {
-      console.error("CREATE INVOICE SUPABASE ERROR", error);
-      throw error;
-    }
-    if (!data) throw new Error("請求作成結果を取得できませんでした。");
-    console.log("CREATE INVOICE SUCCESS", data);
-    await loadAllData();
-    console.log("SALES AFTER CREATE INVOICE", state.sales);
-    renderAfterDataChanged();
-    activateTab("sales");
-    activateSubtab("sales", "list");
-    showAppMessage("請求を作成しました。", false);
-  } catch (error) {
-    console.error("請求作成に失敗しました。", error);
-    showAppMessage(`請求作成に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
-  } finally {
-    forceHideLoading();
-  }
+  console.log("CREATE INVOICE START", estimateId);
+  return handleEstimateConversionAction({
+    estimateId,
+    loadingLabel: "請求作成",
+    actionLabel: "請求作成",
+    successMessage: "請求を作成しました。",
+    successTab: "sales",
+    successSubtab: "list",
+    execute: async () => {
+      const data = await createInvoiceFromEstimate(estimateId);
+      console.log("CREATE INVOICE SUCCESS", data);
+      return data;
+    },
+  });
 }
 
 async function deleteEstimate(id) {
@@ -4003,10 +4108,12 @@ function renderCases() {
     const totals = profitsByCaseId[entry.id] || { sales: 0, expenses: 0, profit: 0 };
     const nextActionInfo = getNextActionInfo(entry);
     const templateName = state.workTemplates.find((template) => template.id === entry.templateId)?.name || "未設定";
+    const customerName = entry.customerName || "顧客不明";
+    const caseName = entry.caseName || "案件名未設定";
     const incompleteTasks = getIncompleteTaskCount(entry.taskList);
 
     item.dataset.id = entry.id;
-    title.textContent = `${entry.customerName}｜${entry.caseName}`;
+    title.textContent = `${customerName}｜${caseName}`;
     const urlLinks = [
       entry.documentUrl ? `<a href="${escapeHtml(entry.documentUrl)}" target="_blank" rel="noopener noreferrer">関連書類を開く</a>` : "",
       entry.invoiceUrl ? `<a href="${escapeHtml(entry.invoiceUrl)}" target="_blank" rel="noopener noreferrer">請求書を開く</a>` : "",
@@ -4378,25 +4485,8 @@ async function ensureCaseFromEstimate(estimateId, force = false) {
   const estimate = state.estimates.find((entry) => entry.id === estimateId);
   if (!estimate || (!force && estimate.status !== "受注")) return null;
   if (estimate.caseId) return estimate.caseId;
-  const payload = {
-    user_id: currentUser.id,
-    client_id: estimate.clientId || null,
-    customer_name: estimate.customerName,
-    case_name: estimate.estimateTitle,
-    estimate_amount: estimate.totalAmount ?? estimate.total ?? 0,
-    received_date: toDateString(new Date()),
-    due_date: null,
-    status: "未着手",
-    work_memo: asTrimmedText(estimate.memo) || "",
-    next_action_date: null,
-    next_action: "",
-  };
-  const res = await sbClient.from("cases").insert(payload).select("id").single();
-  if (res.error) throw res.error;
-  if (!res.data?.id) throw new Error("登録結果を取得できませんでした。");
-  const updateRes = await sbClient.from("estimates").update({ case_id: res.data.id }).eq("id", estimateId).eq("user_id", currentUser.id);
-  if (updateRes.error) throw updateRes.error;
-  return res.data.id;
+  const created = await createCaseFromEstimate(estimateId);
+  return created?.id || null;
 }
 
 function buildInvoiceRowsFromEstimate(estimate) {
@@ -5121,43 +5211,7 @@ async function getNextMonthlyNumber(tableName, columnName, prefix, issueDate = t
 }
 
 async function registerSaleFromEstimate(estimateId) {
-  const estimate = state.estimates.find((entry) => entry.id === estimateId);
-  if (!estimate) throw new Error("対象の見積が見つかりません。");
-  const existingSale = state.sales.find((sale) => sale.estimateId === estimateId);
-  if (existingSale) {
-    const duplicatedError = new Error("すでに請求済みです");
-    duplicatedError.code = "DUPLICATE_ESTIMATE_INVOICE";
-    throw duplicatedError;
-  }
-  const duplicateCheckRes = await sbClient
-    .from("sales")
-    .select("id")
-    .eq("user_id", currentUser.id)
-    .eq("estimate_id", estimateId)
-    .limit(1);
-  if (duplicateCheckRes.error) throw duplicateCheckRes.error;
-  if (Array.isArray(duplicateCheckRes.data) && duplicateCheckRes.data.length > 0) {
-    const duplicatedError = new Error("すでに請求済みです");
-    duplicatedError.code = "DUPLICATE_ESTIMATE_INVOICE";
-    throw duplicatedError;
-  }
-  const dueDate = addDaysToDate(new Date(), 7);
-  const caseId = estimate.caseId || await ensureCaseFromEstimate(estimateId, true);
-  const payload = {
-    user_id: currentUser.id,
-    estimate_id: estimate.id,
-    case_id: caseId || null,
-    invoice_number: await getNextMonthlyNumber("sales", "invoice_number", "S"),
-    invoice_amount: estimate.totalAmount || estimate.total || 0,
-    paid_amount: 0,
-    paid_date: null,
-    due_date: dueDate,
-    payment_status: "未入金",
-    is_unpaid: true,
-  };
-  const { data, error } = await sbClient.from("sales").insert(payload).select().single();
-  if (error) throw error;
-  if (!data) throw new Error("登録結果を取得できませんでした。");
+  await createInvoiceFromEstimate(estimateId);
 }
 
 async function generateInvoiceNumberIfNeeded() {
@@ -6079,7 +6133,9 @@ function getIncompleteTaskCount(taskList) {
 function mapCaseFromDb(row) {
   return {
     id: row.id,
+    userId: row.user_id,
     clientId: row.client_id || null,
+    estimateId: row.estimate_id || null,
     templateId: row.template_id || null,
     customerName: row.customer_name || "",
     caseName: row.case_name || "",

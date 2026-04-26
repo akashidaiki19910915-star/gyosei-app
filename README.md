@@ -107,6 +107,14 @@ python -m http.server 8000
 `cases` テーブルに以下カラムが未追加の場合は実行してください。
 
 ```sql
+alter table cases add column if not exists estimate_id uuid;
+alter table cases add column if not exists client_id uuid;
+alter table cases add column if not exists template_id uuid;
+alter table cases add column if not exists required_documents text;
+alter table cases add column if not exists task_list text;
+alter table cases add column if not exists document_url text;
+alter table cases add column if not exists invoice_url text;
+alter table cases add column if not exists receipt_url text;
 alter table cases add column if not exists work_memo text;
 alter table cases add column if not exists next_action_date date;
 alter table cases add column if not exists next_action text;
