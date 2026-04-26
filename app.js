@@ -74,6 +74,8 @@ const exportAnalysisExcelBtn = document.getElementById("export-analysis-excel-bt
 const exportClientAnalysisCsvBtn = document.getElementById("export-client-analysis-csv-btn");
 const exportReferralAnalysisCsvBtn = document.getElementById("export-referral-analysis-csv-btn");
 const excelImportForm = document.getElementById("excel-import-form");
+const exportBackupJsonBtn = document.getElementById("export-backup-json-btn");
+const backupRestoreForm = document.getElementById("backup-restore-form");
 
 const tabs = Array.from(document.querySelectorAll(".tab-btn"));
 const subtabButtons = Array.from(document.querySelectorAll(".subtab-btn"));
@@ -222,6 +224,9 @@ let isResuming = false;
 let isLoggingOut = false;
 let loadingCount = 0;
 let loadingTimeoutId = null;
+const BACKUP_TABLE_KEYS = ["clients", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
+const RESTORE_INSERT_ORDER = ["clients", "cases", "estimates", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports"];
+const RESTORE_DELETE_ORDER = ["estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "estimates", "cases", "clients"];
 
 initialize();
 
@@ -335,6 +340,8 @@ function bindEvents() {
   exportExcelBtn?.addEventListener("click", handleExportExcel);
   exportAnalysisExcelBtn?.addEventListener("click", handleExportAnalysisExcel);
   excelImportForm?.addEventListener("submit", handleExcelImportSubmit);
+  exportBackupJsonBtn?.addEventListener("click", handleExportBackupJson);
+  backupRestoreForm?.addEventListener("submit", handleBackupRestoreSubmit);
   estimateAddItemBtn?.addEventListener("click", () => addEstimateItemRow());
   estimateItemsWrap?.addEventListener("input", handleEstimateItemsInput);
   estimateItemsWrap?.addEventListener("click", handleEstimateItemsClick);
@@ -1971,6 +1978,136 @@ async function handleExcelImportSubmit(event) {
   } finally {
     forceHideLoading();
   }
+}
+
+async function handleExportBackupJson() {
+  if (!currentUser) return;
+  try {
+    await withLoading("バックアップ出力", async () => {
+      const payload = await buildBackupPayload();
+      const today = new Date().toISOString().slice(0, 10);
+      downloadJsonFile(`gyosei-app-backup-${today}.json`, payload);
+      showAppMessage("バックアップJSONを出力しました。", false);
+    }, { triggerButton: exportBackupJsonBtn });
+  } catch (error) {
+    showAppMessage(`バックアップJSONの出力に失敗しました。${error?.message || ""}`, true);
+  } finally {
+    forceHideLoading();
+  }
+}
+
+async function handleBackupRestoreSubmit(event) {
+  event.preventDefault();
+  if (!currentUser || !backupRestoreForm) return;
+  const mode = backupRestoreForm.elements.backupRestoreMode.value;
+  const file = backupRestoreForm.elements.backupRestoreFile.files?.[0];
+  if (!file) {
+    showAppMessage("復元するJSONファイルを選択してください。", true);
+    return;
+  }
+
+  if (mode === "replace") {
+    const confirmed = window.confirm("現在の全データを削除してバックアップから復元します。本当に実行しますか？");
+    if (!confirmed) return;
+  } else {
+    const confirmed = window.confirm(`「${file.name}」から追加復元を実行します。よろしいですか？`);
+    if (!confirmed) return;
+  }
+
+  try {
+    await withLoading("バックアップ復元", async () => {
+      const text = await file.text();
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch (_error) {
+        throw new Error("JSON形式が不正です。");
+      }
+      validateBackupJsonPayload(parsed);
+      const result = await restoreBackupData(parsed.data, mode);
+      await loadAllData();
+      renderAfterDataChanged();
+      const message = `復元完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`;
+      showAppMessage(message, result.errorCount > 0);
+      backupRestoreForm.reset();
+    }, { triggerButton: event.submitter });
+  } catch (error) {
+    showAppMessage(`復元に失敗しました。${error?.message || ""}`, true);
+  } finally {
+    forceHideLoading();
+  }
+}
+
+async function buildBackupPayload() {
+  if (!currentUser) throw new Error("ログイン情報が取得できません。");
+  const data = {};
+  for (const tableName of BACKUP_TABLE_KEYS) {
+    const { data: rows, error } = await sbClient.from(tableName).select("*").eq("user_id", currentUser.id);
+    if (error) throw error;
+    data[tableName] = Array.isArray(rows) ? rows : [];
+  }
+  return {
+    app: "gyosei-app",
+    version: "1.0",
+    exported_at: new Date().toISOString(),
+    data,
+  };
+}
+
+function validateBackupJsonPayload(payload) {
+  if (!payload || typeof payload !== "object") throw new Error("バックアップJSONの形式が不正です。");
+  if (payload.app !== "gyosei-app") throw new Error("このJSONは gyosei-app のバックアップではないため復元できません。");
+  if (!payload.data || typeof payload.data !== "object") throw new Error("バックアップJSONに data が存在しません。");
+
+  for (const tableName of BACKUP_TABLE_KEYS) {
+    if (!Array.isArray(payload.data[tableName])) {
+      throw new Error(`バックアップJSONの data.${tableName} が配列ではありません。`);
+    }
+  }
+}
+
+async function restoreBackupData(rawData, mode) {
+  if (!currentUser) throw new Error("ログイン情報が取得できません。");
+  const result = { insertedCount: 0, skippedCount: 0, errorCount: 0 };
+
+  if (mode === "replace") {
+    for (const tableName of RESTORE_DELETE_ORDER) {
+      const { error } = await sbClient.from(tableName).delete().eq("user_id", currentUser.id);
+      if (error) throw new Error(`${tableName} の既存データ削除に失敗しました。`);
+    }
+  }
+
+  for (const tableName of RESTORE_INSERT_ORDER) {
+    const sourceRows = Array.isArray(rawData[tableName]) ? rawData[tableName] : [];
+    const existingIdSet = new Set();
+    if (mode === "append") {
+      const { data: existingRows, error } = await sbClient.from(tableName).select("id").eq("user_id", currentUser.id);
+      if (error) throw new Error(`${tableName} の重複確認に失敗しました。`);
+      (existingRows || []).forEach((entry) => {
+        if (entry?.id) existingIdSet.add(entry.id);
+      });
+    }
+
+    for (const row of sourceRows) {
+      if (!row || typeof row !== "object") {
+        result.errorCount += 1;
+        continue;
+      }
+      if (mode === "append" && row.id && existingIdSet.has(row.id)) {
+        result.skippedCount += 1;
+        continue;
+      }
+      const payload = { ...row, user_id: currentUser.id };
+      const { error } = await sbClient.from(tableName).insert(payload);
+      if (error) {
+        result.errorCount += 1;
+        continue;
+      }
+      if (payload.id) existingIdSet.add(payload.id);
+      result.insertedCount += 1;
+    }
+  }
+  return result;
 }
 
 function safeRender(name, fn) {
@@ -4561,6 +4698,16 @@ function downloadCsvFile(filename, headers, rows) {
   const csv = buildCsvString(headers, rows);
   const bom = "\uFEFF";
   const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8;" });
+  downloadBlobFile(filename, blob);
+}
+
+function downloadJsonFile(filename, value) {
+  const pretty = JSON.stringify(value, null, 2);
+  const blob = new Blob([pretty], { type: "application/json;charset=utf-8;" });
+  downloadBlobFile(filename, blob);
+}
+
+function downloadBlobFile(filename, blob) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

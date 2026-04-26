@@ -105,6 +105,31 @@
               </form>
             </section>
           </div>
+          <div class="layout two-col">
+            <section>
+              <h2>バックアップ・復元</h2>
+              <div class="csv-actions">
+                <button id="export-backup-json-btn" type="button" class="secondary-btn">全データバックアップJSON出力</button>
+              </div>
+            </section>
+            <section>
+              <h2>JSON復元</h2>
+              <form id="backup-restore-form" class="form">
+                <label>
+                  復元方式
+                  <select id="backup-restore-mode" name="backupRestoreMode" required>
+                    <option value="append">追加復元（重複IDはスキップ）</option>
+                    <option value="replace">全置換復元（既存データ削除）</option>
+                  </select>
+                </label>
+                <label>
+                  JSONファイル
+                  <input id="backup-restore-file" name="backupRestoreFile" type="file" accept=".json,application/json" required />
+                </label>
+                <button id="backup-restore-btn" type="submit">復元実行</button>
+              </form>
+            </section>
+          </div>
         </section>
 
         <nav class="tabs" aria-label="メイン機能">
