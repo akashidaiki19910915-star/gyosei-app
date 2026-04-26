@@ -2127,11 +2127,15 @@ function handleExportReferralAnalysisCsv() {
     referral_source: row.referralSource,
     client_count: row.clientCount,
     case_count: row.caseCount,
-    sales_total: row.salesTotal,
+    total_sales: row.salesTotal,
+    total_expenses: row.expenseTotal,
     profit: row.profit,
-    unpaid_total: row.unpaidTotal,
+    unpaid_amount: row.unpaidTotal,
+    average_price: row.averagePrice,
+    profit_margin: row.profitMargin,
+    comment: row.comment,
   }));
-  downloadCsvFile("referral_analysis.csv", ["referral_source", "client_count", "case_count", "sales_total", "profit", "unpaid_total"], rows);
+  downloadCsvFile("referral_analysis.csv", ["referral_source", "client_count", "case_count", "total_sales", "total_expenses", "profit", "unpaid_amount", "average_price", "profit_margin", "comment"], rows);
 }
 
 async function handleCsvImportSubmit(event) {
@@ -2299,9 +2303,13 @@ function exportAnalysisExcel() {
       referral_source: row.referralSource,
       client_count: row.clientCount,
       case_count: row.caseCount,
-      sales_total: row.salesTotal,
+      total_sales: row.salesTotal,
+      total_expenses: row.expenseTotal,
       profit: row.profit,
-      unpaid_total: row.unpaidTotal,
+      unpaid_amount: row.unpaidTotal,
+      average_price: row.averagePrice,
+      profit_margin: row.profitMargin,
+      comment: row.comment,
     }));
     XLSX.utils.book_append_sheet(
       workbook,
@@ -2310,7 +2318,7 @@ function exportAnalysisExcel() {
     );
     XLSX.utils.book_append_sheet(
       workbook,
-      createExcelSheet(referralRows, ["referral_source", "client_count", "case_count", "sales_total", "profit", "unpaid_total"]),
+      createExcelSheet(referralRows, ["referral_source", "client_count", "case_count", "total_sales", "total_expenses", "profit", "unpaid_amount", "average_price", "profit_margin", "comment"]),
       "紹介元別分析",
     );
     XLSX.writeFile(workbook, "gyosei-analysis-export.xlsx");
@@ -3047,6 +3055,26 @@ function toSafeNumber(value) {
   return Number.isFinite(num) ? num : 0;
 }
 
+function normalizeReferralSourceLabel(value, fallback = "未設定") {
+  const normalized = asTrimmedText(value);
+  return normalized || fallback;
+}
+
+function calculateProfitMarginPercent(salesTotal, expenseTotal) {
+  const safeSales = toSafeNumber(salesTotal);
+  if (safeSales <= 0) return 0;
+  return ((safeSales - toSafeNumber(expenseTotal)) / safeSales) * 100;
+}
+
+function classifyReferralProfitability(row) {
+  if (!row || row.clientCount <= 0 || row.caseCount <= 0) return "データ不足：継続観察";
+  if (row.profit < 0) return "赤字：対応範囲見直し";
+  if (row.caseCount >= 3 && row.averagePrice < 50000) return "案件数多いが売上低い：メニュー見直し";
+  if (row.salesTotal > 0 && row.profitMargin >= 0 && row.profitMargin < 30) return "売上あり利益低い：単価見直し";
+  if (row.profitMargin >= 30) return "高利益：重点営業";
+  return "データ不足：継続観察";
+}
+
 function resolveClientForCase(caseEntry, clientById, clientsByNameKey) {
   const byId = caseEntry.clientId ? clientById.get(caseEntry.clientId) : null;
   if (byId) return byId;
@@ -3056,6 +3084,7 @@ function resolveClientForCase(caseEntry, clientById, clientsByNameKey) {
 
 function buildClientAndReferralAnalytics(filter = {}) {
   const clientById = new Map(state.clients.map((client) => [client.id, client]));
+  const knownClientNames = new Set(state.clients.map((client) => String(client.name || "")));
   const clientsByNameKey = new Map();
   state.clients.forEach((client) => {
     const key = normalizeNameKey(client.name);
@@ -3102,25 +3131,22 @@ function buildClientAndReferralAnalytics(filter = {}) {
 
   state.sales.forEach((sale) => {
     const linkedCase = caseById.get(sale.caseId);
-    if (!linkedCase) return;
     if (!isWithinFilterDate(sale.paidDate || sale.createdAt, filter)) return;
-    const client = resolveClientForCase(linkedCase, clientById, clientsByNameKey);
-    const clientName = client?.name || linkedCase.customerName || "未設定";
+    const client = linkedCase ? resolveClientForCase(linkedCase, clientById, clientsByNameKey) : null;
+    const clientName = client?.name || linkedCase?.customerName || "不明";
     const row = ensureClientRow(clientName);
-    row.referralSource = client?.referralSource || row.referralSource || "未設定";
+    row.referralSource = normalizeReferralSourceLabel(client?.referralSource, linkedCase ? "未設定" : "不明");
     row.salesTotal += toSafeNumber(sale.invoiceAmount);
     row.unpaidTotal += toSafeNumber(getRemainingAmount(sale));
   });
 
   state.expenses.forEach((expense) => {
-    if (!expense.caseId) return;
     const linkedCase = caseById.get(expense.caseId);
-    if (!linkedCase) return;
     if (!isWithinFilterDate(expense.date, filter)) return;
-    const client = resolveClientForCase(linkedCase, clientById, clientsByNameKey);
-    const clientName = client?.name || linkedCase.customerName || "未設定";
+    const client = linkedCase ? resolveClientForCase(linkedCase, clientById, clientsByNameKey) : null;
+    const clientName = client?.name || linkedCase?.customerName || "不明";
     const row = ensureClientRow(clientName);
-    row.referralSource = client?.referralSource || row.referralSource || "未設定";
+    row.referralSource = normalizeReferralSourceLabel(client?.referralSource, linkedCase ? "未設定" : "不明");
     row.expenseTotal += toSafeNumber(expense.amount);
   });
 
@@ -3142,7 +3168,7 @@ function buildClientAndReferralAnalytics(filter = {}) {
       salesTotal: toSafeNumber(row.salesTotal),
       expenseTotal: toSafeNumber(row.expenseTotal),
       unpaidTotal: toSafeNumber(row.unpaidTotal),
-      referralSource: row.referralSource || "未設定",
+      referralSource: normalizeReferralSourceLabel(row.referralSource),
       profit: toSafeNumber(row.salesTotal) - toSafeNumber(row.expenseTotal),
       rank: getClientRank(toSafeNumber(row.salesTotal)),
       lastContactDate: row.lastContactDate || row.lastCreatedCaseDate || null,
@@ -3157,13 +3183,20 @@ function buildClientAndReferralAnalytics(filter = {}) {
     });
 
   const referralMap = new Map();
+  state.clients.forEach((client) => {
+    const key = normalizeReferralSourceLabel(client?.referralSource);
+    if (!referralMap.has(key)) {
+      referralMap.set(key, { referralSource: key, clientCount: 0, caseCount: 0, salesTotal: 0, expenseTotal: 0, unpaidTotal: 0 });
+    }
+    referralMap.get(key).clientCount += 1;
+  });
   clientRows.forEach((row) => {
-    const key = row.referralSource || "未設定";
+    const key = normalizeReferralSourceLabel(row.referralSource);
     if (!referralMap.has(key)) {
       referralMap.set(key, { referralSource: key, clientCount: 0, caseCount: 0, salesTotal: 0, expenseTotal: 0, unpaidTotal: 0 });
     }
     const current = referralMap.get(key);
-    current.clientCount += 1;
+    if (!knownClientNames.has(String(row.clientName || ""))) current.clientCount += 1;
     current.caseCount += row.caseCount;
     current.salesTotal += row.salesTotal;
     current.expenseTotal += row.expenseTotal;
@@ -3171,7 +3204,28 @@ function buildClientAndReferralAnalytics(filter = {}) {
   });
 
   const referralRows = Array.from(referralMap.values())
-    .map((row) => ({ ...row, profit: row.salesTotal - row.expenseTotal }))
+    .map((row) => {
+      const salesTotal = toSafeNumber(row.salesTotal);
+      const expenseTotal = toSafeNumber(row.expenseTotal);
+      const caseCount = toSafeNumber(row.caseCount);
+      const profit = salesTotal - expenseTotal;
+      const averagePrice = caseCount > 0 ? salesTotal / caseCount : 0;
+      const profitMargin = calculateProfitMarginPercent(salesTotal, expenseTotal);
+      const rowWithMetrics = {
+        ...row,
+        salesTotal,
+        expenseTotal,
+        caseCount,
+        unpaidTotal: toSafeNumber(row.unpaidTotal),
+        profit,
+        averagePrice,
+        profitMargin,
+      };
+      return {
+        ...rowWithMetrics,
+        comment: classifyReferralProfitability(rowWithMetrics),
+      };
+    })
     .sort((a, b) => b.profit - a.profit);
 
   return { clientRows, referralRows };
@@ -3207,14 +3261,19 @@ function renderAnalyticsSection() {
   if (referralAnalysisWrap) referralAnalysisWrap.hidden = referralRows.length === 0;
   if (referralAnalysisEmpty) referralAnalysisEmpty.hidden = referralRows.length > 0;
   referralRows.forEach((row) => {
+    const marginClass = row.profit < 0 ? "referral-margin-negative" : row.profitMargin >= 30 ? "referral-margin-good" : "referral-margin-normal";
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(row.referralSource || "未設定")}</td>
       <td>${row.clientCount}件</td>
       <td>${row.caseCount}件</td>
       <td>${formatCurrency(row.salesTotal)}</td>
+      <td>${formatCurrency(row.expenseTotal)}</td>
       <td class="${row.profit < 0 ? "loss-text" : ""}">${formatCurrency(row.profit)}</td>
       <td class="${row.unpaidTotal > 0 ? "analysis-unpaid-text" : ""}">${formatCurrency(row.unpaidTotal)}${row.unpaidTotal > 0 ? " ⚠️" : ""}</td>
+      <td>${formatCurrency(row.averagePrice)}</td>
+      <td class="${marginClass}">${row.profitMargin.toFixed(1)}%</td>
+      <td>${escapeHtml(row.comment)}</td>
     `;
     referralAnalysisBody.appendChild(tr);
   });
