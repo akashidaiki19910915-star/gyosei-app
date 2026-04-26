@@ -192,7 +192,7 @@ const saleInvoiceNumberInput = document.getElementById("sale-invoice-number");
 const salesListBody = document.getElementById("sales-list-body");
 const salesListWrap = document.getElementById("sales-list-wrap");
 const salesEmpty = document.getElementById("sales-empty");
-const saleSubmitBtn = saleForm.querySelector('button[type="submit"]');
+const saleSubmitBtn = document.getElementById("sale-submit-btn") || saleForm.querySelector('button[type="submit"]');
 const saleInvoiceMemoInput = document.getElementById("sale-invoice-memo");
 const salesSearchInput = document.getElementById("sales-search-input");
 const salesFilterClearBtn = document.getElementById("sales-filter-clear-btn");
@@ -679,7 +679,10 @@ async function loadAllData() {
   if (casesRes.error) throw casesRes.error;
   if (estimatesRes.error) throw estimatesRes.error;
   if (estimateItemsRes.error) throw estimateItemsRes.error;
-  if (salesRes.error) throw salesRes.error;
+  if (salesRes.error) {
+    console.error("LOAD SALES ERROR", salesRes.error);
+    throw salesRes.error;
+  }
   if (expensesRes.error) throw expensesRes.error;
   if (fixedExpensesRes.error) throw fixedExpensesRes.error;
   if (dailyReportsRes.error) throw dailyReportsRes.error;
@@ -807,7 +810,7 @@ async function handleClientSubmit(event) {
       resetClientForm();
     }, { triggerButton: event.submitter });
   } catch (error) {
-    showAppMessage(`顧客保存に失敗しました。${error?.message || ""}`, true);
+    showAppMessage(`顧客保存に失敗しました。${formatSupabaseError(error)}`, true);
   } finally {
     console.log("ACTION FINALLY", actionName);
     forceHideLoading();
@@ -893,7 +896,7 @@ async function handleWorkTemplateSubmit(event) {
       resetWorkTemplateForm();
     }, { triggerButton: event.submitter });
   } catch (error) {
-    showAppMessage(`業務テンプレート保存に失敗しました。${error?.message || ""}`, true);
+    showAppMessage(`業務テンプレート保存に失敗しました。${formatSupabaseError(error)}`, true);
   } finally {
     forceHideLoading();
   }
@@ -901,81 +904,86 @@ async function handleWorkTemplateSubmit(event) {
 
 async function handleSaleSubmit(event) {
   event.preventDefault();
-  console.log("SALE SUBMIT FIRED");
-  if (!currentUser || !saleForm) return;
+  if (!currentUser) {
+    showAppMessage("ログイン状態を確認できません。", true);
+    return;
+  }
+  if (!saleForm) return;
 
-  const invoiceAmount = parseNumberInput(saleForm.elements.invoiceAmount.value);
-  if (invoiceAmount <= 0) return;
-
-  const paidAmount = parseNumberInput(saleForm.elements.paidAmount.value);
-  const caseId = saleCaseSelect?.value || "";
-  const normalizedPaidAmount = paidAmount ?? 0;
-  const paymentStatus = calculatePaymentStatus(invoiceAmount, normalizedPaidAmount);
-  const paidDate = saleForm.elements.paidDate.value || null;
-  const dueDate = saleForm.elements.dueDate.value || null;
-  console.log("SALE VALUES", { caseId, invoiceAmount, paidAmount: normalizedPaidAmount, paidDate, dueDate, invoiceNumber: saleInvoiceNumberInput?.value || "" });
-
-  const invoiceNumber = editState.saleId
-    ? (state.sales.find((entry) => entry.id === editState.saleId)?.invoiceNumber || null)
-    : await getNextMonthlyNumber("sales", "invoice_number", "S");
-  const payload = {
-    user_id: currentUser.id,
-    case_id: caseId || null,
-    invoice_amount: invoiceAmount,
-    paid_amount: normalizedPaidAmount,
-    paid_date: paidDate,
-    due_date: dueDate,
-    payment_status: paymentStatus,
-    is_unpaid: paymentStatus !== "入金済",
-    invoice_number: invoiceNumber || null,
-  };
-  console.log("SALE PAYLOAD", payload);
-
-  const taskName = editState.saleId ? "売上更新" : "売上登録";
-  const actionName = taskName;
-  console.log("EDIT STATE", editState);
-  console.log("ACTION START", actionName, editState.saleId || "new");
-  console.log("PAYLOAD", payload);
+  startLoading("売上登録");
   try {
-    await withLoading(taskName, async () => {
-      if (editState.saleId) {
-        const { data, error } = await sbClient.from("sales").update(payload).eq("id", editState.saleId).eq("user_id", currentUser.id).select().single();
-        if (error) throw error;
-        if (!data) throw new Error("売上更新結果を取得できませんでした。");
-        console.log("SALE INSERT SUCCESS", data);
-        await loadAllData();
-        console.log("SALES COUNT AFTER LOAD", state.sales.length);
-        renderAfterDataChanged();
-        console.log("RENDER AFTER SALE DONE");
-        resetSaleForm();
-        editState.saleId = null;
-        subtabState.sales = "list";
-        activateSubtab("sales", "list");
-        showAppMessage("売上を更新しました。", false);
-        return;
-      }
+    clearAppMessage();
+    console.log("SALE SUBMIT FIRED");
 
-      const { data, error } = await sbClient.from("sales").insert(payload).select().single();
-      if (error) {
-        console.error("SALE INSERT ERROR", error);
-        throw error;
-      }
-      if (!data) throw new Error("売上登録結果を取得できませんでした。");
-      console.log("SALE INSERT SUCCESS", data);
-      await loadAllData();
-      console.log("SALES COUNT AFTER LOAD", state.sales.length);
-      renderAfterDataChanged();
-      console.log("RENDER AFTER SALE DONE");
-      resetSaleForm();
-      editState.saleId = null;
-      subtabState.sales = "list";
-      activateSubtab("sales", "list");
-      showAppMessage("売上を登録しました。", false);
-    }, { triggerButton: event.submitter });
+    const isEdit = Boolean(editState.saleId);
+    const caseId = saleCaseSelect?.value || null;
+    const invoiceAmount = parseNumberInput(document.getElementById("invoice-amount")?.value);
+    const paidAmount = parseNumberInput(document.getElementById("paid-amount")?.value);
+    const paidDate = document.getElementById("paid-date")?.value || null;
+    const dueDate = document.getElementById("sale-due-date")?.value || document.getElementById("due-date")?.value || null;
+
+    if (!caseId) {
+      throw new Error("対象案件を選択してください。");
+    }
+    if (!invoiceAmount || invoiceAmount <= 0) {
+      throw new Error("請求額を入力してください。");
+    }
+
+    const paymentStatus = calculatePaymentStatus(invoiceAmount, paidAmount);
+    const invoiceNumber = isEdit
+      ? (state.sales.find((entry) => entry.id === editState.saleId)?.invoiceNumber || null)
+      : await getNextMonthlyNumber("sales", "invoice_number", "S");
+    const payload = {
+      user_id: currentUser.id,
+      case_id: caseId || null,
+      invoice_amount: invoiceAmount,
+      paid_amount: paidAmount || 0,
+      paid_date: paidDate || null,
+      due_date: dueDate || null,
+      payment_status: paymentStatus,
+      is_unpaid: paymentStatus !== "入金済",
+      invoice_number: invoiceNumber || null,
+    };
+
+    console.log("SALE PAYLOAD", payload);
+
+    let query;
+    if (isEdit) {
+      query = sbClient
+        .from("sales")
+        .update(payload)
+        .eq("id", editState.saleId)
+        .eq("user_id", currentUser.id)
+        .select()
+        .single();
+    } else {
+      query = sbClient
+        .from("sales")
+        .insert(payload)
+        .select()
+        .single();
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error("SALE SUPABASE ERROR", error);
+      throw error;
+    }
+    if (!data) throw new Error("売上登録結果を取得できませんでした。");
+
+    console.log("SALE INSERT SUCCESS", data);
+    await loadAllData();
+    console.log("SALES COUNT AFTER LOAD", state.sales?.length);
+    renderAfterDataChanged();
+    resetSaleForm();
+    editState.saleId = null;
+    subtabState.sales = "list";
+    activateSubtab("sales", "list");
+    showAppMessage(isEdit ? "売上を更新しました。" : "売上を登録しました。", false);
   } catch (error) {
+    console.error("売上登録に失敗しました。", error);
     showAppMessage(`売上登録に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
   } finally {
-    console.log("ACTION FINALLY", actionName);
     forceHideLoading();
   }
 }
@@ -1050,7 +1058,7 @@ async function handleExpenseSubmit(event) {
       showAppMessage("経費を登録しました。", false);
     }, { triggerButton: event.submitter });
   } catch (error) {
-    showAppMessage(`経費保存に失敗しました。${error?.message || ""}`, true);
+    showAppMessage(`経費保存に失敗しました。${formatSupabaseError(error)}`, true);
   } finally {
     console.log("ACTION FINALLY", actionName);
     forceHideLoading();
@@ -1108,7 +1116,7 @@ async function handleFixedExpenseSubmit(event) {
     resetFixedExpenseForm();
     }, { triggerButton: event.submitter });
   } catch (error) {
-    showAppMessage(`固定費保存に失敗しました。${error?.message || ""}`, true);
+    showAppMessage(`固定費保存に失敗しました。${formatSupabaseError(error)}`, true);
   } finally {
     console.log("ACTION FINALLY", actionName);
     forceHideLoading();
@@ -3699,7 +3707,7 @@ async function handleEstimateSubmit(event) {
       activateTab("estimates");
     }, { triggerButton: event.submitter });
   } catch (error) {
-    showAppMessage(`見積保存に失敗しました。${error?.message || ""}`, true);
+    showAppMessage(`見積保存に失敗しました。${formatSupabaseError(error)}`, true);
   } finally {
     console.log("ACTION FINALLY", actionName);
     forceHideLoading();
@@ -4025,12 +4033,18 @@ function renderSales() {
 
   filteredSales.forEach((sale) => {
     const linkedCase = state.cases.find((entry) => entry.id === sale.caseId);
+    const customerLabel = linkedCase
+      ? (linkedCase.customerName || "顧客不明")
+      : "案件なし";
+    const caseLabel = linkedCase
+      ? (linkedCase.caseName || "案件名不明")
+      : "案件なし";
     const tr = document.createElement("tr");
     tr.dataset.id = sale.id;
     tr.classList.add(getSaleRowClass(sale));
     tr.innerHTML = `
-      <td>${escapeHtml(linkedCase?.customerName || "案件なし")}</td>
-      <td>${escapeHtml(linkedCase?.caseName || "案件なし")}<br /><small>${escapeHtml(sale.invoiceNumber || "請求番号なし")}</small></td>
+      <td>${escapeHtml(customerLabel)}</td>
+      <td>${escapeHtml(caseLabel)}<br /><small>${escapeHtml(sale.invoiceNumber || "請求番号なし")}</small></td>
       <td>${formatCurrency(sale.invoiceAmount)}</td>
       <td>${formatCurrency(sale.paidAmount)}</td>
       <td>${formatCurrency(getRemainingAmount(sale))}</td>
@@ -6086,20 +6100,19 @@ function mapSaleFromDb(row) {
   // alter table sales add column if not exists payment_status text;
   // alter table sales add column if not exists due_date date;
   // alter table sales add column if not exists invoice_number text;
-  const invoiceAmount = normalizeAmount(row.invoice_amount) ?? 0;
-  const paidAmount = normalizeAmount(row.paid_amount) ?? 0;
-  const paymentStatus = row.payment_status || calculatePaymentStatus(invoiceAmount, paidAmount);
+  const invoiceAmount = Number(row.invoice_amount || 0);
+  const paidAmount = Number(row.paid_amount || 0);
   return {
     id: row.id,
     userId: row.user_id,
     caseId: row.case_id || null,
-    invoiceNumber: row.invoice_number || "",
     invoiceAmount,
     paidAmount,
     paidDate: row.paid_date || null,
     dueDate: row.due_date || null,
-    paymentStatus,
+    paymentStatus: row.payment_status || calculatePaymentStatus(invoiceAmount, paidAmount),
     isUnpaid: row.is_unpaid !== false,
+    invoiceNumber: row.invoice_number || "",
     createdAt: Date.parse(row.created_at) || null,
     updatedAt: Date.parse(row.updated_at) || null,
   };

@@ -707,8 +707,8 @@
               <h2>売上登録</h2>
               <form id="sale-form" class="form">
                 <label>
-                  案件
-                  <select id="sale-case-id" name="saleCaseId"></select>
+                  案件 <span class="required">必須</span>
+                  <select id="sale-case-id" name="saleCaseId" required></select>
                 </label>
                 <label>
                   請求番号
@@ -735,7 +735,7 @@
                   <textarea id="sale-invoice-memo" name="invoiceMemo" rows="2" maxlength="2000" placeholder="請求書出力時に使用する備考"></textarea>
                 </label>
                 <p class="meta">請求番号は自動採番済みの番号を使用します（形式: S-YYYYMM-001）。</p>
-                <button type="submit">売上を登録</button>
+                <button id="sale-submit-btn" type="submit">売上を登録</button>
               </form>
             </section>
 
