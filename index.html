@@ -76,6 +76,7 @@
                     <option value="sales">売上CSV</option>
                     <option value="expenses">経費CSV</option>
                     <option value="fixed_expenses">固定費CSV</option>
+                    <option value="client_interactions">対応履歴CSV</option>
                   </select>
                 </label>
                 <label>
@@ -372,8 +373,13 @@
         </section>
 
         <section id="tab-clients" class="tab-panel">
+          <nav class="subtabs" aria-label="顧客サブタブ">
+            <button type="button" class="subtab-btn active" data-parent-tab="clients" data-subtab="entry">顧客登録</button>
+            <button type="button" class="subtab-btn" data-parent-tab="clients" data-subtab="list">顧客一覧</button>
+            <button type="button" class="subtab-btn" data-parent-tab="clients" data-subtab="interactions">対応履歴</button>
+          </nav>
           <div class="layout two-col">
-            <section class="panel">
+            <section class="panel subtab-panel" data-parent-tab="clients" data-subtab="entry">
               <h2>顧客登録</h2>
               <form id="client-form" class="form">
                 <label>顧客名 <span class="required">必須</span><input id="client-name" name="clientName" type="text" maxlength="120" required /></label>
@@ -392,10 +398,56 @@
                 <button id="client-submit-btn" type="submit">顧客を登録</button>
               </form>
             </section>
-            <section class="panel">
+            <section class="panel subtab-panel" data-parent-tab="clients" data-subtab="list" hidden>
               <h2>顧客一覧</h2>
               <div id="clients-empty" class="empty">顧客データはまだありません。</div>
               <ul id="clients-list" class="item-list"></ul>
+            </section>
+            <section class="panel subtab-panel" data-parent-tab="clients" data-subtab="interactions" hidden>
+              <h2>対応履歴</h2>
+              <form id="client-interaction-form" class="form">
+                <div class="date-grid">
+                  <label>対応日 <span class="required">必須</span><input id="interaction-date" name="interactionDate" type="date" required /></label>
+                  <label>顧客選択
+                    <select id="interaction-client-id" name="interactionClientId"></select>
+                  </label>
+                </div>
+                <label>対応種別
+                  <select id="interaction-type" name="interactionType">
+                    <option value="">未設定</option>
+                    <option value="電話">電話</option>
+                    <option value="メール">メール</option>
+                    <option value="面談">面談</option>
+                    <option value="訪問">訪問</option>
+                    <option value="LINE">LINE</option>
+                    <option value="その他">その他</option>
+                  </select>
+                </label>
+                <label>対応内容 <span class="required">必須</span><textarea id="interaction-summary" name="interactionSummary" rows="3" maxlength="4000" required></textarea></label>
+                <label>次回対応<textarea id="interaction-next-action" name="interactionNextAction" rows="2" maxlength="4000"></textarea></label>
+                <label>次回対応日<input id="interaction-next-action-date" name="interactionNextActionDate" type="date" /></label>
+                <label>メモ<textarea id="interaction-memo" name="interactionMemo" rows="3" maxlength="4000"></textarea></label>
+                <button id="interaction-submit-btn" type="submit">対応履歴を登録</button>
+              </form>
+              <div id="client-interactions-empty" class="empty">対応履歴データはまだありません。</div>
+              <div id="client-interactions-wrap" class="table-wrap" hidden>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>対応日</th>
+                      <th>顧客名</th>
+                      <th>対応種別</th>
+                      <th>対応内容</th>
+                      <th>次回対応</th>
+                      <th>次回対応日</th>
+                      <th>メモ</th>
+                      <th>編集</th>
+                      <th>削除</th>
+                    </tr>
+                  </thead>
+                  <tbody id="client-interactions-body"></tbody>
+                </table>
+              </div>
             </section>
           </div>
         </section>
