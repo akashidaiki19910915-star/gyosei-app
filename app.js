@@ -426,19 +426,19 @@ function bindEvents() {
   estimateClientSelect?.addEventListener("change", syncEstimateCustomerFromClient);
   estimateCustomerSearch?.addEventListener("input", (event) => {
     state.estimateCustomerQuery = String(event.target.value || "").trim().toLowerCase();
-    renderEstimates();
+    safeRender("estimates", renderEstimates);
   });
   estimateTitleSearch?.addEventListener("input", (event) => {
     state.estimateTitleQuery = String(event.target.value || "").trim().toLowerCase();
-    renderEstimates();
+    safeRender("estimates", renderEstimates);
   });
   estimateStatusFilter?.addEventListener("change", (event) => {
     state.estimateStatusFilter = event.target.value || "all";
-    renderEstimates();
+    safeRender("estimates", renderEstimates);
   });
   estimateExpiredFilter?.addEventListener("change", (event) => {
     state.estimateExpiredFilter = event.target.value || "all";
-    renderEstimates();
+    safeRender("estimates", renderEstimates);
   });
   eventsBound = true;
   console.log("EVENTS BOUND");
@@ -449,19 +449,19 @@ function handleAggregationChange(event) {
   const next = event?.target?.value;
   if (next === "all") state.selectedAggregation = "all";
   else state.selectedAggregation = next === "year" ? "year" : "month";
-  renderDashboard();
+  safeRender("dashboard", renderDashboard);
 }
 
 function handleTargetMonthChange(event) {
   const nextValue = normalizeMonthKey(event?.target?.value);
   state.selectedMonth = nextValue || toMonthKey(new Date());
-  renderDashboard();
+  safeRender("dashboard", renderDashboard);
 }
 
 function handleTargetYearChange(event) {
   const nextValue = normalizeYear(event?.target?.value);
   state.selectedYear = nextValue || new Date().getFullYear();
-  renderDashboard();
+  safeRender("dashboard", renderDashboard);
 }
 
 function handleStatusSummaryClick(event) {
@@ -475,13 +475,13 @@ function applyCaseStatusFilter(nextFilter) {
   state.caseStatusFilter = nextFilter;
   if (caseStatusFilterSelect) caseStatusFilterSelect.value = nextFilter;
   activateTab("cases");
-  renderDashboard();
-  renderCases();
+  safeRender("dashboard", renderDashboard);
+  safeRender("cases", renderCases);
 }
 
 function handleCaseSearchInput(event) {
   state.caseSearchQuery = String(event?.target?.value ?? "").trim().toLowerCase();
-  renderCases();
+  safeRender("cases", renderCases);
 }
 
 function handleCaseStatusFilterChange(event) {
@@ -498,7 +498,7 @@ function clearCaseFilters() {
   applyCaseStatusFilter("all");
   if (caseSearchInput) caseSearchInput.value = "";
   if (caseDeadlineFilterSelect) caseDeadlineFilterSelect.value = "all";
-  renderCases();
+  safeRender("cases", renderCases);
 }
 
 function handleDeadlineAlertClick(event) {
@@ -525,34 +525,34 @@ function applyCaseDeadlineFilter(nextFilter, options = {}) {
   state.caseDeadlineFilter = normalizedFilter;
   if (caseDeadlineFilterSelect) caseDeadlineFilterSelect.value = normalizedFilter;
   if (options.activateCases) activateTab("cases");
-  renderCases();
+  safeRender("cases", renderCases);
 }
 
 function handleSalesSearchInput(event) {
   state.salesSearchQuery = String(event?.target?.value ?? "").trim().toLowerCase();
-  renderSales();
+  safeRender("sales", renderSales);
 }
 
 function clearSalesSearch() {
   state.salesSearchQuery = "";
   if (salesSearchInput) salesSearchInput.value = "";
-  renderSales();
+  safeRender("sales", renderSales);
 }
 
 function handleExpensesSearchInput(event) {
   state.expensesSearchQuery = String(event?.target?.value ?? "").trim().toLowerCase();
-  renderExpenses();
+  safeRender("expenses", renderExpenses);
 }
 
 function clearExpensesSearch() {
   state.expensesSearchQuery = "";
   if (expensesSearchInput) expensesSearchInput.value = "";
-  renderExpenses();
+  safeRender("expenses", renderExpenses);
 }
 
 function handleDailyReportSearchInput(event) {
   state.dailyReportSearchQuery = String(event?.target?.value ?? "").trim().toLowerCase();
-  renderDailyReports();
+  safeRender("dailyReports", renderDailyReports);
 }
 
 function handleDailyReportDateFilterChange(event) {
@@ -563,7 +563,7 @@ function applyDailyReportDateFilter(nextFilter) {
   const normalized = ["all", "today", "month"].includes(nextFilter) ? nextFilter : "all";
   state.dailyReportDateFilter = normalized;
   if (dailyReportDateFilterSelect) dailyReportDateFilterSelect.value = normalized;
-  renderDailyReports();
+  safeRender("dailyReports", renderDailyReports);
 }
 
 function clearDailyReportFilters() {
@@ -1533,7 +1533,7 @@ async function startSaleEdit(saleId) {
     subtabState.sales = "entry";
     activateTab("sales");
     editState.saleId = target.id;
-    saleCaseSelect.value = target.caseId;
+    if (saleCaseSelect) saleCaseSelect.value = target.caseId || "";
     saleForm.elements.invoiceAmount.value = formatNumberInput(target.invoiceAmount);
     saleForm.elements.paidAmount.value = formatNumberInput(target.paidAmount ?? "");
     saleForm.elements.paidDate.value = target.paidDate || "";
@@ -1556,7 +1556,7 @@ async function startExpenseEdit(expenseId) {
     expenseForm.elements.expensePaymentMethod.value = target.paymentMethod || "";
     expenseForm.elements.expenseAmount.value = formatNumberInput(target.amount);
     expenseForm.elements.expenseReceiptUrl.value = target.receiptUrl || "";
-    expenseCaseSelect.value = target.caseId || "";
+    if (expenseCaseSelect) expenseCaseSelect.value = target.caseId || "";
     expenseSubmitBtn.textContent = "経費を更新";
     expenseForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -6696,7 +6696,7 @@ async function withLoading(taskName, asyncFn, options = {}) {
   } finally {
     setSubmitButtonsDisabled(false);
     if (triggerButton instanceof HTMLButtonElement) triggerButton.disabled = false;
-    endLoading(taskName);
+    forceHideLoading();
   }
 }
 
