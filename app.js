@@ -72,6 +72,7 @@ const state = {
   estimateStatusFilter: "all",
   estimateExpiredFilter: "all",
   alerts: [],
+  selectedIntegrityCheckKey: "",
   appSettings: { ...DEFAULT_APP_SETTINGS },
   isInitialDataReady: false,
 };
@@ -102,6 +103,7 @@ const exportReferralAnalysisCsvBtn = document.getElementById("export-referral-an
 const excelImportForm = document.getElementById("excel-import-form");
 const exportBackupJsonBtn = document.getElementById("export-backup-json-btn");
 const backupRestoreForm = document.getElementById("backup-restore-form");
+const manualReloadBtn = document.getElementById("manual-reload-btn");
 
 const tabs = Array.from(document.querySelectorAll(".tab-btn"));
 const subtabButtons = Array.from(document.querySelectorAll(".subtab-btn"));
@@ -191,6 +193,15 @@ const pendingEstimatesSummary = document.getElementById("pending-estimates-summa
 const pendingEstimatesBody = document.getElementById("pending-estimates-body");
 const pendingEstimatesEmpty = document.getElementById("pending-estimates-empty");
 const pendingEstimatesListWrap = document.getElementById("pending-estimates-list-wrap");
+const dataIntegrityCard = document.getElementById("data-integrity-card");
+const dataIntegritySummary = document.getElementById("data-integrity-summary");
+const dataIntegrityBackupStatus = document.getElementById("data-integrity-backup-status");
+const dataIntegrityList = document.getElementById("data-integrity-list");
+const dataIntegrityDetailWrap = document.getElementById("data-integrity-detail-wrap");
+const dataIntegrityDetailTitle = document.getElementById("data-integrity-detail-title");
+const dataIntegrityDetailList = document.getElementById("data-integrity-detail-list");
+
+const BACKUP_AT_STORAGE_KEY = "gyosei_last_backup_at";
 
 const clientForm = document.getElementById("client-form");
 const clientsList = document.getElementById("clients-list");
@@ -389,6 +400,7 @@ function bindEvents() {
   authForm.addEventListener("submit", handleLogin);
   signupBtn.addEventListener("click", handleSignup);
   logoutBtn.addEventListener("click", handleLogout);
+  manualReloadBtn?.addEventListener("click", handleManualReload);
 
   clientForm?.addEventListener("submit", handleClientSubmit);
   caseForm.addEventListener("submit", handleCaseSubmit);
@@ -693,6 +705,23 @@ async function handleLogout() {
   } finally {
     forceHideLoading();
     isLoggingOut = false;
+  }
+}
+
+async function handleManualReload(event) {
+  if (event) event.preventDefault();
+  if (!currentUser) return;
+  if (manualReloadBtn) manualReloadBtn.disabled = true;
+  startLoading("最新データ再読込");
+  try {
+    await loadAllDataSafely();
+    renderAfterDataChanged();
+    showAppMessage("最新データを読み込みました", false);
+  } catch (error) {
+    showAppMessage(`最新データ再読込に失敗しました。${formatSupabaseError(error)}`, true);
+  } finally {
+    forceHideLoading();
+    if (manualReloadBtn) manualReloadBtn.disabled = false;
   }
 }
 
@@ -1602,6 +1631,10 @@ async function handleGlobalListAction(event) {
     handlePendingEstimateAction(event);
     return;
   }
+  if (button.closest("#data-integrity-list")) {
+    handleDataIntegrityAction(event);
+    return;
+  }
   if (button.closest("#clients-list")) {
     await handleClientListAction(event);
     return;
@@ -1833,6 +1866,15 @@ function handlePendingEstimateAction(event) {
   if (btn.classList.contains("edit-pending-estimate-btn")) {
     startEstimateEdit(estimateId).catch(() => {});
   }
+}
+
+function handleDataIntegrityAction(event) {
+  const btn = event.target.closest("button");
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const checkKey = btn.dataset.checkKey;
+  if (!checkKey) return;
+  state.selectedIntegrityCheckKey = checkKey;
+  safeRender("dataIntegrity", renderDataIntegrityCheck);
 }
 
 async function handleRecordReminder(saleId) {
@@ -3010,6 +3052,8 @@ function handleExportBackupJson(event) {
     };
     console.log("BACKUP JSON COUNTS", counts);
     downloadJsonFile(filename, backup);
+    safeSetLocalStorage(BACKUP_AT_STORAGE_KEY, new Date().toISOString());
+    safeRender("dataIntegrity", renderDataIntegrityCheck);
   });
 }
 
@@ -3182,6 +3226,7 @@ function renderAfterDataChanged() {
   safeRender("deadlineAlerts", renderDeadlineAlerts);
   safeRender("nextActionAlerts", renderNextActionAlerts);
   safeRender("pendingEstimates", renderPendingEstimates);
+  safeRender("dataIntegrity", renderDataIntegrityCheck);
   safeRender("clientAnalysis", renderClientAnalysis);
   safeRender("referralAnalysis", renderReferralAnalysis);
   console.log("RENDER DONE");
@@ -3304,6 +3349,134 @@ function renderPendingEstimates() {
     `;
     pendingEstimatesBody.appendChild(tr);
   });
+}
+
+function renderDataIntegrityCheck() {
+  if (!dataIntegrityCard || !dataIntegritySummary || !dataIntegrityList || !dataIntegrityDetailWrap || !dataIntegrityDetailTitle || !dataIntegrityDetailList) return;
+  const checks = getDataIntegrityChecks();
+  const criticalCount = checks.filter((entry) => entry.severity === "critical").reduce((sum, entry) => sum + entry.items.length, 0);
+  const warningCount = checks.filter((entry) => entry.severity === "warning").reduce((sum, entry) => sum + entry.items.length, 0);
+  const infoCount = checks.filter((entry) => entry.severity === "info").reduce((sum, entry) => sum + entry.items.length, 0);
+  dataIntegritySummary.textContent = `重大 ${criticalCount}件 / 要確認 ${warningCount}件 / 参考 ${infoCount}件`;
+  renderBackupStatusForIntegrityCheck();
+
+  dataIntegrityCard.classList.toggle("has-alert", checks.some((entry) => entry.items.length > 0));
+  dataIntegrityList.innerHTML = "";
+  checks.forEach((entry) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `data-integrity-item severity-${entry.severity}`;
+    button.dataset.checkKey = entry.key;
+    button.innerHTML = `<span>${escapeHtml(entry.label)}</span><span class="count">${entry.items.length}件</span>`;
+    dataIntegrityList.appendChild(button);
+  });
+
+  const selected = checks.find((entry) => entry.key === state.selectedIntegrityCheckKey)
+    || checks.find((entry) => entry.items.length > 0)
+    || checks[0];
+  if (!selected) {
+    dataIntegrityDetailWrap.hidden = true;
+    return;
+  }
+  state.selectedIntegrityCheckKey = selected.key;
+  dataIntegrityDetailTitle.textContent = `${selected.label}（${selected.items.length}件）`;
+  dataIntegrityDetailList.innerHTML = "";
+  if (!selected.items.length) {
+    const li = document.createElement("li");
+    li.textContent = "対象データはありません。";
+    dataIntegrityDetailList.appendChild(li);
+  } else {
+    selected.items.forEach((item) => {
+      const li = document.createElement("li");
+      li.textContent = item;
+      dataIntegrityDetailList.appendChild(li);
+    });
+  }
+  dataIntegrityDetailWrap.hidden = false;
+}
+
+function getDataIntegrityChecks() {
+  const caseMap = new Map((Array.isArray(state.cases) ? state.cases : []).map((entry) => [entry.id, entry]));
+  const clientMap = new Map((Array.isArray(state.clients) ? state.clients : []).map((entry) => [entry.id, entry]));
+  const paidStatuses = new Set(["入金済"]);
+  const todayTs = getTodayTimestamp();
+
+  const checks = [
+    { key: "cases_without_clients", label: "顧客なし案件", severity: "warning", items: (Array.isArray(state.cases) ? state.cases : []).filter((entry) => !entry?.clientId || !clientMap.has(entry.clientId)).map((entry) => `${entry?.caseName || "案件名未設定"} / ID:${entry?.id || "-"}`) },
+    { key: "sales_without_cases", label: "案件なし売上", severity: "warning", items: (Array.isArray(state.sales) ? state.sales : []).filter((entry) => !entry?.caseId || !caseMap.has(entry.caseId)).map((entry) => `${entry?.invoiceNumber || "請求番号未設定"} / 売上ID:${entry?.id || "-"}`) },
+    { key: "expenses_without_cases", label: "案件なし経費", severity: "info", items: (Array.isArray(state.expenses) ? state.expenses : []).filter((entry) => !entry?.caseId || !caseMap.has(entry.caseId)).map((entry) => `${entry?.content || "経費名未設定"} / 経費ID:${entry?.id || "-"}`) },
+    { key: "sales_zero_invoice_amount", label: "請求額0円の売上", severity: "warning", items: (Array.isArray(state.sales) ? state.sales : []).filter((entry) => Number(entry?.invoiceAmount || 0) <= 0).map((entry) => `${entry?.invoiceNumber || "請求番号未設定"} / 売上ID:${entry?.id || "-"}`) },
+    { key: "sales_overpaid", label: "入金額が請求額を超えている売上", severity: "critical", items: (Array.isArray(state.sales) ? state.sales : []).filter((entry) => Number(entry?.paidAmount || 0) > Number(entry?.invoiceAmount || 0)).map((entry) => `${entry?.invoiceNumber || "請求番号未設定"} / 請求:${formatCurrency(entry?.invoiceAmount || 0)} / 入金:${formatCurrency(entry?.paidAmount || 0)}`) },
+    { key: "overdue_open_tasks", label: "期限切れ未完了タスク", severity: "critical", items: (Array.isArray(state.caseTasks) ? state.caseTasks : []).filter((entry) => entry?.status !== "完了" && Number.isFinite(toDateOnlyTimestamp(entry?.dueDate)) && toDateOnlyTimestamp(entry?.dueDate) < todayTs).map((entry) => `${entry?.taskTitle || "タスク名未設定"} / 期限:${entry?.dueDate || "-"} / ID:${entry?.id || "-"}`) },
+    { key: "near_due_uncollected_documents", label: "案件期限7日以内で未回収書類がある案件", severity: "critical", items: getNearDueUncollectedDocumentItems(caseMap, clientMap, todayTs) },
+    { key: "estimates_zero_amount", label: "見積金額0円の見積", severity: "warning", items: (Array.isArray(state.estimates) ? state.estimates : []).filter((entry) => Number(entry?.totalAmount || 0) <= 0).map((entry) => `${entry?.estimateNumber || "見積番号未設定"} / ${entry?.estimateTitle || "件名未設定"}`) },
+    { key: "sales_marked_paid_but_unpaid", label: "未入金なのに入金済扱いになっている売上", severity: "critical", items: (Array.isArray(state.sales) ? state.sales : []).filter((entry) => paidStatuses.has(entry?.paymentStatus) && Number(entry?.paidAmount || 0) < Number(entry?.invoiceAmount || 0)).map((entry) => `${entry?.invoiceNumber || "請求番号未設定"} / 請求:${formatCurrency(entry?.invoiceAmount || 0)} / 入金:${formatCurrency(entry?.paidAmount || 0)}`) },
+    { key: "payment_due_overdue_unpaid", label: "支払期限切れ未入金", severity: "critical", items: (Array.isArray(state.sales) ? state.sales : []).filter((entry) => isSaleOverdue(entry) && Number(getRemainingAmount(entry)) > 0).map((entry) => `${entry?.invoiceNumber || "請求番号未設定"} / 期限:${entry?.dueDate || "-"} / 残額:${formatCurrency(getRemainingAmount(entry))}`) },
+    { key: "clients_without_history", label: "対応履歴のない顧客", severity: "info", items: getClientsWithoutHistoryItems(caseMap) },
+    { key: "backup_old_or_missing", label: "最終バックアップ日が未設定または7日超過", severity: "info", items: getBackupStalenessItems() },
+  ];
+  return checks;
+}
+
+function getNearDueUncollectedDocumentItems(caseMap, clientMap, todayTs) {
+  const caseIds = new Set(
+    (Array.isArray(state.caseDocuments) ? state.caseDocuments : [])
+      .filter((entry) => entry?.status === "未回収" && entry?.caseId && caseMap.has(entry.caseId))
+      .map((entry) => entry.caseId)
+  );
+  return Array.from(caseIds).map((caseId) => caseMap.get(caseId)).filter(Boolean).filter((entry) => {
+    const dueTs = toDateOnlyTimestamp(entry?.dueDate);
+    return Number.isFinite(dueTs) && dueTs <= todayTs + (7 * 86400000);
+  }).map((entry) => {
+    const clientName = entry?.clientId && clientMap.has(entry.clientId) ? clientMap.get(entry.clientId)?.name : (entry?.customerName || "顧客不明");
+    return `${clientName || "顧客不明"} / ${entry?.caseName || "案件名未設定"} / 期限:${entry?.dueDate || "-"}`;
+  });
+}
+
+function getClientsWithoutHistoryItems(caseMap) {
+  return (Array.isArray(state.clients) ? state.clients : []).filter((client) => {
+    const hasDailyReport = (Array.isArray(state.dailyReports) ? state.dailyReports : []).some((entry) => {
+      if (entry?.clientId === client.id) return true;
+      const linkedCase = entry?.caseId ? caseMap.get(entry.caseId) : null;
+      return linkedCase?.clientId === client.id;
+    });
+    return !hasDailyReport;
+  }).map((entry) => `${entry?.name || "顧客名未設定"} / 顧客ID:${entry?.id || "-"}`);
+}
+
+function getBackupStalenessItems() {
+  const info = getLastBackupInfo();
+  if (!info.hasValue) return ["最終バックアップ日が未設定です。"];
+  if (info.isStale) return [`最終バックアップ日: ${info.label}（${info.daysAgo}日前）`];
+  return [];
+}
+
+function renderBackupStatusForIntegrityCheck() {
+  if (!dataIntegrityBackupStatus) return;
+  const info = getLastBackupInfo();
+  dataIntegrityBackupStatus.classList.toggle("is-warning", !info.hasValue || info.isStale);
+  if (!info.hasValue) {
+    dataIntegrityBackupStatus.textContent = "最終バックアップ日: 未設定（要バックアップ）";
+    return;
+  }
+  const staleLabel = info.isStale ? "（7日超過・要確認）" : "";
+  dataIntegrityBackupStatus.textContent = `最終バックアップ日: ${info.label}（${info.daysAgo}日前）${staleLabel}`;
+}
+
+function getLastBackupInfo() {
+  const raw = safeGetLocalStorage(BACKUP_AT_STORAGE_KEY);
+  if (!raw) return { hasValue: false, isStale: true, label: "未設定", daysAgo: null };
+  const valueDate = new Date(raw);
+  const time = valueDate.getTime();
+  if (!Number.isFinite(time)) return { hasValue: false, isStale: true, label: "未設定", daysAgo: null };
+  const today = new Date(toDateString(new Date()));
+  const diff = Math.floor((today.getTime() - time) / 86400000);
+  return {
+    hasValue: true,
+    isStale: diff >= 7,
+    label: toDateString(valueDate),
+    daysAgo: Math.max(0, diff),
+  };
 }
 
 function renderClientAnalysis() {
@@ -3432,6 +3605,7 @@ function renderDashboard() {
   renderUnpaidList();
   renderAnalyticsSection();
   renderPendingEstimates();
+  renderDataIntegrityCheck();
 }
 
 function renderTodayTaskCard() {
@@ -6919,6 +7093,25 @@ async function safeFileExportAsync(actionName, exportFn) {
   }
 }
 
+function safeSetLocalStorage(key, value) {
+  try {
+    if (!key) return;
+    window.localStorage.setItem(String(key), String(value ?? ""));
+  } catch (error) {
+    console.warn("localStorage set failed", error);
+  }
+}
+
+function safeGetLocalStorage(key) {
+  try {
+    if (!key) return "";
+    return window.localStorage.getItem(String(key)) || "";
+  } catch (error) {
+    console.warn("localStorage get failed", error);
+    return "";
+  }
+}
+
 function downloadCsvFile(filename, headers, rows) {
   const csv = buildCsvString(headers, rows);
   const bom = "\uFEFF";
@@ -7949,6 +8142,7 @@ function setDataMutationControlsEnabled(enabled) {
     expenseSubmitBtn,
     fixedExpenseSubmitBtn,
     dailyReportSubmitBtn,
+    manualReloadBtn,
     csvImportForm?.querySelector('button[type="submit"]'),
     excelImportForm?.querySelector('button[type="submit"]'),
     backupRestoreForm?.querySelector('button[type="submit"]'),
