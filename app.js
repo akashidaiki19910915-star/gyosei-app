@@ -391,29 +391,13 @@ function bindEvents() {
   settingsForm?.addEventListener("submit", handleSettingsSubmit);
 
   clearBtn.addEventListener("click", handleClearAll);
-  clientsList?.addEventListener("click", handleClientListAction);
   reportCaseSelect?.addEventListener("change", syncDailyReportClientFromCase);
   reportClientSelect?.addEventListener("change", syncDailyReportClientLabel);
   clientHistoryClientSelect?.addEventListener("change", renderClientHistory);
-  caseList.addEventListener("click", handleCaseListAction);
-  caseTasksBody?.addEventListener("click", handleCaseTaskListAction);
-  workTemplatesList?.addEventListener("click", handleWorkTemplateListAction);
-  expensesList.addEventListener("click", handleExpensesListAction);
-  fixedExpensesList.addEventListener("click", handleFixedExpensesListAction);
-  dailyReportsBody?.addEventListener("click", handleDailyReportsListAction);
-  unpaidListBody?.addEventListener("click", handleUnpaidListAction);
-  unpaidAlertBody?.addEventListener("click", handleUnpaidListAction);
-  billingLeakAlertBody?.addEventListener("click", handleBillingLeakAlertAction);
   targetMonthInput?.addEventListener("input", handleTargetMonthChange);
   targetYearInput?.addEventListener("input", handleTargetYearChange);
   aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
-  statusSummaryList?.addEventListener("click", handleStatusSummaryClick);
   statusFilterClearBtn?.addEventListener("click", () => applyCaseStatusFilter("all"));
-  deadlineAlertSummary?.addEventListener("click", handleDeadlineAlertClick);
-  deadlineAlertBody?.addEventListener("click", handleDeadlineAlertClick);
-  nextActionAlertBody?.addEventListener("click", handleNextActionAlertClick);
-  todayTaskBody?.addEventListener("click", handleTodayTaskAction);
-  pendingEstimatesBody?.addEventListener("click", handlePendingEstimateAction);
   document.addEventListener("click", handleGlobalListAction);
   caseSearchInput?.addEventListener("input", handleCaseSearchInput);
   caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
@@ -452,7 +436,6 @@ function bindEvents() {
   estimateAddItemBtn?.addEventListener("click", () => addEstimateItemRow());
   estimateItemsWrap?.addEventListener("input", handleEstimateItemsInput);
   estimateItemsWrap?.addEventListener("click", handleEstimateItemsClick);
-  estimateList?.addEventListener("click", handleEstimateListAction);
   caseClientSelect?.addEventListener("change", syncCaseCustomerFromClient);
   caseTemplateSelect?.addEventListener("change", handleCaseTemplateChange);
   estimateClientSelect?.addEventListener("change", syncEstimateCustomerFromClient);
@@ -762,19 +745,6 @@ async function loadAllDataSafely() {
       console.error("LOAD expenses refresh ERROR", error);
     }
   }
-}
-
-async function loadAllData() {
-  await loadAllDataSafely();
-}
-
-
-async function refreshAfterMutation(actionName, message) {
-  await loadAllData();
-  console.log("LOAD DONE", actionName);
-  renderAfterDataChanged();
-  console.log("RENDER DONE", actionName);
-  if (message) showAppMessage(message, false);
 }
 
 function ensureInitialDataReady(actionName = "操作") {
@@ -1467,6 +1437,71 @@ async function handleSalesListAction(event) {
 async function handleGlobalListAction(event) {
   const button = event.target.closest("button");
   if (!(button instanceof HTMLButtonElement)) return;
+
+  if (button.closest("#status-summary-list")) {
+    handleStatusSummaryClick(event);
+    return;
+  }
+  if (button.closest("#deadline-alert-summary") || button.closest("#deadline-alert-body")) {
+    handleDeadlineAlertClick(event);
+    return;
+  }
+  if (button.closest("#next-action-alert-body")) {
+    handleNextActionAlertClick(event);
+    return;
+  }
+  if (button.closest("#today-task-body")) {
+    handleTodayTaskAction(event);
+    return;
+  }
+  if (button.closest("#pending-estimates-body")) {
+    handlePendingEstimateAction(event);
+    return;
+  }
+  if (button.closest("#clients-list")) {
+    await handleClientListAction(event);
+    return;
+  }
+  if (button.closest("#case-list")) {
+    await handleCaseListAction(event);
+    return;
+  }
+  if (button.closest("#case-tasks-body")) {
+    handleCaseTaskListAction(event);
+    return;
+  }
+  if (button.closest("#work-templates-list")) {
+    await handleWorkTemplateListAction(event);
+    return;
+  }
+  if (button.closest("#estimate-list")) {
+    await handleEstimateListAction(event);
+    return;
+  }
+  if (button.closest("#expenses-list")) {
+    await handleExpensesListAction(event);
+    return;
+  }
+  if (button.closest("#fixed-expenses-list")) {
+    await handleFixedExpensesListAction(event);
+    return;
+  }
+  if (button.closest("#daily-reports-body")) {
+    await handleDailyReportsListAction(event);
+    return;
+  }
+  if (button.closest("#sales-list-body")) {
+    await handleSalesListAction(event);
+    return;
+  }
+  if (button.closest("#unpaid-list-body") || button.closest("#unpaid-alert-body")) {
+    handleUnpaidListAction(event);
+    return;
+  }
+  if (button.closest("#billing-leak-alert-body")) {
+    handleBillingLeakAlertAction(event);
+    return;
+  }
 
   if (button.classList.contains("delete-sale-btn")) {
     const saleId = button.dataset.saleId || button.closest("[data-id]")?.dataset.id;
@@ -2495,18 +2530,19 @@ async function handleCsvImportSubmit(event) {
   if (!file) return;
   if (!window.confirm(`「${file.name}」を${importTypeToLabel(importType)}として取り込みます。よろしいですか？`)) return;
 
-  try {
-    await withLoading("CSV取込", async () => {
+  await runMutation("CSV取込", async () => {
       const text = await readCsvFileTextWithEncodingFallback(file);
       const result = await importCsvByType(importType, text);
-      console.log("DB success", "CSV取込");
-      await refreshAfterMutation("CSV取込", `CSV取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`);
-      if (result.errorCount > 0) showAppMessage(`CSV取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, true);
-      csvImportForm.reset();
-    }, { triggerButton: event.submitter });
-  } finally {
-    forceHideLoading();
-  }
+      return result;
+    }, {
+      successMessage: "CSV取込が完了しました。",
+      resetForm: () => csvImportForm.reset(),
+      afterSuccess: (result) => {
+        if (!result) return;
+        const message = `CSV取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`;
+        showAppMessage(message, result.errorCount > 0);
+      },
+    });
 }
 
 function handleExportExcel() {
@@ -2723,19 +2759,20 @@ async function handleExcelImportSubmit(event) {
   if (!file) return;
   if (!window.confirm(`「${file.name}」をExcelとして取り込みます。よろしいですか？`)) return;
 
-  try {
-    await withLoading("Excel取込", async () => {
+  await runMutation("Excel取込", async () => {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
       const result = await importWorkbookBySheet(workbook);
-      console.log("DB success", "Excel取込");
-      await refreshAfterMutation("Excel取込", `Excel取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`);
-      if (result.errorCount > 0) showAppMessage(`Excel取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`, true);
-      excelImportForm.reset();
-    }, { triggerButton: event.submitter });
-  } finally {
-    forceHideLoading();
-  }
+      return result;
+    }, {
+      successMessage: "Excel取込が完了しました。",
+      resetForm: () => excelImportForm.reset(),
+      afterSuccess: (result) => {
+        if (!result) return;
+        const message = `Excel取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`;
+        showAppMessage(message, result.errorCount > 0);
+      },
+    });
 }
 
 function handleExportBackupJson(event) {
@@ -2779,8 +2816,7 @@ async function handleBackupRestoreSubmit(event) {
     if (!confirmed) return;
   }
 
-  try {
-    await withLoading("バックアップ復元", async () => {
+  await runMutation("バックアップ復元", async () => {
       const text = await file.text();
       let parsed;
       try {
@@ -2790,17 +2826,16 @@ async function handleBackupRestoreSubmit(event) {
       }
       validateBackupJsonPayload(parsed);
       const result = await restoreBackupData(parsed.data, mode);
-      await loadAllData();
-      renderAfterDataChanged();
-      const message = `復元完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`;
-      showAppMessage(message, result.errorCount > 0);
-      backupRestoreForm.reset();
-    }, { triggerButton: event.submitter });
-  } catch (error) {
-    showAppMessage(`復元に失敗しました。${error?.message || ""}`, true);
-  } finally {
-    forceHideLoading();
-  }
+      return result;
+    }, {
+      successMessage: "バックアップ復元が完了しました。",
+      resetForm: () => backupRestoreForm.reset(),
+      afterSuccess: (result) => {
+        if (!result) return;
+        const message = `復元完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`;
+        showAppMessage(message, result.errorCount > 0);
+      },
+    });
 }
 
 function buildBackupJson() {
