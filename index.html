@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-    <script src="app.js?v=20260426-payment-control-upgrade" defer></script>
+    <script src="app.js?v=20260427-operation-logs" defer></script>
   </head>
   <body>
     <div id="loading-overlay" class="loading-overlay" hidden>
@@ -1180,6 +1180,46 @@
                 <label>請求書備考<textarea id="settings-invoice-note" name="invoiceNote" rows="3" maxlength="2000"></textarea></label>
                 <button id="settings-submit-btn" type="submit">設定を保存</button>
               </form>
+            </section>
+            <section class="panel">
+              <h2>操作ログ（最新50件）</h2>
+              <div class="search-filter-bar">
+                <label class="inline-field" for="operation-log-action-filter">
+                  操作種別
+                  <select id="operation-log-action-filter">
+                    <option value="all">すべて</option>
+                  </select>
+                </label>
+                <label class="inline-field" for="operation-log-target-filter">
+                  対象種別
+                  <select id="operation-log-target-filter">
+                    <option value="all">すべて</option>
+                  </select>
+                </label>
+                <label class="inline-field" for="operation-log-from-date">
+                  開始日
+                  <input id="operation-log-from-date" type="date" />
+                </label>
+                <label class="inline-field" for="operation-log-to-date">
+                  終了日
+                  <input id="operation-log-to-date" type="date" />
+                </label>
+              </div>
+              <div id="operation-logs-empty" class="empty">操作ログはまだありません。</div>
+              <div id="operation-logs-wrap" class="table-wrap" hidden>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>日時</th>
+                      <th>操作種別</th>
+                      <th>対象種別</th>
+                      <th>対象名</th>
+                      <th>詳細</th>
+                    </tr>
+                  </thead>
+                  <tbody id="operation-logs-body"></tbody>
+                </table>
+              </div>
             </section>
           </div>
         </section>
