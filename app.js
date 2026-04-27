@@ -1117,7 +1117,27 @@ async function handleSaleSubmit(event) {
         editState.saleId = null;
       },
       afterSuccess: () => {
+        activateTab("sales");
         activateSubtab("sales", "list");
+        renderSales();
+        renderAfterDataChanged();
+      },
+      log: (result) => {
+        const caseInfo = state.cases.find((entry) => entry.id === (result?.case_id ?? result?.caseId ?? null));
+        const clientName = caseInfo?.customerName || "顧客不明";
+        const caseName = caseInfo?.caseName || caseInfo?.name || "案件なし";
+        const invoiceNumber = result?.invoice_number || result?.invoiceNumber || "";
+        const targetName = invoiceNumber || `${clientName} / ${caseName}`;
+        const invoiceAmount = Number(result?.invoice_amount ?? result?.invoiceAmount ?? 0);
+        const paidAmountRaw = result?.paid_amount ?? result?.paidAmount ?? 0;
+        const paidAmount = Number(paidAmountRaw || 0);
+        return {
+          actionType: isEdit ? "売上更新" : "売上登録",
+          targetType: "sales",
+          targetId: result?.id,
+          targetName,
+          detail: `請求額: ${formatCurrency(invoiceAmount)} / 入金額: ${formatCurrency(paidAmount)}`,
+        };
       },
     });
   } catch (error) {
@@ -2245,8 +2265,13 @@ async function runMutation(actionName, mutationFn, options = {}) {
   try {
     clearAppMessage();
     const result = await mutationFn();
+    console.log("MUTATION RESULT", result);
+    console.log("BEFORE LOAD sales count", state.sales?.length);
     await loadAllDataSafely();
+    console.log("AFTER LOAD sales count", state.sales?.length);
+    console.log("BEFORE RENDER");
     renderAfterDataChanged();
+    console.log("AFTER RENDER");
     console.log("MUTATION SUCCESS", actionName);
     if (typeof options.resetForm === "function") options.resetForm();
     if (typeof options.afterSuccess === "function") options.afterSuccess(result);
@@ -5660,71 +5685,99 @@ function renderYearlyBreakdown(salesByMonth, expenseByMonth) {
 }
 
 function renderSales() {
-  if (!salesListBody || !salesEmpty || !salesListWrap) return;
-  salesListBody.innerHTML = "";
-  const sales = Array.isArray(state.sales) ? state.sales : [];
-  const sorted = sales.slice().sort((a, b) => (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0));
-  const filteredSales = sorted.filter((sale) => {
-    if (!state.salesSearchQuery) return true;
-    return matchesSalesSearch(sale, state.salesSearchQuery);
-  });
-
-  filteredSales.forEach((sale) => {
-    try {
-      if (!sale || typeof sale !== "object") return;
-      const invoiceAmount = Number(sale.invoiceAmount || 0);
-      const paidAmount = Number(sale.paidAmount || 0);
-      const remainingAmount = Math.max(0, invoiceAmount - paidAmount);
-      const paymentStatus = sale.paymentStatus || calculatePaymentStatus(invoiceAmount, paidAmount);
-      const linkedCase = sale.caseId ? state.cases.find((entry) => entry.id === sale.caseId) : null;
-      const linkedClient = linkedCase?.clientId ? state.clients.find((entry) => entry.id === linkedCase.clientId) : null;
-      const customerLabel = linkedClient?.name || linkedCase?.customerName || "顧客不明";
-      const caseLabel = linkedCase?.caseName || linkedCase?.name || "案件なし";
-      const dueDateLabel = sale.dueDate ? formatDate(sale.dueDate) : "未設定";
-      const paidDateLabel = sale.paidDate ? formatDate(sale.paidDate) : "未設定";
-      const safeSale = { ...sale, invoiceAmount, paidAmount, paymentStatus };
-      const reminderCount = Number(sale.reminderCount) || 0;
-      const reminderMethod = sale.reminderMethod || "-";
-      const reminderMemo = sale.reminderMemo || "-";
-      const lastReminderDateLabel = sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "-";
-      const canRecordReminder = isReminderRecordableSale(safeSale);
-      const paymentHistory = renderPaymentHistoryInline(sale.id);
-      const tr = document.createElement("tr");
-      tr.dataset.id = sale.id || "";
-      tr.classList.add(getSaleRowClass(safeSale));
-      tr.innerHTML = `
-        <td>${escapeHtml(customerLabel)}</td>
-        <td>${escapeHtml(caseLabel)}<br /><small>${escapeHtml(sale.invoiceNumber || "未採番")}</small></td>
-        <td>${formatCurrency(invoiceAmount)}</td>
-        <td>${formatCurrency(paidAmount)}</td>
-        <td>${formatCurrency(remainingAmount)}</td>
-        <td><span class="${getSaleStatusClass(safeSale)}">${escapeHtml(paymentStatus)}</span></td>
-        <td>${dueDateLabel}</td>
-        <td>${paidDateLabel}</td>
-        <td>${reminderCount}回</td>
-        <td>${lastReminderDateLabel}</td>
-        <td>${escapeHtml(reminderMethod)}</td>
-        <td>${escapeHtml(reminderMemo)}</td>
-        <td>${paymentHistory}</td>
-        <td>${canRecordReminder ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : "-"}</td>
-        <td><button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-sale-id="${sale.id}">入金登録</button></td>
-        <td><button type="button" class="edit-sale-btn secondary-btn" data-sale-id="${sale.id}">編集</button></td>
-        <td><button type="button" class="danger-btn delete-btn delete-sale-btn" data-sale-id="${sale.id}">削除</button></td>
-      `;
-      salesListBody.appendChild(tr);
-    } catch (error) {
-      console.error("renderSales item failed", sale, error);
+  console.log("RENDER SALES START");
+  try {
+    if (!salesListBody || !salesEmpty || !salesListWrap) {
+      console.error("renderSales DOM missing", {
+        salesListBody: !!salesListBody,
+        salesEmpty: !!salesEmpty,
+        salesListWrap: !!salesListWrap,
+      });
+      return;
     }
-  });
+    salesListBody.innerHTML = "";
+    const sales = Array.isArray(state.sales) ? state.sales : [];
+    const sorted = sales.slice().sort((a, b) => (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0));
+    const keyword = (salesSearchInput?.value || state.salesSearchQuery || "").trim().toLowerCase();
+    const filteredSales = sorted.filter((sale) => {
+      if (!keyword) return true;
+      const caseInfo = state.cases.find((entry) => entry.id === sale.caseId);
+      const clientName = caseInfo?.customerName || "顧客不明";
+      const caseName = caseInfo?.caseName || caseInfo?.name || "案件なし";
+      const invoiceNumber = sale.invoiceNumber || "";
+      return [
+        clientName,
+        caseName,
+        invoiceNumber,
+        sale.paymentStatus,
+      ].join(" ").toLowerCase().includes(keyword);
+    });
+    console.log("RENDER SALES state.sales", state.sales);
+    console.log("RENDER SALES filteredSales", filteredSales);
+    console.log("RENDER SALES DOM", {
+      salesList: !!salesListBody,
+      salesEmpty: !!salesEmpty,
+    });
 
-  if (salesFilterCount) {
-    salesFilterCount.textContent = `表示中 ${filteredSales.length}件 / 全${sorted.length}件`;
+    filteredSales.forEach((sale) => {
+      try {
+        if (!sale || typeof sale !== "object") return;
+        const invoiceAmount = Number(sale.invoiceAmount || 0);
+        const paidAmount = Number(sale.paidAmount || 0);
+        const remainingAmount = Math.max(0, invoiceAmount - paidAmount);
+        const paymentStatus = sale.paymentStatus || calculatePaymentStatus(invoiceAmount, paidAmount);
+        const linkedCase = sale.caseId ? state.cases.find((entry) => entry.id === sale.caseId) : null;
+        const linkedClient = linkedCase?.clientId ? state.clients.find((entry) => entry.id === linkedCase.clientId) : null;
+        const customerLabel = linkedClient?.name || linkedCase?.customerName || "顧客不明";
+        const caseLabel = linkedCase?.caseName || linkedCase?.name || "案件なし";
+        const dueDateLabel = sale.dueDate ? formatDate(sale.dueDate) : "未設定";
+        const paidDateLabel = sale.paidDate ? formatDate(sale.paidDate) : "未設定";
+        const safeSale = { ...sale, invoiceAmount, paidAmount, paymentStatus };
+        const reminderCount = Number(sale.reminderCount) || 0;
+        const reminderMethod = sale.reminderMethod || "-";
+        const reminderMemo = sale.reminderMemo || "-";
+        const lastReminderDateLabel = sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "-";
+        const canRecordReminder = isReminderRecordableSale(safeSale);
+        const paymentHistory = renderPaymentHistoryInline(sale.id);
+        const tr = document.createElement("tr");
+        tr.dataset.id = sale.id || "";
+        tr.classList.add(getSaleRowClass(safeSale));
+        tr.innerHTML = `
+          <td>${escapeHtml(customerLabel)}</td>
+          <td>${escapeHtml(caseLabel)}<br /><small>${escapeHtml(sale.invoiceNumber || "未採番")}</small></td>
+          <td>${formatCurrency(invoiceAmount)}</td>
+          <td>${formatCurrency(paidAmount)}</td>
+          <td>${formatCurrency(remainingAmount)}</td>
+          <td><span class="${getSaleStatusClass(safeSale)}">${escapeHtml(paymentStatus)}</span></td>
+          <td>${dueDateLabel}</td>
+          <td>${paidDateLabel}</td>
+          <td>${reminderCount}回</td>
+          <td>${lastReminderDateLabel}</td>
+          <td>${escapeHtml(reminderMethod)}</td>
+          <td>${escapeHtml(reminderMemo)}</td>
+          <td>${paymentHistory}</td>
+          <td>${canRecordReminder ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : "-"}</td>
+          <td><button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-sale-id="${sale.id}">入金登録</button></td>
+          <td><button type="button" class="edit-sale-btn secondary-btn" data-sale-id="${sale.id}">編集</button></td>
+          <td><button type="button" class="danger-btn delete-btn delete-sale-btn" data-sale-id="${sale.id}">削除</button></td>
+        `;
+        salesListBody.appendChild(tr);
+      } catch (error) {
+        console.error("renderSales item failed", sale, error);
+      }
+    });
+
+    if (salesFilterCount) {
+      salesFilterCount.textContent = `表示中 ${filteredSales.length}件 / 全${sorted.length}件`;
+    }
+    salesListWrap.hidden = filteredSales.length === 0;
+    salesEmpty.hidden = filteredSales.length > 0;
+    salesEmpty.textContent = filteredSales.length || !keyword
+      ? "売上データはまだありません。"
+      : "条件に一致する売上データはありません。";
+  } catch (error) {
+    console.error("renderSales failed", error);
   }
-  salesListWrap.hidden = filteredSales.length === 0;
-  salesEmpty.hidden = filteredSales.length > 0;
-  salesEmpty.textContent = filteredSales.length || !state.salesSearchQuery
-    ? "売上データはまだありません。"
-    : "条件に一致する売上データはありません。";
   console.log("RENDER SALES DONE");
 }
 
