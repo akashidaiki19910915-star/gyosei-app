@@ -427,6 +427,7 @@ function bindEvents() {
   exportExcelBtn?.addEventListener("click", handleExportExcel);
   exportAnalysisExcelBtn?.addEventListener("click", handleExportAnalysisExcel);
   excelImportForm?.addEventListener("submit", handleExcelImportSubmit);
+  console.log("BACKUP BUTTON FOUND", !!exportBackupJsonBtn);
   exportBackupJsonBtn?.addEventListener("click", handleExportBackupJson);
   backupRestoreForm?.addEventListener("submit", handleBackupRestoreSubmit);
   document.addEventListener("wheel", handleNumberInputWheel, { passive: true });
@@ -2186,95 +2187,106 @@ async function deleteAllData() {
 }
 
 function handleExportCasesCsv() {
-  const rows = state.cases.map((entry) => ({
-    client_id: entry.clientId || "",
-    template_id: entry.templateId || "",
-    customer_name: entry.customerName,
-    case_name: entry.caseName,
-    estimate_amount: entry.estimateAmount ?? "",
-    received_date: entry.receivedDate || "",
-    due_date: entry.dueDate || "",
-    required_documents: entry.requiredDocuments || "",
-    task_list: entry.taskList || "",
-    status: normalizeStoredStatus(entry.status),
-    work_memo: sanitizeLegacyEstimateMemo(entry.workMemo) || "",
-    next_action_date: entry.nextActionDate || "",
-    next_action: entry.nextAction || "",
-    document_url: entry.documentUrl || "",
-    invoice_url: entry.invoiceUrl || "",
-    receipt_url: entry.receiptUrl || "",
-  }));
-  downloadCsvFile("cases.csv", ["client_id", "template_id", "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "required_documents", "task_list", "status", "work_memo", "next_action_date", "next_action", "document_url", "invoice_url", "receipt_url"], rows);
+  safeFileExport("案件CSV", () => {
+    const rows = state.cases.map((entry) => ({
+      client_id: entry.clientId || "",
+      template_id: entry.templateId || "",
+      customer_name: entry.customerName,
+      case_name: entry.caseName,
+      estimate_amount: entry.estimateAmount ?? "",
+      received_date: entry.receivedDate || "",
+      due_date: entry.dueDate || "",
+      required_documents: entry.requiredDocuments || "",
+      task_list: entry.taskList || "",
+      status: normalizeStoredStatus(entry.status),
+      work_memo: sanitizeLegacyEstimateMemo(entry.workMemo) || "",
+      next_action_date: entry.nextActionDate || "",
+      next_action: entry.nextAction || "",
+      document_url: entry.documentUrl || "",
+      invoice_url: entry.invoiceUrl || "",
+      receipt_url: entry.receiptUrl || "",
+    }));
+    downloadCsvFile("cases.csv", ["client_id", "template_id", "customer_name", "case_name", "estimate_amount", "received_date", "due_date", "required_documents", "task_list", "status", "work_memo", "next_action_date", "next_action", "document_url", "invoice_url", "receipt_url"], rows);
+  });
 }
 
 function handleExportSalesCsv() {
-  const rows = state.sales.map((entry) => {
-    const foundCase = state.cases.find((c) => c.id === entry.caseId);
-    return {
-      customer_name: foundCase?.customerName || "",
-      case_name: foundCase?.caseName || "",
-      invoice_number: entry.invoiceNumber || "",
-      invoice_amount: entry.invoiceAmount ?? "",
-      paid_amount: entry.paidAmount ?? "",
-      remaining_amount: getRemainingAmount(entry),
-      paid_date: entry.paidDate || "",
-      due_date: entry.dueDate || "",
-      payment_status: entry.paymentStatus || "",
-      is_unpaid: entry.paymentStatus !== "入金済" ? "true" : "false",
-      reminder_count: entry.reminderCount ?? 0,
-      last_reminder_date: entry.lastReminderDate || "",
-      reminder_method: entry.reminderMethod || "",
-      reminder_memo: entry.reminderMemo || "",
-    };
+  safeFileExport("売上CSV", () => {
+    const rows = state.sales.map((entry) => {
+      const foundCase = state.cases.find((c) => c.id === entry.caseId);
+      return {
+        customer_name: foundCase?.customerName || "",
+        case_name: foundCase?.caseName || "",
+        invoice_number: entry.invoiceNumber || "",
+        invoice_amount: entry.invoiceAmount ?? "",
+        paid_amount: entry.paidAmount ?? "",
+        remaining_amount: getRemainingAmount(entry),
+        paid_date: entry.paidDate || "",
+        due_date: entry.dueDate || "",
+        payment_status: entry.paymentStatus || "",
+        is_unpaid: entry.paymentStatus !== "入金済" ? "true" : "false",
+        reminder_count: entry.reminderCount ?? 0,
+        last_reminder_date: entry.lastReminderDate || "",
+        reminder_method: entry.reminderMethod || "",
+        reminder_memo: entry.reminderMemo || "",
+      };
+    });
+    downloadCsvFile("sales.csv", ["customer_name", "case_name", "invoice_number", "invoice_amount", "paid_amount", "remaining_amount", "paid_date", "due_date", "payment_status", "is_unpaid", "reminder_count", "last_reminder_date", "reminder_method", "reminder_memo"], rows);
   });
-  downloadCsvFile("sales.csv", ["customer_name", "case_name", "invoice_number", "invoice_amount", "paid_amount", "remaining_amount", "paid_date", "due_date", "payment_status", "is_unpaid", "reminder_count", "last_reminder_date", "reminder_method", "reminder_memo"], rows);
 }
 
 function handleExportPaymentsCsv() {
-  const rows = state.payments.map((entry) => {
-    const sale = state.sales.find((row) => row.id === entry.saleId);
-    const linkedCase = sale?.caseId ? state.cases.find((c) => c.id === sale.caseId) : null;
-    return {
-      sale_invoice_number: sale?.invoiceNumber || "",
-      customer_name: linkedCase?.customerName || "",
-      case_name: linkedCase?.caseName || "",
-      payment_date: entry.paymentDate || "",
-      amount: entry.amount ?? "",
-      method: entry.method || "",
-      memo: entry.memo || "",
-    };
+  safeFileExport("入金CSV", () => {
+    const rows = state.payments.map((entry) => {
+      const sale = state.sales.find((row) => row.id === entry.saleId);
+      const linkedCase = sale?.caseId ? state.cases.find((c) => c.id === sale.caseId) : null;
+      return {
+        sale_invoice_number: sale?.invoiceNumber || "",
+        customer_name: linkedCase?.customerName || "",
+        case_name: linkedCase?.caseName || "",
+        payment_date: entry.paymentDate || "",
+        amount: entry.amount ?? "",
+        method: entry.method || "",
+        memo: entry.memo || "",
+      };
+    });
+    downloadCsvFile("payments.csv", ["sale_invoice_number", "customer_name", "case_name", "payment_date", "amount", "method", "memo"], rows);
   });
-  downloadCsvFile("payments.csv", ["sale_invoice_number", "customer_name", "case_name", "payment_date", "amount", "method", "memo"], rows);
 }
 
 function handleExportExpensesCsv() {
-  const rows = state.expenses.map((entry) => {
-    const foundCase = state.cases.find((c) => c.id === entry.caseId);
-    return {
-      case_name: foundCase?.caseName || "",
-      date: entry.date || "",
-      content: entry.content || "",
-      amount: entry.amount ?? "",
-      payee: entry.payee || "",
-      payment_method: entry.paymentMethod || "",
-      receipt_url: entry.receiptUrl || "",
-    };
+  safeFileExport("経費CSV", () => {
+    const rows = state.expenses.map((entry) => {
+      const foundCase = state.cases.find((c) => c.id === entry.caseId);
+      return {
+        case_name: foundCase?.caseName || "",
+        date: entry.date || "",
+        content: entry.content || "",
+        amount: entry.amount ?? "",
+        payee: entry.payee || "",
+        payment_method: entry.paymentMethod || "",
+        receipt_url: entry.receiptUrl || "",
+      };
+    });
+    downloadCsvFile("expenses.csv", ["case_name", "date", "content", "amount", "payee", "payment_method", "receipt_url"], rows);
   });
-  downloadCsvFile("expenses.csv", ["case_name", "date", "content", "amount", "payee", "payment_method", "receipt_url"], rows);
 }
 
 function handleExportFixedExpensesCsv() {
-  const rows = state.fixedExpenses.map((entry) => ({
-    content: entry.content,
-    amount: entry.amount ?? "",
-    day_of_month: entry.dayOfMonth ?? "",
-    start_date: entry.startDate || "",
-    active: entry.active ? "true" : "false",
-  }));
-  downloadCsvFile("fixed_expenses.csv", ["content", "amount", "day_of_month", "start_date", "active"], rows);
+  safeFileExport("固定費CSV", () => {
+    const rows = state.fixedExpenses.map((entry) => ({
+      content: entry.content,
+      amount: entry.amount ?? "",
+      day_of_month: entry.dayOfMonth ?? "",
+      start_date: entry.startDate || "",
+      active: entry.active ? "true" : "false",
+    }));
+    downloadCsvFile("fixed_expenses.csv", ["content", "amount", "day_of_month", "start_date", "active"], rows);
+  });
 }
 
 function handleExportAllCsv() {
+  safeFileExport("全データCSV", () => {
   const headers = [
     "data_type",
     "client_name", "client_type", "address", "tel", "email", "referral_source", "client_memo",
@@ -2415,38 +2427,43 @@ function handleExportAllCsv() {
   });
 
   downloadCsvFile("all_data.csv", headers, rows);
+  });
 }
 
 function handleExportClientAnalysisCsv() {
-  const { clientRows } = buildClientAndReferralAnalytics(getActiveDashboardFilter());
-  const rows = clientRows.map((row) => ({
-    client_name: row.clientName,
-    rank: row.rank,
-    case_count: row.caseCount,
-    sales_total: row.salesTotal,
-    expense_total: row.expenseTotal,
-    profit: row.profit,
-    unpaid_total: row.unpaidTotal,
-    last_contact_date: row.lastContactDate || "",
-  }));
-  downloadCsvFile("client_analysis.csv", ["client_name", "rank", "case_count", "sales_total", "expense_total", "profit", "unpaid_total", "last_contact_date"], rows);
+  safeFileExport("顧客別分析CSV", () => {
+    const { clientRows } = buildClientAndReferralAnalytics(getActiveDashboardFilter());
+    const rows = clientRows.map((row) => ({
+      client_name: row.clientName,
+      rank: row.rank,
+      case_count: row.caseCount,
+      sales_total: row.salesTotal,
+      expense_total: row.expenseTotal,
+      profit: row.profit,
+      unpaid_total: row.unpaidTotal,
+      last_contact_date: row.lastContactDate || "",
+    }));
+    downloadCsvFile("client_analysis.csv", ["client_name", "rank", "case_count", "sales_total", "expense_total", "profit", "unpaid_total", "last_contact_date"], rows);
+  });
 }
 
 function handleExportReferralAnalysisCsv() {
-  const { referralRows } = buildClientAndReferralAnalytics(getActiveDashboardFilter());
-  const rows = referralRows.map((row) => ({
-    referral_source: row.referralSource,
-    client_count: row.clientCount,
-    case_count: row.caseCount,
-    total_sales: row.salesTotal,
-    total_expenses: row.expenseTotal,
-    profit: row.profit,
-    unpaid_amount: row.unpaidTotal,
-    average_price: row.averagePrice,
-    profit_margin: row.profitMargin,
-    comment: row.comment,
-  }));
-  downloadCsvFile("referral_analysis.csv", ["referral_source", "client_count", "case_count", "total_sales", "total_expenses", "profit", "unpaid_amount", "average_price", "profit_margin", "comment"], rows);
+  safeFileExport("紹介元別分析CSV", () => {
+    const { referralRows } = buildClientAndReferralAnalytics(getActiveDashboardFilter());
+    const rows = referralRows.map((row) => ({
+      referral_source: row.referralSource,
+      client_count: row.clientCount,
+      case_count: row.caseCount,
+      total_sales: row.salesTotal,
+      total_expenses: row.expenseTotal,
+      profit: row.profit,
+      unpaid_amount: row.unpaidTotal,
+      average_price: row.averagePrice,
+      profit_margin: row.profitMargin,
+      comment: row.comment,
+    }));
+    downloadCsvFile("referral_analysis.csv", ["referral_source", "client_count", "case_count", "total_sales", "total_expenses", "profit", "unpaid_amount", "average_price", "profit_margin", "comment"], rows);
+  });
 }
 
 async function handleCsvImportSubmit(event) {
@@ -2472,23 +2489,15 @@ async function handleCsvImportSubmit(event) {
 }
 
 function handleExportExcel() {
-  try {
-    clearAppMessage();
+  safeFileExport("Excel出力", () => {
     exportExcel();
-  } catch (error) {
-    console.error("Excel出力に失敗しました。", error);
-    showAppMessage("Excel出力に失敗しました。", true);
-  }
+  });
 }
 
 function handleExportAnalysisExcel() {
-  try {
-    clearAppMessage();
+  safeFileExport("分析Excel出力", () => {
     exportAnalysisExcel();
-  } catch (error) {
-    console.error("分析Excel出力に失敗しました。", error);
-    showAppMessage("分析Excel出力に失敗しました。", true);
-  }
+  });
 }
 
 function exportExcel() {
@@ -2708,20 +2717,26 @@ async function handleExcelImportSubmit(event) {
   }
 }
 
-async function handleExportBackupJson() {
+function handleExportBackupJson(event) {
+  if (event) event.preventDefault();
   if (!currentUser) return;
-  try {
-    clearAppMessage();
-    const payload = await buildBackupPayload();
-    const today = new Date().toISOString().slice(0, 10);
-    downloadJsonFile(`gyosei-app-backup-${today}.json`, payload);
-    showAppMessage("バックアップJSONを出力しました。", false);
-  } catch (error) {
-    console.error("バックアップJSON出力に失敗しました。", error);
-    showAppMessage(`バックアップJSONの出力に失敗しました。${error?.message || ""}`, true);
-  } finally {
-    forceHideLoading();
-  }
+  console.log("BACKUP CLICK FIRED");
+  safeFileExport("全データバックアップJSON", () => {
+    const backup = buildBackupJson();
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `gyosei-app-backup-${date}.json`;
+    const counts = {
+      clients: backup.data.clients.length,
+      cases: backup.data.cases.length,
+      sales: backup.data.sales.length,
+      expenses: backup.data.expenses.length,
+      daily_reports: backup.data.daily_reports.length,
+      payments: backup.data.payments.length,
+      case_tasks: backup.data.case_tasks.length,
+    };
+    console.log("BACKUP JSON COUNTS", counts);
+    downloadJsonFile(filename, backup);
+  });
 }
 
 async function handleBackupRestoreSubmit(event) {
@@ -2766,19 +2781,24 @@ async function handleBackupRestoreSubmit(event) {
   }
 }
 
-async function buildBackupPayload() {
-  if (!currentUser) throw new Error("ログイン情報が取得できません。");
-  const data = {};
-  for (const tableName of BACKUP_TABLE_KEYS) {
-    const { data: rows, error } = await sbClient.from(tableName).select("*").eq("user_id", currentUser.id);
-    if (error) throw error;
-    data[tableName] = Array.isArray(rows) ? rows : [];
-  }
+function buildBackupJson() {
   return {
     app: "gyosei-app",
     version: "1.0",
     exported_at: new Date().toISOString(),
-    data,
+    data: {
+      clients: Array.isArray(state.clients) ? state.clients : [],
+      cases: Array.isArray(state.cases) ? state.cases : [],
+      estimates: Array.isArray(state.estimates) ? state.estimates : [],
+      estimate_items: Array.isArray(state.estimateItems) ? state.estimateItems : [],
+      sales: Array.isArray(state.sales) ? state.sales : [],
+      payments: Array.isArray(state.payments) ? state.payments : [],
+      expenses: Array.isArray(state.expenses) ? state.expenses : [],
+      fixed_expenses: Array.isArray(state.fixedExpenses) ? state.fixedExpenses : [],
+      daily_reports: Array.isArray(state.dailyReports) ? state.dailyReports : [],
+      work_templates: Array.isArray(state.workTemplates) ? state.workTemplates : [],
+      case_tasks: Array.isArray(state.caseTasks) ? state.caseTasks : [],
+    },
   };
 }
 
@@ -5158,10 +5178,13 @@ function buildInvoiceDocumentFromEstimate(estimate, noteOverride = null) {
 function exportInvoiceDataForEstimate(estimateId) {
   const estimate = state.estimates.find((entry) => entry.id === estimateId);
   if (!estimate) return;
-  const note = requestInvoiceMemo(estimate.memo || "");
-  if (note === null) return;
-  const invoiceData = buildInvoiceDocumentFromEstimate(estimate, note);
-  downloadInvoiceWorkbook(invoiceData);
+  safeFileExport("請求Excel出力", () => {
+    const note = requestInvoiceMemo(estimate.memo || "");
+    if (note === null) return false;
+    const invoiceData = buildInvoiceDocumentFromEstimate(estimate, note);
+    downloadInvoiceWorkbook(invoiceData);
+    return true;
+  });
 }
 
 function buildInvoiceDocumentFromCase(foundCase, noteOverride = null) {
@@ -5199,10 +5222,13 @@ function buildInvoiceDocumentFromCase(foundCase, noteOverride = null) {
 function exportInvoiceDataForCase(caseId) {
   const foundCase = state.cases.find((entry) => entry.id === caseId);
   if (!foundCase) return;
-  const note = requestInvoiceMemo(asTrimmedText(saleInvoiceMemoInput?.value || ""));
-  if (note === null) return;
-  const invoiceData = buildInvoiceDocumentFromCase(foundCase, note);
-  downloadInvoiceWorkbook(invoiceData);
+  safeFileExport("請求Excel出力", () => {
+    const note = requestInvoiceMemo(asTrimmedText(saleInvoiceMemoInput?.value || ""));
+    if (note === null) return false;
+    const invoiceData = buildInvoiceDocumentFromCase(foundCase, note);
+    downloadInvoiceWorkbook(invoiceData);
+    return true;
+  });
 }
 
 function openEstimatePrintPreview(estimateId) {
@@ -5211,14 +5237,10 @@ function openEstimatePrintPreview(estimateId) {
     showAppMessage("出力対象データが見つかりません", true);
     return;
   }
-
-  try {
+  safeFileExport("見積書出力", () => {
     const documentData = buildEstimateDocumentFromEstimate(estimate);
     openBusinessDocumentPrintWindow(documentData, { type: "estimate" });
-  } catch (error) {
-    console.error("見積書の出力に失敗しました。", error);
-    showAppMessage("見積書の出力に失敗しました。再度お試しください。", true);
-  }
+  });
 }
 
 function openInvoicePrintPreviewFromEstimate(estimateId) {
@@ -5227,16 +5249,13 @@ function openInvoicePrintPreviewFromEstimate(estimateId) {
     showAppMessage("出力対象データが見つかりません", true);
     return;
   }
-
-  try {
+  safeFileExport("請求書出力", () => {
     const note = requestInvoiceMemo(estimate.memo || "");
-    if (note === null) return;
+    if (note === null) return false;
     const documentData = buildInvoiceDocumentFromEstimate(estimate, note);
     openBusinessDocumentPrintWindow(documentData, { type: "invoice" });
-  } catch (error) {
-    console.error("請求書の出力に失敗しました。", error);
-    showAppMessage("請求書の出力に失敗しました。再度お試しください。", true);
-  }
+    return true;
+  });
 }
 
 function openInvoicePrintPreviewFromCase(caseId) {
@@ -5245,16 +5264,13 @@ function openInvoicePrintPreviewFromCase(caseId) {
     showAppMessage("出力対象データが見つかりません", true);
     return;
   }
-
-  try {
+  safeFileExport("請求書出力", () => {
     const note = requestInvoiceMemo(asTrimmedText(saleInvoiceMemoInput?.value || ""));
-    if (note === null) return;
+    if (note === null) return false;
     const documentData = buildInvoiceDocumentFromCase(foundCase, note);
     openBusinessDocumentPrintWindow(documentData, { type: "invoice" });
-  } catch (error) {
-    console.error("請求書の出力に失敗しました。", error);
-    showAppMessage("請求書の出力に失敗しました。再度お試しください。", true);
-  }
+    return true;
+  });
 }
 
 function openBusinessDocumentPrintWindow(documentData, options = { type: "invoice" }) {
@@ -5263,20 +5279,17 @@ function openBusinessDocumentPrintWindow(documentData, options = { type: "invoic
     html = buildBusinessDocumentHtml(documentData, options);
   } catch (error) {
     console.error("帳票HTMLの生成に失敗しました。", error);
-    showAppMessage("帳票の生成に失敗しました。再度お試しください。", true);
-    return;
+    throw new Error("帳票の生成に失敗しました。再度お試しください。");
   }
 
   if (typeof html !== "string" || !html.trim()) {
     console.error("帳票HTMLの生成結果が不正です。", { documentData, options, html });
-    showAppMessage("帳票の生成に失敗しました。再度お試しください。", true);
-    return;
+    throw new Error("帳票の生成に失敗しました。再度お試しください。");
   }
 
   const printWindow = window.open("", "_blank");
   if (!printWindow) {
-    showAppMessage("ポップアップがブロックされています。ブラウザ設定を確認してください。", true);
-    return;
+    throw new Error("ポップアップがブロックされています。ブラウザ設定を確認してください。");
   }
 
   printWindow.document.open();
@@ -5345,8 +5358,10 @@ function downloadEstimateWorkbook(estimateData) {
 function exportEstimateDataForEstimate(estimateId) {
   const estimate = state.estimates.find((entry) => entry.id === estimateId);
   if (!estimate) return;
-  const estimateData = buildEstimateDocumentFromEstimate(estimate);
-  downloadEstimateWorkbook(estimateData);
+  safeFileExport("見積Excel出力", () => {
+    const estimateData = buildEstimateDocumentFromEstimate(estimate);
+    downloadEstimateWorkbook(estimateData);
+  });
 }
 
 function createBusinessDocumentSheet(documentData, options = { type: "invoice" }) {
@@ -6326,26 +6341,68 @@ function importTypeToLabel(type) {
   return "CSV";
 }
 
+function safeFileExport(actionName, exportFn) {
+  try {
+    clearAppMessage();
+    console.log("FILE EXPORT START", actionName);
+    const result = exportFn();
+    if (result === false) {
+      console.log("FILE EXPORT CANCELED", actionName);
+      return;
+    }
+    showAppMessage(`${actionName}を出力しました。`, false);
+    console.log("FILE EXPORT DONE", actionName);
+  } catch (error) {
+    console.error(`${actionName}の出力に失敗しました`, error);
+    showAppMessage(`${actionName}の出力に失敗しました。${error?.message || ""}`, true);
+  } finally {
+    forceHideLoading();
+  }
+}
+
+async function safeFileExportAsync(actionName, exportFn) {
+  try {
+    clearAppMessage();
+    console.log("FILE EXPORT START", actionName);
+    const result = await exportFn();
+    if (result === false) {
+      console.log("FILE EXPORT CANCELED", actionName);
+      return;
+    }
+    showAppMessage(`${actionName}を出力しました。`, false);
+    console.log("FILE EXPORT DONE", actionName);
+  } catch (error) {
+    console.error(`${actionName}の出力に失敗しました`, error);
+    showAppMessage(`${actionName}の出力に失敗しました。${error?.message || ""}`, true);
+  } finally {
+    forceHideLoading();
+  }
+}
+
 function downloadCsvFile(filename, headers, rows) {
   const csv = buildCsvString(headers, rows);
   const bom = "\uFEFF";
-  const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8;" });
-  downloadBlobFile(filename, blob);
+  downloadTextFile(filename, bom + csv, "text/csv;charset=utf-8");
 }
 
 function downloadJsonFile(filename, value) {
   const pretty = JSON.stringify(value, null, 2);
-  const blob = new Blob([pretty], { type: "application/json;charset=utf-8;" });
-  downloadBlobFile(filename, blob);
+  downloadTextFile(filename, pretty, "application/json;charset=utf-8");
 }
 
-function downloadBlobFile(filename, blob) {
+function downloadTextFile(filename, content, mimeType = "text/plain;charset=utf-8") {
+  if (!filename) throw new Error("ファイル名がありません。");
+  if (content === undefined || content === null) throw new Error("出力内容がありません。");
+  const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
+  console.log("DOWNLOAD START", filename);
   link.href = url;
   link.download = filename;
+  link.style.display = "none";
   document.body.appendChild(link);
   link.click();
+  console.log("DOWNLOAD CLICKED", filename);
   document.body.removeChild(link);
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
