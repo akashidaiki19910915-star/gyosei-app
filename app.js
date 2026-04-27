@@ -9,6 +9,7 @@ const EXPENSE_PAYMENT_METHODS = ["現金", "クレジットカード", "銀行�
 const DAILY_REPORT_INTERACTION_TYPES = ["作業", "電話", "メール", "面談", "訪問", "LINE", "その他"];
 const REMINDER_METHODS = ["電話", "メール", "LINE", "郵送", "訪問", "その他"];
 const PAYMENT_METHODS = ["現金", "振込", "その他"];
+const CASE_DOCUMENT_STATUSES = ["未回収", "回収済", "確認済", "不備あり", "不要"];
 const OFFICE_INFO = {
   name: "あかし行政書士事務所",
   zip: "574-0044",
@@ -55,6 +56,7 @@ const state = {
   fixedExpenses: [],
   dailyReports: [],
   caseTasks: [],
+  caseDocuments: [],
   selectedAggregation: "month",
   selectedMonth: toMonthKey(new Date()),
   selectedYear: new Date().getFullYear(),
@@ -73,7 +75,7 @@ const state = {
   appSettings: { ...DEFAULT_APP_SETTINGS },
   isInitialDataReady: false,
 };
-const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null };
+const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
 
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
@@ -90,6 +92,7 @@ const exportSalesCsvBtn = document.getElementById("export-sales-csv-btn");
 const exportPaymentsCsvBtn = document.getElementById("export-payments-csv-btn");
 const exportExpensesCsvBtn = document.getElementById("export-expenses-csv-btn");
 const exportFixedExpensesCsvBtn = document.getElementById("export-fixed-expenses-csv-btn");
+const exportCaseDocumentsCsvBtn = document.getElementById("export-case-documents-csv-btn");
 const exportAllCsvBtn = document.getElementById("export-all-csv-btn");
 const csvImportForm = document.getElementById("csv-import-form");
 const exportExcelBtn = document.getElementById("export-excel-btn");
@@ -178,6 +181,11 @@ const todayTaskSummary = document.getElementById("today-task-summary");
 const todayTaskBody = document.getElementById("today-task-body");
 const todayTaskEmpty = document.getElementById("today-task-empty");
 const todayTaskListWrap = document.getElementById("today-task-list-wrap");
+const documentAlertCard = document.getElementById("document-alert-card");
+const documentAlertSummary = document.getElementById("document-alert-summary");
+const documentAlertBody = document.getElementById("document-alert-body");
+const documentAlertEmpty = document.getElementById("document-alert-empty");
+const documentAlertListWrap = document.getElementById("document-alert-list-wrap");
 const pendingEstimatesCard = document.getElementById("pending-estimates-card");
 const pendingEstimatesSummary = document.getElementById("pending-estimates-summary");
 const pendingEstimatesBody = document.getElementById("pending-estimates-body");
@@ -212,6 +220,12 @@ const caseTaskSubmitBtn = document.getElementById("case-task-submit-btn");
 const caseTasksBody = document.getElementById("case-tasks-body");
 const caseTasksEmpty = document.getElementById("case-tasks-empty");
 const caseTasksListWrap = document.getElementById("case-tasks-list-wrap");
+const caseDocumentForm = document.getElementById("case-document-form");
+const caseDocumentCaseSelect = document.getElementById("case-document-case-id");
+const caseDocumentSubmitBtn = document.getElementById("case-document-submit-btn");
+const caseDocumentsBody = document.getElementById("case-documents-body");
+const caseDocumentsEmpty = document.getElementById("case-documents-empty");
+const caseDocumentsListWrap = document.getElementById("case-documents-list-wrap");
 
 const saleForm = document.getElementById("sale-form");
 const saleCaseSelect = document.getElementById("sale-case-id");
@@ -281,9 +295,9 @@ let isLoggingOut = false;
 let eventsBound = false;
 let loadingCount = 0;
 let loadingTimer = null;
-const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
-const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
-const RESTORE_DELETE_ORDER = ["payments", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "case_tasks", "estimates", "cases", "work_templates", "clients", "app_settings"];
+const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
+const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
+const RESTORE_DELETE_ORDER = ["payments", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "case_documents", "case_tasks", "estimates", "cases", "work_templates", "clients", "app_settings"];
 const CASE_MUTATION_COLUMNS = [
   "user_id",
   "client_id",
@@ -379,6 +393,7 @@ function bindEvents() {
   clientForm?.addEventListener("submit", handleClientSubmit);
   caseForm.addEventListener("submit", handleCaseSubmit);
   caseTaskForm?.addEventListener("submit", handleCaseTaskSubmit);
+  caseDocumentForm?.addEventListener("submit", handleCaseDocumentSubmit);
   workTemplateForm?.addEventListener("submit", handleWorkTemplateSubmit);
   console.log("SALE FORM FOUND", !!saleForm);
   console.log("EXPENSE FORM FOUND", !!expenseForm);
@@ -422,6 +437,7 @@ function bindEvents() {
   exportPaymentsCsvBtn?.addEventListener("click", handleExportPaymentsCsv);
   exportExpensesCsvBtn?.addEventListener("click", handleExportExpensesCsv);
   exportFixedExpensesCsvBtn?.addEventListener("click", handleExportFixedExpensesCsv);
+  exportCaseDocumentsCsvBtn?.addEventListener("click", handleExportCaseDocumentsCsv);
   exportAllCsvBtn?.addEventListener("click", handleExportAllCsv);
   exportClientAnalysisCsvBtn?.addEventListener("click", handleExportClientAnalysisCsv);
   exportReferralAnalysisCsvBtn?.addEventListener("click", handleExportReferralAnalysisCsv);
@@ -617,6 +633,7 @@ async function applyAuthState() {
     await loadAllDataSafely();
     resetCaseForm();
     resetCaseTaskForm();
+    resetCaseDocumentForm();
     resetEstimateForm();
     resetSaleForm();
     resetExpenseForm();
@@ -707,6 +724,7 @@ async function loadAllDataSafely() {
   }
   state.cases = await loadTable("cases", mapCaseFromDb);
   state.caseTasks = await loadTable("case_tasks", mapCaseTaskFromDb, { optional: true, fallback: [] });
+  state.caseDocuments = await loadTable("case_documents", mapCaseDocumentFromDb, { optional: true, fallback: [] });
   state.estimates = await loadTable("estimates", mapEstimateFromDb);
   state.estimateItems = await loadTable("estimate_items", mapEstimateItemFromDb);
   state.sales = await loadTable("sales", mapSaleFromDb);
@@ -728,6 +746,7 @@ async function loadAllDataSafely() {
     fixedExpenses: state.fixedExpenses.length,
     estimates: state.estimates.length,
     caseTasks: state.caseTasks.length,
+    caseDocuments: state.caseDocuments.length,
     payments: state.payments.length,
     appSettings: state.appSettings?.id ? 1 : 0,
   });
@@ -864,6 +883,7 @@ async function handleCaseSubmit(event) {
         if (error) throw error;
         if (!data) throw new Error("案件登録結果を取得できませんでした。");
         await createCaseTasksFromTemplate(data, payload.template_id);
+        await createCaseDocumentsFromTemplate(data, payload.template_id);
         console.log("CASE INSERT SUCCESS", data);
       }
       return true;
@@ -941,6 +961,31 @@ async function createCaseTasksFromTemplate(caseRow, templateId) {
     const { data, error } = await sbClient.from("case_tasks").insert(payload).select().single();
     if (error) throw error;
     if (!data) throw new Error("案件タスクの自動作成結果を取得できませんでした。");
+  }
+}
+
+async function createCaseDocumentsFromTemplate(caseRow, templateId) {
+  if (!currentUser || !caseRow?.id || !templateId) return;
+  const template = state.workTemplates.find((entry) => entry.id === templateId);
+  if (!template) return;
+  const docLines = splitMultilineItems(template.requiredDocuments);
+  if (!docLines.length) return;
+  for (const line of docLines) {
+    const documentName = asTrimmedText(line);
+    if (!documentName) continue;
+    const payload = {
+      user_id: currentUser.id,
+      case_id: caseRow.id,
+      document_name: documentName,
+      status: "未回収",
+      received_date: null,
+      checked_date: null,
+      memo: null,
+      file_url: null,
+    };
+    const { data, error } = await sbClient.from("case_documents").insert(payload).select().single();
+    if (error) throw error;
+    if (!data) throw new Error("書類の自動作成結果を取得できませんでした。");
   }
 }
 
@@ -1354,6 +1399,101 @@ async function deleteCaseTask(taskId) {
   });
 }
 
+function buildCaseDocumentPayloadFromForm() {
+  return {
+    user_id: currentUser.id,
+    case_id: caseDocumentForm.elements.caseDocumentCaseId.value || null,
+    document_name: asTrimmedText(caseDocumentForm.elements.caseDocumentName.value),
+    status: normalizeCaseDocumentStatus(caseDocumentForm.elements.caseDocumentStatus.value),
+    received_date: caseDocumentForm.elements.caseDocumentReceivedDate.value || null,
+    checked_date: caseDocumentForm.elements.caseDocumentCheckedDate.value || null,
+    memo: asTrimmedText(caseDocumentForm.elements.caseDocumentMemo.value) || null,
+    file_url: asTrimmedText(caseDocumentForm.elements.caseDocumentFileUrl.value) || null,
+  };
+}
+
+async function handleCaseDocumentSubmit(event) {
+  event.preventDefault();
+  if (!currentUser || !caseDocumentForm || !ensureInitialDataReady("書類登録")) return;
+  const payload = buildCaseDocumentPayloadFromForm();
+  if (!payload.document_name) return;
+  const isEdit = Boolean(editState.caseDocumentId);
+  const taskName = isEdit ? "書類更新" : "書類登録";
+  try {
+    await runMutation(taskName, async () => {
+      if (isEdit) {
+        const { data, error } = await sbClient.from("case_documents").update(payload).eq("id", editState.caseDocumentId).eq("user_id", currentUser.id).select().single();
+        if (error) throw error;
+        if (!data) throw new Error("更新結果を取得できませんでした。");
+        return data;
+      }
+      const { data, error } = await sbClient.from("case_documents").insert(payload).select().single();
+      if (error) throw error;
+      if (!data) throw new Error("登録結果を取得できませんでした。");
+      return data;
+    }, {
+      successMessage: isEdit ? "書類を更新しました。" : "書類を登録しました。",
+      resetForm: resetCaseDocumentForm,
+      afterSuccess: () => {
+        subtabState.cases = "documents";
+        activateTab("cases");
+      },
+    });
+  } catch (error) {
+    showAppMessage(`書類保存に失敗しました。${formatSupabaseError(error)}`, true);
+  }
+}
+
+async function handleCaseDocumentsListAction(event) {
+  const button = event.target.closest("button");
+  if (!(button instanceof HTMLButtonElement)) return;
+  const id = button.dataset.caseDocumentId || button.closest("[data-id]")?.dataset.id;
+  if (!id) return;
+  if (button.classList.contains("edit-btn")) {
+    startCaseDocumentEdit(id);
+    return;
+  }
+  if (button.classList.contains("delete-btn")) {
+    await deleteCaseDocument(id);
+  }
+}
+
+function startCaseDocumentEdit(caseDocumentId) {
+  const target = state.caseDocuments.find((entry) => entry.id === caseDocumentId);
+  if (!target || !caseDocumentForm) return;
+  editState.caseDocumentId = target.id;
+  caseDocumentForm.elements.caseDocumentCaseId.value = target.caseId || "";
+  caseDocumentForm.elements.caseDocumentName.value = target.documentName || "";
+  caseDocumentForm.elements.caseDocumentStatus.value = normalizeCaseDocumentStatus(target.status);
+  caseDocumentForm.elements.caseDocumentReceivedDate.value = target.receivedDate || "";
+  caseDocumentForm.elements.caseDocumentCheckedDate.value = target.checkedDate || "";
+  caseDocumentForm.elements.caseDocumentMemo.value = target.memo || "";
+  caseDocumentForm.elements.caseDocumentFileUrl.value = target.fileUrl || "";
+  if (caseDocumentSubmitBtn) caseDocumentSubmitBtn.textContent = "書類を更新";
+  subtabState.cases = "documents";
+  activateTab("cases");
+}
+
+async function deleteCaseDocument(caseDocumentId) {
+  if (!currentUser || !caseDocumentId) return;
+  if (!window.confirm("この書類データを削除しますか？")) return;
+  try {
+    await runMutation("書類削除", async () => {
+      const { data, error } = await sbClient.from("case_documents").delete().eq("id", caseDocumentId).eq("user_id", currentUser.id).select().single();
+      if (error) throw error;
+      if (!data) throw new Error("削除結果を取得できませんでした。");
+      return data;
+    }, {
+      successMessage: "書類を削除しました。",
+      afterSuccess: () => {
+        if (editState.caseDocumentId === caseDocumentId) resetCaseDocumentForm();
+      },
+    });
+  } catch (error) {
+    showAppMessage(`書類削除に失敗しました。${formatSupabaseError(error)}`, true);
+  }
+}
+
 function handleCaseTemplateChange(event) {
   const templateId = event?.target?.value || "";
   if (!templateId || !caseForm) return;
@@ -1454,6 +1594,10 @@ async function handleGlobalListAction(event) {
     handleTodayTaskAction(event);
     return;
   }
+  if (button.closest("#document-alert-body")) {
+    handleDocumentAlertAction(event);
+    return;
+  }
   if (button.closest("#pending-estimates-body")) {
     handlePendingEstimateAction(event);
     return;
@@ -1468,6 +1612,10 @@ async function handleGlobalListAction(event) {
   }
   if (button.closest("#case-tasks-body")) {
     handleCaseTaskListAction(event);
+    return;
+  }
+  if (button.closest("#case-documents-body")) {
+    await handleCaseDocumentsListAction(event);
     return;
   }
   if (button.closest("#work-templates-list")) {
@@ -1594,9 +1742,21 @@ function handleTodayTaskAction(event) {
     startCaseTaskEdit(taskId);
     return;
   }
+  if (target === "case-document") {
+    startCaseDocumentEdit(taskId);
+    return;
+  }
   if (target === "daily-report") {
     editDailyReport(taskId).catch(() => {});
   }
+}
+
+function handleDocumentAlertAction(event) {
+  const btn = event.target.closest("button");
+  if (!(btn instanceof HTMLButtonElement)) return;
+  const caseDocumentId = btn.dataset.caseDocumentId;
+  if (!caseDocumentId) return;
+  startCaseDocumentEdit(caseDocumentId);
 }
 
 async function handleCaseTaskSubmit(event) {
@@ -2099,6 +2259,8 @@ async function deleteCase(id) {
       if (salesDeleteRes.error) throw salesDeleteRes.error;
       const caseTasksDeleteRes = await sbClient.from("case_tasks").delete().eq("case_id", caseId).eq("user_id", currentUser.id);
       if (caseTasksDeleteRes.error) throw caseTasksDeleteRes.error;
+      const caseDocumentsDeleteRes = await sbClient.from("case_documents").delete().eq("case_id", caseId).eq("user_id", currentUser.id);
+      if (caseDocumentsDeleteRes.error) throw caseDocumentsDeleteRes.error;
       const expensesDeleteRes = await sbClient.from("expenses").delete().eq("case_id", caseId).eq("user_id", currentUser.id);
       if (expensesDeleteRes.error) throw expensesDeleteRes.error;
       const reportsUpdateRes = await sbClient.from("daily_reports").update({ case_id: null }).eq("case_id", caseId).eq("user_id", currentUser.id);
@@ -2200,7 +2362,7 @@ async function deleteAllData() {
   if (!window.confirm("顧客・対応履歴・業務テンプレート・見積・案件・売上・入金・経費・固定費・日報の全データを削除します。よろしいですか？")) return;
   try {
     await runMutation("全件削除", async () => {
-      const [estimateItemsRes, estimatesRes, paymentsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, casesRes, workTemplatesRes, clientsRes] = await Promise.all([
+      const [estimateItemsRes, estimatesRes, paymentsRes, salesRes, expensesRes, fixedExpensesRes, dailyReportsRes, caseDocumentsRes, casesRes, workTemplatesRes, clientsRes] = await Promise.all([
         sbClient.from("estimate_items").delete().eq("user_id", currentUser.id),
         sbClient.from("estimates").delete().eq("user_id", currentUser.id),
         sbClient.from("payments").delete().eq("user_id", currentUser.id),
@@ -2208,6 +2370,7 @@ async function deleteAllData() {
         sbClient.from("expenses").delete().eq("user_id", currentUser.id),
         sbClient.from("fixed_expenses").delete().eq("user_id", currentUser.id),
         sbClient.from("daily_reports").delete().eq("user_id", currentUser.id),
+        sbClient.from("case_documents").delete().eq("user_id", currentUser.id),
         sbClient.from("cases").delete().eq("user_id", currentUser.id),
         sbClient.from("work_templates").delete().eq("user_id", currentUser.id),
         sbClient.from("clients").delete().eq("user_id", currentUser.id),
@@ -2219,6 +2382,7 @@ async function deleteAllData() {
       if (estimatesRes.error) throw estimatesRes.error;
       if (fixedExpensesRes.error) throw fixedExpensesRes.error;
       if (dailyReportsRes.error) throw dailyReportsRes.error;
+      if (caseDocumentsRes.error) throw caseDocumentsRes.error;
       if (casesRes.error) throw casesRes.error;
       if (workTemplatesRes.error) throw workTemplatesRes.error;
       if (clientsRes.error) throw clientsRes.error;
@@ -2228,6 +2392,7 @@ async function deleteAllData() {
       afterSuccess: () => {
         resetClientForm();
         resetCaseForm();
+        resetCaseDocumentForm();
         resetWorkTemplateForm();
         resetEstimateForm();
         resetSaleForm();
@@ -2341,6 +2506,25 @@ function handleExportFixedExpensesCsv() {
   });
 }
 
+function handleExportCaseDocumentsCsv() {
+  safeFileExport("書類管理CSV", () => {
+    const rows = state.caseDocuments.map((entry) => {
+      const linkedCase = state.cases.find((row) => row.id === entry.caseId);
+      return {
+        customer_name: linkedCase?.customerName || "",
+        case_name: linkedCase?.caseName || "",
+        document_name: entry.documentName || "",
+        status: entry.status || "未回収",
+        received_date: entry.receivedDate || "",
+        checked_date: entry.checkedDate || "",
+        memo: entry.memo || "",
+        file_url: entry.fileUrl || "",
+      };
+    });
+    downloadCsvFile("case_documents.csv", ["customer_name", "case_name", "document_name", "status", "received_date", "checked_date", "memo", "file_url"], rows);
+  });
+}
+
 function handleExportAllCsv() {
   safeFileExport("全データCSV", () => {
   const headers = [
@@ -2353,6 +2537,7 @@ function handleExportAllCsv() {
     "day_of_month", "start_date", "active",
     "report_date", "report_client_id", "report_client_name", "report_case_name", "report_interaction_type", "report_work_content", "report_work_minutes", "report_next_action", "report_next_action_date", "report_memo",
     "task_case_name", "task_title", "task_memo", "task_due_date", "task_status", "task_completed_at",
+    "doc_customer_name", "doc_case_name", "doc_document_name", "doc_status", "doc_received_date", "doc_checked_date", "doc_memo", "doc_file_url",
   ];
   const rows = [];
 
@@ -2450,6 +2635,20 @@ function handleExportAllCsv() {
       day_of_month: entry.dayOfMonth ?? "",
       start_date: entry.startDate || "",
       active: entry.active ? "true" : "false",
+    });
+  });
+  state.caseDocuments.forEach((entry) => {
+    const linkedCase = state.cases.find((row) => row.id === entry.caseId);
+    rows.push({
+      data_type: "case_document",
+      doc_customer_name: linkedCase?.customerName || "",
+      doc_case_name: linkedCase?.caseName || "",
+      doc_document_name: entry.documentName || "",
+      doc_status: entry.status || "未回収",
+      doc_received_date: entry.receivedDate || "",
+      doc_checked_date: entry.checkedDate || "",
+      doc_memo: entry.memo || "",
+      doc_file_url: entry.fileUrl || "",
     });
   });
   state.dailyReports.forEach((entry) => {
@@ -2573,6 +2772,7 @@ function exportExcel() {
     const fixedExpenseHeaders = ["content", "amount", "day_of_month", "start_date", "active"];
     const dailyReportHeaders = ["report_date", "client_id", "client_name", "case_name", "interaction_type", "work_content", "work_minutes", "next_action", "next_action_date", "memo"];
     const caseTaskHeaders = ["customer_name", "case_name", "task_title", "task_memo", "due_date", "status", "completed_at"];
+    const caseDocumentHeaders = ["customer_name", "case_name", "document_name", "status", "received_date", "checked_date", "memo", "file_url"];
     const clientRows = state.clients.map((entry) => ({
       name: entry.name || "",
       client_type: entry.clientType || "",
@@ -2669,6 +2869,19 @@ function exportExcel() {
         completed_at: entry.completedAt || "",
       };
     });
+    const caseDocumentRows = state.caseDocuments.map((entry) => {
+      const linkedCase = state.cases.find((row) => row.id === entry.caseId);
+      return {
+        customer_name: linkedCase?.customerName || "",
+        case_name: linkedCase?.caseName || "",
+        document_name: entry.documentName || "",
+        status: entry.status || "未回収",
+        received_date: entry.receivedDate || "",
+        checked_date: entry.checkedDate || "",
+        memo: entry.memo || "",
+        file_url: entry.fileUrl || "",
+      };
+    });
 
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(clientRows, clientHeaders), "顧客");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(caseRows, caseHeaders), "案件");
@@ -2678,6 +2891,7 @@ function exportExcel() {
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(fixedExpenseRows, fixedExpenseHeaders), "固定費");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(dailyReportRows, dailyReportHeaders), "日報");
     XLSX.utils.book_append_sheet(workbook, createExcelSheet(caseTaskRows, caseTaskHeaders), "案件タスク");
+    XLSX.utils.book_append_sheet(workbook, createExcelSheet(caseDocumentRows, caseDocumentHeaders), "書類管理");
     XLSX.writeFile(workbook, "gyosei-app-export.xlsx");
     showAppMessage("Excelファイルを出力しました。", false);
   } catch (error) {
@@ -2789,6 +3003,7 @@ function handleExportBackupJson(event) {
       sales: backup.data.sales.length,
       expenses: backup.data.expenses.length,
       daily_reports: backup.data.daily_reports.length,
+      case_documents: backup.data.case_documents.length,
       payments: backup.data.payments.length,
       case_tasks: backup.data.case_tasks.length,
       app_settings: backup.data.app_settings.length,
@@ -2855,6 +3070,7 @@ function buildBackupJson() {
       daily_reports: Array.isArray(state.dailyReports) ? state.dailyReports : [],
       work_templates: Array.isArray(state.workTemplates) ? state.workTemplates : [],
       case_tasks: Array.isArray(state.caseTasks) ? state.caseTasks : [],
+      case_documents: Array.isArray(state.caseDocuments) ? state.caseDocuments : [],
       app_settings: state.appSettings?.id ? [{
         id: state.appSettings.id,
         user_id: currentUser?.id || state.appSettings.userId || null,
@@ -2948,6 +3164,8 @@ function renderAfterDataChanged() {
   safeRender("caseOptions", renderCaseOptions);
   safeRender("caseTasks", renderCaseTasks);
   safeRender("caseTaskAlerts", renderCaseTaskAlerts);
+  safeRender("caseDocuments", renderCaseDocuments);
+  safeRender("documentAlerts", renderDocumentAlerts);
   safeRender("cases", renderCases);
   safeRender("estimates", renderEstimates);
   safeRender("estimateTotals", recalcEstimateTotals);
@@ -3016,6 +3234,28 @@ function renderCaseTasks() {
 
 function renderCaseTaskAlerts() {
   renderDeadlineAlertCard();
+}
+
+function renderDocumentAlerts() {
+  if (!documentAlertCard || !documentAlertSummary || !documentAlertBody || !documentAlertEmpty || !documentAlertListWrap) return;
+  const targets = getDocumentAlertTargets();
+  documentAlertCard.classList.toggle("has-alert", targets.length > 0);
+  documentAlertSummary.textContent = `対象 ${targets.length}件`;
+  documentAlertBody.innerHTML = "";
+  documentAlertEmpty.hidden = targets.length > 0;
+  documentAlertListWrap.hidden = targets.length === 0;
+  targets.forEach((entry) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(entry.typeLabel)}</td>
+      <td>${escapeHtml(entry.clientName)}</td>
+      <td>${escapeHtml(entry.caseName)}</td>
+      <td>${escapeHtml(entry.documentName)}</td>
+      <td>${escapeHtml(entry.subInfo)}</td>
+      <td><button type="button" class="secondary-btn" data-case-document-id="${entry.id}">編集</button></td>
+    `;
+    documentAlertBody.appendChild(tr);
+  });
 }
 
 function renderUnpaidAlerts() {
@@ -3171,6 +3411,7 @@ function renderDashboard() {
     summaryGrid.appendChild(div);
   });
   renderTodayTaskCard();
+  renderDocumentAlerts();
   renderNextActionAlertCard();
   renderDeadlineAlertCard();
   renderStatusSummaryCard();
@@ -3291,6 +3532,40 @@ function buildIntegratedAlerts() {
       subInfo: formatRemainingDays(Math.floor((dueTs - todayTs) / 86400000)),
       target: "case",
     });
+  });
+
+  (Array.isArray(state.caseDocuments) ? state.caseDocuments : []).forEach((doc) => {
+    const linkedCase = doc?.caseId ? caseMap.get(doc.caseId) : null;
+    const linkedClient = linkedCase?.clientId ? clientMap.get(linkedCase.clientId) : null;
+    if (doc?.status === "不備あり") {
+      alerts.push({
+        id: doc?.id,
+        type: "document",
+        typeLabel: "書類不備",
+        priority: "high",
+        title: doc?.documentName || "書類名未設定",
+        clientName: linkedClient?.name || linkedCase?.customerName || "顧客不明",
+        caseName: linkedCase?.caseName || "案件なし",
+        dateSort: todayTs,
+        dateLabel: "要対応",
+        subInfo: "不備あり",
+        target: "case-document",
+      });
+    } else if (doc?.status === "未回収") {
+      alerts.push({
+        id: doc?.id,
+        type: "document",
+        typeLabel: "未回収書類",
+        priority: "medium",
+        title: doc?.documentName || "書類名未設定",
+        clientName: linkedClient?.name || linkedCase?.customerName || "顧客不明",
+        caseName: linkedCase?.caseName || "案件なし",
+        dateSort: todayTs,
+        dateLabel: "未回収",
+        subInfo: "回収待ち",
+        target: "case-document",
+      });
+    }
   });
 
   return alerts
@@ -4063,6 +4338,11 @@ function renderCaseOptions() {
     caseTaskCaseSelect.innerHTML = `<option value="">案件なし</option>${options}`;
     if (currentValue) caseTaskCaseSelect.value = currentValue;
   }
+  if (caseDocumentCaseSelect) {
+    const currentValue = caseDocumentCaseSelect.value;
+    caseDocumentCaseSelect.innerHTML = `<option value="">案件なし</option>${options}`;
+    if (currentValue) caseDocumentCaseSelect.value = currentValue;
+  }
 }
 
 function renderCaseTaskOptions() {
@@ -4101,6 +4381,36 @@ function renderCaseTasksTable() {
       <td><button type="button" class="danger-btn delete-case-task-btn" data-task-id="${entry.id}">削除</button></td>
     `;
     caseTasksBody.appendChild(tr);
+  });
+}
+
+function renderCaseDocuments() {
+  if (!caseDocumentsBody || !caseDocumentsEmpty || !caseDocumentsListWrap) return;
+  caseDocumentsBody.innerHTML = "";
+  const rows = (Array.isArray(state.caseDocuments) ? state.caseDocuments : [])
+    .slice()
+    .sort((a, b) => toSortTimestamp(a.receivedDate || a.createdAt) - toSortTimestamp(b.receivedDate || b.createdAt));
+  caseDocumentsEmpty.hidden = rows.length > 0;
+  caseDocumentsListWrap.hidden = rows.length === 0;
+  rows.forEach((entry) => {
+    const linkedCase = state.cases.find((row) => row.id === entry.caseId);
+    const customerName = linkedCase?.customerName || "顧客不明";
+    const caseName = linkedCase?.caseName || "案件なし";
+    const tr = document.createElement("tr");
+    tr.dataset.id = entry.id;
+    tr.innerHTML = `
+      <td>${escapeHtml(customerName)}</td>
+      <td>${escapeHtml(caseName)}</td>
+      <td>${escapeHtml(entry.documentName || "未設定")}</td>
+      <td>${escapeHtml(entry.status || "未回収")}</td>
+      <td>${formatDate(entry.receivedDate)}</td>
+      <td>${formatDate(entry.checkedDate)}</td>
+      <td>${escapeHtml(truncateText(entry.memo || "", 80) || "-")}</td>
+      <td>${entry.fileUrl ? `<a href="${escapeHtml(entry.fileUrl)}" target="_blank" rel="noopener noreferrer">開く</a>` : "-"}</td>
+      <td><button type="button" class="secondary-btn edit-btn" data-case-document-id="${entry.id}">編集</button></td>
+      <td><button type="button" class="danger-btn delete-btn" data-case-document-id="${entry.id}">削除</button></td>
+    `;
+    caseDocumentsBody.appendChild(tr);
   });
 }
 
@@ -4848,6 +5158,48 @@ async function deleteEstimate(id) {
 }
 
 
+function getCaseDocumentStats(caseId) {
+  const docs = (Array.isArray(state.caseDocuments) ? state.caseDocuments : []).filter((entry) => entry.caseId === caseId);
+  const total = docs.length;
+  const received = docs.filter((entry) => ["回収済", "確認済"].includes(entry.status)).length;
+  const unreceived = docs.filter((entry) => entry.status === "未回収").length;
+  const defective = docs.filter((entry) => entry.status === "不備あり").length;
+  return { total, received, unreceived, defective };
+}
+
+function getDocumentAlertTargets() {
+  const todayTs = getTodayTimestamp();
+  return (Array.isArray(state.caseDocuments) ? state.caseDocuments : []).reduce((acc, doc) => {
+    const linkedCase = state.cases.find((entry) => entry.id === doc.caseId);
+    const linkedClient = linkedCase?.clientId ? state.clients.find((entry) => entry.id === linkedCase.clientId) : null;
+    if (doc.status === "不備あり") {
+      acc.push({
+        id: doc.id,
+        typeLabel: "不備あり書類",
+        clientName: linkedClient?.name || linkedCase?.customerName || "顧客不明",
+        caseName: linkedCase?.caseName || "案件なし",
+        documentName: doc.documentName || "未設定",
+        subInfo: "修正・再提出が必要です",
+        priority: 0,
+      });
+    }
+    if (doc.status === "未回収") {
+      const nearDeadline = Number.isFinite(toDateOnlyTimestamp(linkedCase?.dueDate))
+        && toDateOnlyTimestamp(linkedCase?.dueDate) <= todayTs + (7 * 86400000);
+      acc.push({
+        id: doc.id,
+        typeLabel: nearDeadline ? "期限7日以内・未回収" : "未回収書類",
+        clientName: linkedClient?.name || linkedCase?.customerName || "顧客不明",
+        caseName: linkedCase?.caseName || "案件なし",
+        documentName: doc.documentName || "未設定",
+        subInfo: nearDeadline ? `期限: ${formatDate(linkedCase?.dueDate)}` : "回収待ち",
+        priority: nearDeadline ? 1 : 2,
+      });
+    }
+    return acc;
+  }, []).sort((a, b) => (a.priority || 99) - (b.priority || 99));
+}
+
 function renderCases() {
   if (!caseList || !caseEmpty || !caseItemTemplate) return;
   caseList.innerHTML = "";
@@ -4876,6 +5228,7 @@ function renderCases() {
     const customerName = entry.customerName || "顧客不明";
     const caseName = entry.caseName || "案件名未設定";
     const incompleteTasks = getIncompleteTaskCount(entry.taskList);
+    const docStats = getCaseDocumentStats(entry.id);
 
     item.dataset.id = entry.id;
     title.textContent = `${customerName}｜${caseName}`;
@@ -4886,7 +5239,7 @@ function renderCases() {
     ].filter(Boolean).join(" / ");
     meta.innerHTML = `見積: ${formatCurrency(entry.estimateAmount)} / ステータス: ${escapeHtml(entry.status)} / 受付日: ${formatDate(entry.receivedDate)} / 期限日: ${formatDate(entry.dueDate)} / 次回対応日: ${formatDate(entry.nextActionDate)} / 次回対応内容: ${escapeHtml(entry.nextAction || "未設定")}${urlLinks ? ` / ${urlLinks}` : ""}`;
     if (caseWorkMeta) {
-      caseWorkMeta.textContent = `テンプレート: ${templateName} / 必要書類: ${truncateText(entry.requiredDocuments || "未設定", 50)} / タスク: ${truncateText(entry.taskList || "未設定", 50)} / 未完了タスク: ${incompleteTasks}件 / 作業メモ: ${truncateText(sanitizeLegacyEstimateMemo(entry.workMemo) || "未設定", 40)}`;
+      caseWorkMeta.textContent = `テンプレート: ${templateName} / 必要書類: ${truncateText(entry.requiredDocuments || "未設定", 50)} / 書類管理: 必要書類 ${docStats.total}件 / 回収済 ${docStats.received}件 / 未回収 ${docStats.unreceived}件 / 不備 ${docStats.defective}件 / タスク: ${truncateText(entry.taskList || "未設定", 50)} / 未完了タスク: ${incompleteTasks}件 / 作業メモ: ${truncateText(sanitizeLegacyEstimateMemo(entry.workMemo) || "未設定", 40)}`;
       caseWorkMeta.classList.remove("next-action-overdue", "next-action-within3", "next-action-within7");
       if (nextActionInfo) caseWorkMeta.classList.add(nextActionInfo.urgencyClass);
     }
@@ -5252,6 +5605,13 @@ function resetDailyReportForm() {
   dailyReportSubmitBtn.textContent = "日報を登録";
 }
 
+function resetCaseDocumentForm() {
+  resetEditMode("caseDocument");
+  caseDocumentForm?.reset();
+  if (caseDocumentForm?.elements?.caseDocumentStatus) caseDocumentForm.elements.caseDocumentStatus.value = "未回収";
+  if (caseDocumentSubmitBtn) caseDocumentSubmitBtn.textContent = "書類を登録";
+}
+
 function resetEditMode(target) {
   if (target === "client") editState.clientId = null;
   if (target === "case") editState.caseId = null;
@@ -5262,6 +5622,7 @@ function resetEditMode(target) {
   if (target === "dailyReport") editState.dailyReportId = null;
   if (target === "estimate") editState.estimateId = null;
   if (target === "caseTask") editState.caseTaskId = null;
+  if (target === "caseDocument") editState.caseDocumentId = null;
 }
 
 function normalizeEstimateStatus(status) {
@@ -6503,12 +6864,19 @@ function normalizeExpensePaymentMethod(raw) {
   return EXPENSE_PAYMENT_METHODS.includes(value) ? value : "その他";
 }
 
+function normalizeCaseDocumentStatus(raw) {
+  const value = asTrimmedText(raw);
+  if (!value) return "未回収";
+  return CASE_DOCUMENT_STATUSES.includes(value) ? value : "未回収";
+}
+
 function importTypeToLabel(type) {
   if (type === "cases") return "案件CSV";
   if (type === "sales") return "売上CSV";
   if (type === "payments") return "入金CSV";
   if (type === "expenses") return "経費CSV";
   if (type === "fixed_expenses") return "固定費CSV";
+  if (type === "case_documents") return "書類管理CSV";
   if (type === "client_interactions") return "対応履歴CSV";
   return "CSV";
 }
@@ -6801,6 +7169,10 @@ async function importWorkbookBySheet(workbook) {
   if (caseTasksData.rows.length) {
     mergeResult(await importRowsByType("case_tasks", caseTasksData));
   }
+  const caseDocumentsData = getSheetRows("書類管理");
+  if (caseDocumentsData.rows.length) {
+    mergeResult(await importRowsByType("case_documents", caseDocumentsData));
+  }
   return total;
 }
 
@@ -7073,6 +7445,40 @@ async function importRowsByType(importType, tableData) {
     return result;
   }
 
+  if (importType === "case_documents") {
+    validateRequiredHeaders(headers, ["document_name", "status"]);
+    const payloads = [];
+    rows.forEach((row) => {
+      try {
+        const documentName = asTrimmedText(row.document_name);
+        if (!documentName) {
+          result.skippedCount += 1;
+          return;
+        }
+        const caseName = asTrimmedText(row.case_name);
+        const linkedCase = state.cases.find((entry) => entry.caseName === caseName && (!row.customer_name || entry.customerName === asTrimmedText(row.customer_name)));
+        payloads.push({
+          user_id: currentUser.id,
+          case_id: linkedCase?.id || null,
+          document_name: documentName,
+          status: normalizeCaseDocumentStatus(row.status),
+          received_date: parseFlexibleDate(row.received_date),
+          checked_date: parseFlexibleDate(row.checked_date),
+          memo: asTrimmedText(row.memo) || null,
+          file_url: asTrimmedText(row.file_url) || null,
+        });
+      } catch (_error) {
+        result.errorCount += 1;
+      }
+    });
+    if (payloads.length) {
+      const { error } = await sbClient.from("case_documents").insert(payloads);
+      if (error) throw error;
+      result.insertedCount += payloads.length;
+    }
+    return result;
+  }
+
   if (importType === "client_interactions") {
     validateRequiredHeaders(headers, ["interaction_date", "summary"]);
     const payloads = [];
@@ -7199,6 +7605,22 @@ function mapCaseTaskFromDb(row) {
     dueDate: row.due_date || "",
     status: row.status === "完了" ? "完了" : "未完了",
     completedAt: row.completed_at || "",
+    createdAt: Date.parse(row.created_at) || Date.now(),
+    updatedAt: Date.parse(row.updated_at) || Date.now(),
+  };
+}
+
+function mapCaseDocumentFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id || null,
+    caseId: row.case_id || null,
+    documentName: row.document_name || "",
+    status: normalizeCaseDocumentStatus(row.status),
+    receivedDate: row.received_date || null,
+    checkedDate: row.checked_date || null,
+    memo: row.memo || "",
+    fileUrl: row.file_url || "",
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
   };
@@ -7658,6 +8080,7 @@ function resetEditState() {
   editState.dailyReportId = null;
   editState.estimateId = null;
   editState.caseTaskId = null;
+  editState.caseDocumentId = null;
 }
 
 function clearAppState() {
@@ -7667,6 +8090,7 @@ function clearAppState() {
   state.workTemplates = [];
   state.cases = [];
   state.caseTasks = [];
+  state.caseDocuments = [];
   state.estimates = [];
   state.estimateItems = [];
   state.sales = [];
@@ -7680,6 +8104,7 @@ function clearAppState() {
   resetClientForm();
   resetCaseForm();
   resetCaseTaskForm();
+  resetCaseDocumentForm();
   resetWorkTemplateForm();
   resetEstimateForm();
   resetSaleForm();

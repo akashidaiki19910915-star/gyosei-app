@@ -64,6 +64,7 @@
                 <button id="export-payments-csv-btn" type="button">入金CSV</button>
                 <button id="export-expenses-csv-btn" type="button">経費CSV</button>
                 <button id="export-fixed-expenses-csv-btn" type="button">固定費CSV</button>
+                <button id="export-case-documents-csv-btn" type="button">書類管理CSV</button>
                 <button id="export-all-csv-btn" type="button" class="secondary-btn">全データCSV</button>
               </div>
             </section>
@@ -78,6 +79,7 @@
                     <option value="payments">入金CSV</option>
                     <option value="expenses">経費CSV</option>
                     <option value="fixed_expenses">固定費CSV</option>
+                    <option value="case_documents">書類管理CSV</option>
                     <option value="client_interactions">対応履歴CSV</option>
                   </select>
                 </label>
@@ -169,6 +171,28 @@
                   </tr>
                 </thead>
                 <tbody id="today-task-body"></tbody>
+              </table>
+            </div>
+          </section>
+          <section id="document-alert-card" class="deadline-alert-card case-alert-block" aria-live="polite">
+            <div class="deadline-alert-header">
+              <h3>書類アラート</h3>
+              <p id="document-alert-summary" class="today-task-summary">対象 0件</p>
+            </div>
+            <div id="document-alert-empty" class="empty">書類アラートはありません。</div>
+            <div id="document-alert-list-wrap" class="table-wrap" hidden>
+              <table class="deadline-alert-table">
+                <thead>
+                  <tr>
+                    <th>種別</th>
+                    <th>顧客名</th>
+                    <th>案件名</th>
+                    <th>書類名</th>
+                    <th>補足</th>
+                    <th>編集</th>
+                  </tr>
+                </thead>
+                <tbody id="document-alert-body"></tbody>
               </table>
             </div>
           </section>
@@ -517,6 +541,7 @@
             <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="list">案件一覧</button>
             <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="alerts">アラート</button>
             <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="tasks">タスク管理</button>
+            <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="documents">書類管理</button>
           </nav>
           <div class="layout two-col">
             <section class="panel subtab-panel" data-parent-tab="cases" data-subtab="entry" hidden>
@@ -681,6 +706,68 @@
                     </tr>
                   </thead>
                   <tbody id="case-tasks-body"></tbody>
+                </table>
+              </div>
+            </section>
+            <section class="panel subtab-panel" data-parent-tab="cases" data-subtab="documents" hidden>
+              <h2>書類管理</h2>
+              <form id="case-document-form" class="form">
+                <label>
+                  案件選択
+                  <select id="case-document-case-id" name="caseDocumentCaseId"></select>
+                </label>
+                <label>
+                  書類名 <span class="required">必須</span>
+                  <input id="case-document-name" name="caseDocumentName" type="text" required maxlength="200" />
+                </label>
+                <label>
+                  ステータス
+                  <select id="case-document-status" name="caseDocumentStatus">
+                    <option value="未回収">未回収</option>
+                    <option value="回収済">回収済</option>
+                    <option value="確認済">確認済</option>
+                    <option value="不備あり">不備あり</option>
+                    <option value="不要">不要</option>
+                  </select>
+                </label>
+                <div class="date-grid">
+                  <label>
+                    回収日
+                    <input id="case-document-received-date" name="caseDocumentReceivedDate" type="date" />
+                  </label>
+                  <label>
+                    確認日
+                    <input id="case-document-checked-date" name="caseDocumentCheckedDate" type="date" />
+                  </label>
+                </div>
+                <label>
+                  メモ
+                  <textarea id="case-document-memo" name="caseDocumentMemo" rows="3" maxlength="4000"></textarea>
+                </label>
+                <label>
+                  ファイルURL
+                  <input id="case-document-file-url" name="caseDocumentFileUrl" type="url" maxlength="2000" placeholder="https://..." />
+                </label>
+                <button id="case-document-submit-btn" type="submit">書類を登録</button>
+              </form>
+              <div id="case-documents-empty" class="empty">書類データはまだありません。</div>
+              <div id="case-documents-list-wrap" class="table-wrap" hidden>
+                <table class="daily-report-table">
+                  <thead>
+                    <tr>
+                      <th>顧客名</th>
+                      <th>案件名</th>
+                      <th>書類名</th>
+                      <th>ステータス</th>
+                      <th>回収日</th>
+                      <th>確認日</th>
+                      <th>メモ</th>
+                      <th>ファイル</th>
+                      <th>編集</th>
+                      <th>削除</th>
+                    </tr>
+                  </thead>
+                  <tbody id="case-documents-body"></tbody>
                 </table>
               </div>
             </section>
