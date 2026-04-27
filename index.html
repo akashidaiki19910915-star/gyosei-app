@@ -143,6 +143,7 @@
           <button type="button" class="tab-btn" data-tab="sales">売上</button>
           <button type="button" class="tab-btn" data-tab="expenses">経費</button>
           <button type="button" class="tab-btn" data-tab="daily-reports">日報</button>
+          <button type="button" class="tab-btn" data-tab="settings">設定</button>
         </nav>
 
         <section id="cases-dashboard-panel" class="dashboard panel subtab-panel active" data-parent-tab="cases" data-subtab="dashboard">
@@ -742,7 +743,7 @@
                 </div>
                 <div class="summary-grid">
                   <div class="summary-card"><p class="label">小計</p><p id="estimate-subtotal" class="value">0 円</p></div>
-                  <div class="summary-card"><p class="label">消費税(10%)</p><p id="estimate-tax" class="value">0 円</p></div>
+                  <div class="summary-card"><p id="estimate-tax-label" class="label">消費税(10%)</p><p id="estimate-tax" class="value">0 円</p></div>
                   <div class="summary-card"><p class="label">合計</p><p id="estimate-total" class="value">0 円</p></div>
                 </div>
                 <button id="estimate-submit-btn" type="submit">見積を登録</button>
@@ -1057,6 +1058,28 @@
               <div id="daily-reports-list-wrap" class="daily-reports-cards" hidden>
                 <div id="daily-reports-body" class="daily-reports-grid"></div>
               </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="tab-settings" class="tab-panel">
+          <div class="layout two-col">
+            <section class="panel">
+              <h2>設定</h2>
+              <form id="settings-form" class="form">
+                <label>事務所名<input id="settings-office-name" name="officeName" type="text" maxlength="200" /></label>
+                <label>郵便番号<input id="settings-postal-code" name="postalCode" type="text" maxlength="20" /></label>
+                <label>住所<input id="settings-address" name="address" type="text" maxlength="500" /></label>
+                <label>電話番号<input id="settings-tel" name="tel" type="text" maxlength="50" /></label>
+                <label>メールアドレス<input id="settings-email" name="email" type="email" maxlength="200" /></label>
+                <label>インボイス登録番号<input id="settings-invoice-registration-number" name="invoiceRegistrationNumber" type="text" maxlength="50" /></label>
+                <label>振込先<textarea id="settings-bank-info" name="bankInfo" rows="3" maxlength="2000"></textarea></label>
+                <label>請求書の標準支払期限（日数）<input id="settings-default-invoice-due-days" name="defaultInvoiceDueDays" type="number" min="1" max="365" step="1" /></label>
+                <label>消費税率（例: 0.10 = 10%）<input id="settings-tax-rate" name="taxRate" type="number" min="0" max="1" step="0.001" /></label>
+                <label>見積書備考<textarea id="settings-estimate-note" name="estimateNote" rows="3" maxlength="2000"></textarea></label>
+                <label>請求書備考<textarea id="settings-invoice-note" name="invoiceNote" rows="3" maxlength="2000"></textarea></label>
+                <button id="settings-submit-btn" type="submit">設定を保存</button>
+              </form>
             </section>
           </div>
         </section>

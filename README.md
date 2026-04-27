@@ -219,6 +219,37 @@ using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 ```
 
+## 設定機能（事務所情報・帳票設定・請求設定）の追加SQL
+
+```sql
+create table if not exists app_settings (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  office_name text,
+  postal_code text,
+  address text,
+  tel text,
+  email text,
+  invoice_registration_number text,
+  bank_info text,
+  default_invoice_due_days int default 7,
+  tax_rate numeric default 0.10,
+  estimate_note text,
+  invoice_note text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table app_settings enable row level security;
+
+drop policy if exists "app_settings_own" on app_settings;
+
+create policy "app_settings_own" on app_settings
+for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+```
+
 ## 顧客台帳・採番・証憑URL対応の追加SQL
 
 ```sql

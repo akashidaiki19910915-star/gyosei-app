@@ -20,6 +20,19 @@ const OFFICE_INFO = {
   invoiceNote: "振込手数料はご負担をお願いいたします。",
   estimateNote: "本見積の有効期限内にご発注をお願いいたします。",
 };
+const DEFAULT_APP_SETTINGS = {
+  officeName: OFFICE_INFO.name,
+  postalCode: OFFICE_INFO.zip,
+  address: OFFICE_INFO.address,
+  tel: OFFICE_INFO.tel,
+  email: OFFICE_INFO.email,
+  invoiceRegistrationNumber: OFFICE_INFO.registrationNumber,
+  bankInfo: OFFICE_INFO.transferInfo,
+  defaultInvoiceDueDays: 7,
+  taxRate: 0.1,
+  estimateNote: OFFICE_INFO.estimateNote,
+  invoiceNote: OFFICE_INFO.invoiceNote,
+};
 
 const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
@@ -57,6 +70,7 @@ const state = {
   estimateStatusFilter: "all",
   estimateExpiredFilter: "all",
   alerts: [],
+  appSettings: { ...DEFAULT_APP_SETTINGS },
   isInitialDataReady: false,
 };
 const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null };
@@ -97,6 +111,7 @@ const panels = {
   sales: document.getElementById("tab-sales"),
   expenses: document.getElementById("tab-expenses"),
   "daily-reports": document.getElementById("tab-daily-reports"),
+  settings: document.getElementById("tab-settings"),
 };
 const dashboardSection = document.querySelector(".dashboard");
 const subtabState = {
@@ -251,6 +266,7 @@ const estimateAddItemBtn = document.getElementById("estimate-add-item-btn");
 const estimateSubmitBtn = document.getElementById("estimate-submit-btn");
 const estimateSubtotal = document.getElementById("estimate-subtotal");
 const estimateTax = document.getElementById("estimate-tax");
+const estimateTaxLabel = document.getElementById("estimate-tax-label");
 const estimateTotal = document.getElementById("estimate-total");
 const estimateList = document.getElementById("estimate-list");
 const estimateEmpty = document.getElementById("estimate-empty");
@@ -258,15 +274,16 @@ const estimateCustomerSearch = document.getElementById("estimate-customer-search
 const estimateTitleSearch = document.getElementById("estimate-title-search");
 const estimateStatusFilter = document.getElementById("estimate-status-filter");
 const estimateExpiredFilter = document.getElementById("estimate-expired-filter");
+const settingsForm = document.getElementById("settings-form");
 
 let currentUser = null;
 let isLoggingOut = false;
 let eventsBound = false;
 let loadingCount = 0;
 let loadingTimer = null;
-const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports"];
-const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports"];
-const RESTORE_DELETE_ORDER = ["payments", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "case_tasks", "estimates", "cases", "work_templates", "clients"];
+const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
+const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
+const RESTORE_DELETE_ORDER = ["payments", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "case_tasks", "estimates", "cases", "work_templates", "clients", "app_settings"];
 const CASE_MUTATION_COLUMNS = [
   "user_id",
   "client_id",
@@ -371,6 +388,7 @@ function bindEvents() {
   fixedExpenseForm.addEventListener("submit", handleFixedExpenseSubmit);
   dailyReportForm?.addEventListener("submit", handleDailyReportSubmit);
   estimateForm?.addEventListener("submit", handleEstimateSubmit);
+  settingsForm?.addEventListener("submit", handleSettingsSubmit);
 
   clearBtn.addEventListener("click", handleClearAll);
   clientsList?.addEventListener("click", handleClientListAction);
@@ -713,6 +731,8 @@ async function loadAllDataSafely() {
   state.expenses = await loadTable("expenses", mapExpenseFromDb);
   state.fixedExpenses = await loadTable("fixed_expenses", mapFixedExpenseFromDb);
   state.dailyReports = await loadTable("daily_reports", mapDailyReportFromDb);
+  const loadedSettings = await safeSelectTable("app_settings", mapAppSettingsFromDb, []);
+  state.appSettings = loadedSettings[0] ? { ...DEFAULT_APP_SETTINGS, ...loadedSettings[0] } : { ...DEFAULT_APP_SETTINGS };
 
   state.sales = state.sales.map((sale) => hydrateSaleWithPayments(sale));
 
@@ -726,6 +746,7 @@ async function loadAllDataSafely() {
     estimates: state.estimates.length,
     caseTasks: state.caseTasks.length,
     payments: state.payments.length,
+    appSettings: state.appSettings?.id ? 1 : 0,
   });
 
   await cleanupLegacyEstimateMemoMarkers();
@@ -2733,6 +2754,7 @@ function handleExportBackupJson(event) {
       daily_reports: backup.data.daily_reports.length,
       payments: backup.data.payments.length,
       case_tasks: backup.data.case_tasks.length,
+      app_settings: backup.data.app_settings.length,
     };
     console.log("BACKUP JSON COUNTS", counts);
     downloadJsonFile(filename, backup);
@@ -2798,6 +2820,21 @@ function buildBackupJson() {
       daily_reports: Array.isArray(state.dailyReports) ? state.dailyReports : [],
       work_templates: Array.isArray(state.workTemplates) ? state.workTemplates : [],
       case_tasks: Array.isArray(state.caseTasks) ? state.caseTasks : [],
+      app_settings: state.appSettings?.id ? [{
+        id: state.appSettings.id,
+        user_id: currentUser?.id || state.appSettings.userId || null,
+        office_name: state.appSettings.officeName || null,
+        postal_code: state.appSettings.postalCode || null,
+        address: state.appSettings.address || null,
+        tel: state.appSettings.tel || null,
+        email: state.appSettings.email || null,
+        invoice_registration_number: state.appSettings.invoiceRegistrationNumber || null,
+        bank_info: state.appSettings.bankInfo || null,
+        default_invoice_due_days: getDefaultInvoiceDueDays(),
+        tax_rate: getCurrentTaxRate(),
+        estimate_note: state.appSettings.estimateNote || null,
+        invoice_note: state.appSettings.invoiceNote || null,
+      }] : [],
     },
   };
 }
@@ -2878,11 +2915,13 @@ function renderAfterDataChanged() {
   safeRender("caseTaskAlerts", renderCaseTaskAlerts);
   safeRender("cases", renderCases);
   safeRender("estimates", renderEstimates);
+  safeRender("estimateTotals", recalcEstimateTotals);
   safeRender("sales", renderSales);
   safeRender("payments", renderPayments);
   safeRender("expenses", renderExpenses);
   safeRender("fixedExpenses", renderFixedExpenses);
   safeRender("dailyReports", renderDailyReports);
+  safeRender("settingsForm", renderSettingsForm);
   safeRender("todayTasks", renderTodayTasks);
   safeRender("dashboard", renderDashboard);
   safeRender("unpaidAlerts", renderUnpaidAlerts);
@@ -3052,6 +3091,7 @@ function normalizeTabKey(tabKey) {
   if (["work-templates", "workTemplates", "template", "templates", "業務テンプレート", "テンプレート"].includes(key)) return "work-templates";
   if (["sales", "売上"].includes(key)) return "sales";
   if (["expenses", "経費"].includes(key)) return "expenses";
+  if (["settings", "setting", "設定"].includes(key)) return "settings";
   return "cases";
 }
 
@@ -4313,6 +4353,94 @@ function getEstimateItemsFromForm() {
     .filter((item) => item.itemName);
 }
 
+function getAppSettings() {
+  return { ...DEFAULT_APP_SETTINGS, ...(state.appSettings || {}) };
+}
+
+function normalizeTaxRate(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_APP_SETTINGS.taxRate;
+  return parsed <= 1 ? parsed : parsed / 100;
+}
+
+function getPositiveInt(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
+function getCurrentTaxRate() {
+  return normalizeTaxRate(getAppSettings().taxRate);
+}
+
+function getDefaultInvoiceDueDays() {
+  const parsed = Number(getAppSettings().defaultInvoiceDueDays);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_APP_SETTINGS.defaultInvoiceDueDays;
+  return Math.floor(parsed);
+}
+
+function formatTaxRatePercent(taxRate = getCurrentTaxRate()) {
+  return `${(normalizeTaxRate(taxRate) * 100).toFixed(1).replace(/\.0$/, "")}%`;
+}
+
+function renderSettingsForm() {
+  if (!settingsForm) return;
+  const settings = getAppSettings();
+  settingsForm.elements.officeName.value = settings.officeName || "";
+  settingsForm.elements.postalCode.value = settings.postalCode || "";
+  settingsForm.elements.address.value = settings.address || "";
+  settingsForm.elements.tel.value = settings.tel || "";
+  settingsForm.elements.email.value = settings.email || "";
+  settingsForm.elements.invoiceRegistrationNumber.value = settings.invoiceRegistrationNumber || "";
+  settingsForm.elements.bankInfo.value = settings.bankInfo || "";
+  settingsForm.elements.defaultInvoiceDueDays.value = getDefaultInvoiceDueDays();
+  settingsForm.elements.taxRate.value = String(getCurrentTaxRate());
+  settingsForm.elements.estimateNote.value = settings.estimateNote || "";
+  settingsForm.elements.invoiceNote.value = settings.invoiceNote || "";
+}
+
+async function handleSettingsSubmit(event) {
+  event.preventDefault();
+  if (!currentUser || !settingsForm) return;
+  const payload = {
+    user_id: currentUser.id,
+    office_name: asTrimmedText(settingsForm.elements.officeName.value) || null,
+    postal_code: asTrimmedText(settingsForm.elements.postalCode.value) || null,
+    address: asTrimmedText(settingsForm.elements.address.value) || null,
+    tel: asTrimmedText(settingsForm.elements.tel.value) || null,
+    email: asTrimmedText(settingsForm.elements.email.value) || null,
+    invoice_registration_number: asTrimmedText(settingsForm.elements.invoiceRegistrationNumber.value) || null,
+    bank_info: asTrimmedText(settingsForm.elements.bankInfo.value) || null,
+    default_invoice_due_days: getPositiveInt(settingsForm.elements.defaultInvoiceDueDays.value, DEFAULT_APP_SETTINGS.defaultInvoiceDueDays),
+    tax_rate: normalizeTaxRate(settingsForm.elements.taxRate.value),
+    estimate_note: asTrimmedText(settingsForm.elements.estimateNote.value) || null,
+    invoice_note: asTrimmedText(settingsForm.elements.invoiceNote.value) || null,
+    updated_at: new Date().toISOString(),
+  };
+  try {
+    await runMutation("設定保存", async () => {
+      const existingSettingsId = state.appSettings?.id || null;
+      if (existingSettingsId) {
+        const { data, error } = await sbClient.from("app_settings").update(payload).eq("id", existingSettingsId).eq("user_id", currentUser.id).select().single();
+        if (error) throw error;
+        return data;
+      }
+      const { data: existingRows, error: existingError } = await sbClient.from("app_settings").select("id").eq("user_id", currentUser.id).limit(1);
+      if (existingError) throw existingError;
+      if (existingRows?.[0]?.id) {
+        const { data, error } = await sbClient.from("app_settings").update(payload).eq("id", existingRows[0].id).eq("user_id", currentUser.id).select().single();
+        if (error) throw error;
+        return data;
+      }
+      const { data, error } = await sbClient.from("app_settings").insert(payload).select().single();
+      if (error) throw error;
+      return data;
+    }, { successMessage: "設定を保存しました。" });
+  } catch (error) {
+    showAppMessage(`設定保存に失敗しました。${formatSupabaseError(error)}`, true);
+  }
+}
+
 function recalcEstimateTotals() {
   let subtotal = 0;
   Array.from(estimateItemsWrap?.querySelectorAll(".estimate-item-row") || []).forEach((row) => {
@@ -4323,12 +4451,14 @@ function recalcEstimateTotals() {
     const amountEl = row.querySelector(".item-amount");
     if (amountEl) amountEl.textContent = formatCurrency(amount);
   });
-  const tax = Math.floor(subtotal * 0.1);
+  const taxRate = getCurrentTaxRate();
+  const tax = Math.floor(subtotal * taxRate);
   const total = subtotal + tax;
   if (estimateSubtotal) estimateSubtotal.textContent = formatCurrency(subtotal);
   if (estimateTax) estimateTax.textContent = formatCurrency(tax);
+  if (estimateTaxLabel) estimateTaxLabel.textContent = `消費税(${formatTaxRatePercent(taxRate)})`;
   if (estimateTotal) estimateTotal.textContent = formatCurrency(total);
-  return { subtotal, tax, total };
+  return { subtotal, tax, total, taxRate };
 }
 
 async function handleEstimateSubmit(event) {
@@ -4606,7 +4736,7 @@ async function createInvoiceFromEstimate(estimateId) {
     invoice_amount: invoiceAmount,
     paid_amount: 0,
     paid_date: null,
-    due_date: addDaysToDate(new Date(), 7),
+    due_date: addDaysToDate(new Date(), getDefaultInvoiceDueDays()),
     payment_status: "未入金",
     is_unpaid: true,
     invoice_number: await generateInvoiceNumberIfNeeded(),
@@ -5144,6 +5274,7 @@ function buildInvoiceRowsFromEstimate(estimate) {
 }
 
 function buildInvoiceDocumentFromEstimate(estimate, noteOverride = null) {
+  const appSettings = getAppSettings();
   const rows = buildInvoiceRowsFromEstimate(estimate);
   const invoiceDate = toDateString(new Date());
   const linkedSale = estimate.caseId
@@ -5154,12 +5285,12 @@ function buildInvoiceDocumentFromEstimate(estimate, noteOverride = null) {
     subject: estimate.estimateTitle || "請求内容",
     invoiceDate,
     invoiceNumber: linkedSale?.invoiceNumber || "未採番",
-    companyName: OFFICE_INFO.name,
-    companyZip: OFFICE_INFO.zip,
-    companyAddress: OFFICE_INFO.address,
-    companyPhone: OFFICE_INFO.tel,
-    companyEmail: OFFICE_INFO.email,
-    registrationNumber: OFFICE_INFO.registrationNumber,
+    companyName: appSettings.officeName,
+    companyZip: appSettings.postalCode,
+    companyAddress: appSettings.address,
+    companyPhone: appSettings.tel,
+    companyEmail: appSettings.email,
+    registrationNumber: appSettings.invoiceRegistrationNumber,
     details: rows.map((row, index) => ({
       no: index + 1,
       itemName: row.item_name,
@@ -5170,8 +5301,9 @@ function buildInvoiceDocumentFromEstimate(estimate, noteOverride = null) {
     subtotal: estimate.subtotal ?? 0,
     tax: estimate.tax ?? 0,
     total: estimate.total ?? 0,
-    transferInfo: OFFICE_INFO.transferInfo,
-    note: asTrimmedText(noteOverride ?? "") || estimate.memo || OFFICE_INFO.invoiceNote || "",
+    transferInfo: appSettings.bankInfo,
+    taxRate: getCurrentTaxRate(),
+    note: asTrimmedText(noteOverride ?? "") || estimate.memo || appSettings.invoiceNote || "",
   };
 }
 
@@ -5189,7 +5321,9 @@ function exportInvoiceDataForEstimate(estimateId) {
 
 function buildInvoiceDocumentFromCase(foundCase, noteOverride = null) {
   const subtotal = foundCase.estimateAmount ?? 0;
-  const tax = Math.floor(subtotal * 0.1);
+  const appSettings = getAppSettings();
+  const taxRate = getCurrentTaxRate();
+  const tax = Math.floor(subtotal * taxRate);
   const total = subtotal + tax;
   const invoiceDate = toDateString(new Date());
   const linkedSale = state.sales.find((sale) => sale.caseId === foundCase.id);
@@ -5198,12 +5332,12 @@ function buildInvoiceDocumentFromCase(foundCase, noteOverride = null) {
     subject: foundCase.caseName || "請求内容",
     invoiceDate,
     invoiceNumber: linkedSale?.invoiceNumber || "未採番",
-    companyName: OFFICE_INFO.name,
-    companyZip: OFFICE_INFO.zip,
-    companyAddress: OFFICE_INFO.address,
-    companyPhone: OFFICE_INFO.tel,
-    companyEmail: OFFICE_INFO.email,
-    registrationNumber: OFFICE_INFO.registrationNumber,
+    companyName: appSettings.officeName,
+    companyZip: appSettings.postalCode,
+    companyAddress: appSettings.address,
+    companyPhone: appSettings.tel,
+    companyEmail: appSettings.email,
+    registrationNumber: appSettings.invoiceRegistrationNumber,
     details: [{
       no: 1,
       itemName: foundCase.caseName,
@@ -5214,8 +5348,9 @@ function buildInvoiceDocumentFromCase(foundCase, noteOverride = null) {
     subtotal,
     tax,
     total,
-    transferInfo: OFFICE_INFO.transferInfo,
-    note: asTrimmedText(noteOverride ?? "") || OFFICE_INFO.invoiceNote || "",
+    transferInfo: appSettings.bankInfo,
+    taxRate,
+    note: asTrimmedText(noteOverride ?? "") || appSettings.invoiceNote || "",
   };
 }
 
@@ -5306,6 +5441,7 @@ function downloadInvoiceWorkbook(invoiceData) {
 }
 
 function buildEstimateDocumentFromEstimate(estimate) {
+  const appSettings = getAppSettings();
   const rows = state.estimateItems
     .filter((row) => row.estimateId === estimate.id)
     .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -5333,17 +5469,18 @@ function buildEstimateDocumentFromEstimate(estimate) {
     estimateDate,
     estimateNumber: estimate.estimateNumber || "未採番",
     validUntil: estimate.validUntil || "",
-    companyName: OFFICE_INFO.name,
-    companyZip: OFFICE_INFO.zip,
-    companyAddress: OFFICE_INFO.address,
-    companyPhone: OFFICE_INFO.tel,
-    companyEmail: OFFICE_INFO.email,
+    companyName: appSettings.officeName,
+    companyZip: appSettings.postalCode,
+    companyAddress: appSettings.address,
+    companyPhone: appSettings.tel,
+    companyEmail: appSettings.email,
     details: rows,
     subtotal: estimate.subtotal ?? 0,
     tax: estimate.tax ?? 0,
     total: estimate.total ?? 0,
-    paymentTerms: "お支払い条件：請求書受領後7日以内に銀行振込",
-    note: estimate.memo || OFFICE_INFO.estimateNote,
+    paymentTerms: `お支払い条件：請求書受領後${getDefaultInvoiceDueDays()}日以内に銀行振込`,
+    taxRate: getCurrentTaxRate(),
+    note: estimate.memo || appSettings.estimateNote,
   };
 }
 
@@ -5416,7 +5553,7 @@ function createBusinessDocumentSheet(documentData, options = { type: "invoice" }
 
   rows[26][5] = "小計";
   rows[26][6] = documentData.subtotal ?? 0;
-  rows[27][5] = "消費税10%";
+  rows[27][5] = `消費税${formatTaxRatePercent(documentData.taxRate)}`;
   rows[27][6] = documentData.tax ?? 0;
   rows[28][5] = "合計";
   rows[28][6] = documentData.total ?? 0;
@@ -5753,7 +5890,7 @@ body {
     </table>
     <table class="totals">
       <tr><th>小計</th><td class="align-right">${formatCurrencyCompact(documentData.subtotal)}</td></tr>
-      <tr><th>消費税10%</th><td class="align-right">${formatCurrencyCompact(documentData.tax)}</td></tr>
+      <tr><th>消費税${formatTaxRatePercent(documentData.taxRate)}</th><td class="align-right">${formatCurrencyCompact(documentData.tax)}</td></tr>
       <tr class="total-row"><th>合計</th><td class="align-right">${formatCurrencyCompact(documentData.total)}</td></tr>
     </table>
     <section class="document-footer">
@@ -6971,6 +7108,26 @@ function getIncompleteTaskCount(taskList) {
   return parseTaskList(taskList).filter((entry) => !entry.done).length;
 }
 
+function mapAppSettingsFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    officeName: row.office_name || "",
+    postalCode: row.postal_code || "",
+    address: row.address || "",
+    tel: row.tel || "",
+    email: row.email || "",
+    invoiceRegistrationNumber: row.invoice_registration_number || "",
+    bankInfo: row.bank_info || "",
+    defaultInvoiceDueDays: getPositiveInt(row.default_invoice_due_days, DEFAULT_APP_SETTINGS.defaultInvoiceDueDays),
+    taxRate: normalizeTaxRate(row.tax_rate),
+    estimateNote: row.estimate_note || "",
+    invoiceNote: row.invoice_note || "",
+    createdAt: Date.parse(row.created_at) || Date.now(),
+    updatedAt: Date.parse(row.updated_at) || Date.now(),
+  };
+}
+
 function mapCaseFromDb(row) {
   return {
     id: row.id,
@@ -7482,6 +7639,7 @@ function clearAppState() {
   state.expenses = [];
   state.fixedExpenses = [];
   state.dailyReports = [];
+  state.appSettings = { ...DEFAULT_APP_SETTINGS };
   resetViewState();
   resetEditState();
   resetClientForm();
