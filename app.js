@@ -55,6 +55,7 @@ const state = {
   expenses: [],
   fixedExpenses: [],
   dailyReports: [],
+  operationLogs: [],
   caseTasks: [],
   caseDocuments: [],
   selectedAggregation: "month",
@@ -71,6 +72,10 @@ const state = {
   estimateTitleQuery: "",
   estimateStatusFilter: "all",
   estimateExpiredFilter: "all",
+  operationLogActionFilter: "all",
+  operationLogTargetFilter: "all",
+  operationLogFromDate: "",
+  operationLogToDate: "",
   alerts: [],
   selectedIntegrityCheckKey: "",
   appSettings: { ...DEFAULT_APP_SETTINGS },
@@ -300,6 +305,13 @@ const estimateTitleSearch = document.getElementById("estimate-title-search");
 const estimateStatusFilter = document.getElementById("estimate-status-filter");
 const estimateExpiredFilter = document.getElementById("estimate-expired-filter");
 const settingsForm = document.getElementById("settings-form");
+const operationLogsBody = document.getElementById("operation-logs-body");
+const operationLogsEmpty = document.getElementById("operation-logs-empty");
+const operationLogsWrap = document.getElementById("operation-logs-wrap");
+const operationLogActionFilter = document.getElementById("operation-log-action-filter");
+const operationLogTargetFilter = document.getElementById("operation-log-target-filter");
+const operationLogFromDate = document.getElementById("operation-log-from-date");
+const operationLogToDate = document.getElementById("operation-log-to-date");
 
 let currentUser = null;
 let isLoggingOut = false;
@@ -482,6 +494,22 @@ function bindEvents() {
   estimateExpiredFilter?.addEventListener("change", (event) => {
     state.estimateExpiredFilter = event.target.value || "all";
     safeRender("estimates", renderEstimates);
+  });
+  operationLogActionFilter?.addEventListener("change", (event) => {
+    state.operationLogActionFilter = event.target.value || "all";
+    safeRender("operationLogs", renderOperationLogs);
+  });
+  operationLogTargetFilter?.addEventListener("change", (event) => {
+    state.operationLogTargetFilter = event.target.value || "all";
+    safeRender("operationLogs", renderOperationLogs);
+  });
+  operationLogFromDate?.addEventListener("change", (event) => {
+    state.operationLogFromDate = event.target.value || "";
+    safeRender("operationLogs", renderOperationLogs);
+  });
+  operationLogToDate?.addEventListener("change", (event) => {
+    state.operationLogToDate = event.target.value || "";
+    safeRender("operationLogs", renderOperationLogs);
   });
   eventsBound = true;
   console.log("EVENTS BOUND");
@@ -761,6 +789,7 @@ async function loadAllDataSafely() {
   state.expenses = await loadTable("expenses", mapExpenseFromDb);
   state.fixedExpenses = await loadTable("fixed_expenses", mapFixedExpenseFromDb);
   state.dailyReports = await loadTable("daily_reports", mapDailyReportFromDb);
+  state.operationLogs = await safeSelectTable("operation_logs", mapOperationLogFromDb, []);
   const loadedSettings = await safeSelectTable("app_settings", mapAppSettingsFromDb, []);
   state.appSettings = loadedSettings[0] ? { ...DEFAULT_APP_SETTINGS, ...loadedSettings[0] } : { ...DEFAULT_APP_SETTINGS };
 
@@ -777,6 +806,7 @@ async function loadAllDataSafely() {
     caseTasks: state.caseTasks.length,
     caseDocuments: state.caseDocuments.length,
     payments: state.payments.length,
+    operationLogs: state.operationLogs.length,
     appSettings: state.appSettings?.id ? 1 : 0,
   });
 
@@ -2220,6 +2250,19 @@ async function runMutation(actionName, mutationFn, options = {}) {
     console.log("MUTATION SUCCESS", actionName);
     if (typeof options.resetForm === "function") options.resetForm();
     if (typeof options.afterSuccess === "function") options.afterSuccess(result);
+    const logPayload = options.log === false
+      ? null
+      : (resolveOperationLogOption(options.log, result) || {
+        actionType: actionName,
+        targetType: "mutation",
+        targetName: actionName,
+      });
+    if (logPayload) {
+      addOperationLog({
+        actionType: actionName,
+        ...logPayload,
+      });
+    }
     showAppMessage(options.successMessage || `${actionName}が完了しました。`, false);
     return result;
   } catch (error) {
@@ -2231,6 +2274,35 @@ async function runMutation(actionName, mutationFn, options = {}) {
     throw error;
   } finally {
     forceHideLoading();
+  }
+}
+
+function resolveOperationLogOption(logOption, mutationResult) {
+  if (!logOption) return null;
+  if (typeof logOption === "function") return logOption(mutationResult);
+  if (typeof logOption === "object") return logOption;
+  return null;
+}
+
+function toUuidOrNull(value) {
+  const normalized = asTrimmedText(value);
+  if (!normalized) return null;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized) ? normalized : null;
+}
+
+async function addOperationLog({ actionType, targetType, targetId, targetName, detail }) {
+  if (!currentUser || !asTrimmedText(actionType)) return;
+  const payload = {
+    user_id: currentUser.id,
+    action_type: asTrimmedText(actionType),
+    target_type: asTrimmedText(targetType) || null,
+    target_id: toUuidOrNull(targetId),
+    target_name: asTrimmedText(targetName) || null,
+    detail: asTrimmedText(detail) || null,
+  };
+  const { error } = await sbClient.from("operation_logs").insert(payload);
+  if (error) {
+    console.error("操作ログ保存に失敗しました", error);
   }
 }
 
@@ -3048,6 +3120,7 @@ function handleExportBackupJson(event) {
       case_documents: backup.data.case_documents.length,
       payments: backup.data.payments.length,
       case_tasks: backup.data.case_tasks.length,
+      operation_logs: backup.data.operation_logs.length,
       app_settings: backup.data.app_settings.length,
     };
     console.log("BACKUP JSON COUNTS", counts);
@@ -3115,6 +3188,7 @@ function buildBackupJson() {
       work_templates: Array.isArray(state.workTemplates) ? state.workTemplates : [],
       case_tasks: Array.isArray(state.caseTasks) ? state.caseTasks : [],
       case_documents: Array.isArray(state.caseDocuments) ? state.caseDocuments : [],
+      operation_logs: Array.isArray(state.operationLogs) ? state.operationLogs : [],
       app_settings: state.appSettings?.id ? [{
         id: state.appSettings.id,
         user_id: currentUser?.id || state.appSettings.userId || null,
@@ -3219,6 +3293,7 @@ function renderAfterDataChanged() {
   safeRender("fixedExpenses", renderFixedExpenses);
   safeRender("dailyReports", renderDailyReports);
   safeRender("settingsForm", renderSettingsForm);
+  safeRender("operationLogs", renderOperationLogs);
   safeRender("todayTasks", renderTodayTasks);
   safeRender("dashboard", renderDashboard);
   safeRender("unpaidAlerts", renderUnpaidAlerts);
@@ -4916,6 +4991,53 @@ function renderSettingsForm() {
   settingsForm.elements.taxRate.value = String(getCurrentTaxRate());
   settingsForm.elements.estimateNote.value = settings.estimateNote || "";
   settingsForm.elements.invoiceNote.value = settings.invoiceNote || "";
+}
+
+function renderOperationLogs() {
+  if (!operationLogsBody || !operationLogsEmpty || !operationLogsWrap) return;
+  operationLogsBody.innerHTML = "";
+  const source = Array.isArray(state.operationLogs) ? state.operationLogs.slice() : [];
+  const fromTs = toDateOnlyTimestamp(state.operationLogFromDate);
+  const toTsBase = toDateOnlyTimestamp(state.operationLogToDate);
+  const toTs = Number.isFinite(toTsBase) ? toTsBase + (24 * 60 * 60 * 1000) - 1 : null;
+  const filtered = source
+    .filter((entry) => {
+      if (state.operationLogActionFilter !== "all" && entry.actionType !== state.operationLogActionFilter) return false;
+      if (state.operationLogTargetFilter !== "all" && entry.targetType !== state.operationLogTargetFilter) return false;
+      const ts = Number(entry.createdAt) || 0;
+      if (Number.isFinite(fromTs) && ts < fromTs) return false;
+      if (Number.isFinite(toTs) && ts > toTs) return false;
+      return true;
+    })
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+    .slice(0, 50);
+
+  const actionTypes = ["all", ...new Set(source.map((entry) => entry.actionType).filter(Boolean))];
+  const targetTypes = ["all", ...new Set(source.map((entry) => entry.targetType).filter(Boolean))];
+  if (operationLogActionFilter) {
+    operationLogActionFilter.innerHTML = actionTypes.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value === "all" ? "すべて" : value)}</option>`).join("");
+    operationLogActionFilter.value = state.operationLogActionFilter;
+  }
+  if (operationLogTargetFilter) {
+    operationLogTargetFilter.innerHTML = targetTypes.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value === "all" ? "すべて" : value)}</option>`).join("");
+    operationLogTargetFilter.value = state.operationLogTargetFilter;
+  }
+  if (operationLogFromDate) operationLogFromDate.value = state.operationLogFromDate || "";
+  if (operationLogToDate) operationLogToDate.value = state.operationLogToDate || "";
+
+  filtered.forEach((entry) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(formatDateTime(entry.createdAt))}</td>
+      <td>${escapeHtml(entry.actionType || "-")}</td>
+      <td>${escapeHtml(entry.targetType || "-")}</td>
+      <td>${escapeHtml(entry.targetName || "-")}</td>
+      <td>${escapeHtml(entry.detail || "-")}</td>
+    `;
+    operationLogsBody.appendChild(tr);
+  });
+  operationLogsEmpty.hidden = filtered.length > 0;
+  operationLogsWrap.hidden = filtered.length === 0;
 }
 
 async function handleSettingsSubmit(event) {
@@ -6690,6 +6812,18 @@ function formatDate(dateText) {
   return new Intl.DateTimeFormat("ja-JP").format(date);
 }
 
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "未設定";
+  return new Intl.DateTimeFormat("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 function toDateString(dateSource) {
   const date = dateSource instanceof Date ? dateSource : new Date(dateSource);
   if (Number.isNaN(date.getTime())) return "";
@@ -7055,7 +7189,7 @@ function importTypeToLabel(type) {
   return "CSV";
 }
 
-function safeFileExport(actionName, exportFn) {
+function safeFileExport(actionName, exportFn, options = {}) {
   try {
     clearAppMessage();
     console.log("FILE EXPORT START", actionName);
@@ -7064,6 +7198,12 @@ function safeFileExport(actionName, exportFn) {
       console.log("FILE EXPORT CANCELED", actionName);
       return;
     }
+    const logPayload = resolveOperationLogOption(options.log, result) || {
+      actionType: actionName,
+      targetType: "file_export",
+      targetName: actionName,
+    };
+    addOperationLog(logPayload);
     showAppMessage(`${actionName}を出力しました。`, false);
     console.log("FILE EXPORT DONE", actionName);
   } catch (error) {
@@ -7074,7 +7214,7 @@ function safeFileExport(actionName, exportFn) {
   }
 }
 
-async function safeFileExportAsync(actionName, exportFn) {
+async function safeFileExportAsync(actionName, exportFn, options = {}) {
   try {
     clearAppMessage();
     console.log("FILE EXPORT START", actionName);
@@ -7083,6 +7223,12 @@ async function safeFileExportAsync(actionName, exportFn) {
       console.log("FILE EXPORT CANCELED", actionName);
       return;
     }
+    const logPayload = resolveOperationLogOption(options.log, result) || {
+      actionType: actionName,
+      targetType: "file_export",
+      targetName: actionName,
+    };
+    addOperationLog(logPayload);
     showAppMessage(`${actionName}を出力しました。`, false);
     console.log("FILE EXPORT DONE", actionName);
   } catch (error) {
@@ -8076,6 +8222,19 @@ function mapDailyReportFromDb(row) {
   };
 }
 
+function mapOperationLogFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id || null,
+    actionType: row.action_type || "",
+    targetType: row.target_type || "",
+    targetId: row.target_id || null,
+    targetName: row.target_name || "",
+    detail: row.detail || "",
+    createdAt: Date.parse(row.created_at) || Date.now(),
+  };
+}
+
 async function ensureMonthlyFixedExpenses() {
   if (!currentUser || !state.fixedExpenses.length) return 0;
 
@@ -8292,6 +8451,11 @@ function clearAppState() {
   state.expenses = [];
   state.fixedExpenses = [];
   state.dailyReports = [];
+  state.operationLogs = [];
+  state.operationLogActionFilter = "all";
+  state.operationLogTargetFilter = "all";
+  state.operationLogFromDate = "";
+  state.operationLogToDate = "";
   state.appSettings = { ...DEFAULT_APP_SETTINGS };
   resetViewState();
   resetEditState();
