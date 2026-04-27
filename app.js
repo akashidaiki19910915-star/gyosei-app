@@ -975,10 +975,7 @@ async function handleSaleSubmit(event) {
     }
 
     const paymentStatus = calculatePaymentStatus(invoiceAmount, paidAmount);
-    const invoiceNumber = isEdit
-      ? (state.sales.find((entry) => entry.id === editState.saleId)?.invoiceNumber || null)
-      : await getNextMonthlyNumber("sales", "invoice_number", "S");
-    const payload = {
+    const rawPayload = {
       user_id: currentUser.id,
       case_id: caseId || null,
       invoice_amount: invoiceAmount,
@@ -987,29 +984,43 @@ async function handleSaleSubmit(event) {
       due_date: dueDate || null,
       payment_status: paymentStatus,
       is_unpaid: paymentStatus !== "入金済",
-      invoice_number: invoiceNumber || null,
     };
+    const payload = pickObjectKeys(rawPayload, SALES_MUTATION_COLUMNS);
 
     console.log("SALE PAYLOAD", payload);
 
-    await runMutation("売上登録", async () => {
-      const query = isEdit
-        ? sbClient.from("sales").update(payload).eq("id", editState.saleId).eq("user_id", currentUser.id).select().single()
-        : sbClient.from("sales").insert(payload).select().single();
-      const { data, error } = await query;
-      if (error) {
-        console.error("SALE SUPABASE ERROR", error);
-        throw error;
+    await runMutation(isEdit ? "売上更新" : "売上登録", async () => {
+      if (isEdit) {
+        const { data, error } = await sbClient
+          .from("sales")
+          .update(payload)
+          .eq("id", editState.saleId)
+          .eq("user_id", currentUser.id)
+          .select()
+          .single();
+        if (error) throw error;
+        if (!data) throw new Error("売上更新結果を取得できませんでした。");
+        console.log("SALE UPDATE SUCCESS", data);
+        return data;
       }
+
+      const invoiceNumber = await generateInvoiceNumberIfNeeded();
+      const insertPayload = pickObjectKeys({
+        ...payload,
+        invoice_number: invoiceNumber || null,
+      }, SALES_MUTATION_COLUMNS);
+      const { data, error } = await sbClient.from("sales").insert(insertPayload).select().single();
+      if (error) throw error;
       if (!data) throw new Error("売上登録結果を取得できませんでした。");
       console.log("SALE INSERT SUCCESS", data);
       return data;
     }, {
       successMessage: isEdit ? "売上を更新しました。" : "売上を登録しました。",
-      resetForm: resetSaleForm,
-      afterSuccess: () => {
+      resetForm: () => {
+        resetSaleForm();
         editState.saleId = null;
-        subtabState.sales = "list";
+      },
+      afterSuccess: () => {
         activateSubtab("sales", "list");
       },
     });
@@ -1904,7 +1915,23 @@ async function startDailyReportEdit(dailyReportId) {
 
 
 async function editSale(saleId) {
-  await startSaleEdit(saleId);
+  const sale = state.sales.find((entry) => entry.id === saleId);
+  if (!sale) {
+    showAppMessage("編集対象の売上が見つかりません。", true);
+    return;
+  }
+  editState.saleId = saleId;
+  if (saleCaseSelect) saleCaseSelect.value = sale.caseId || "";
+  document.getElementById("invoice-amount").value = formatNumberInput(String(sale.invoiceAmount || 0));
+  document.getElementById("paid-amount").value = formatNumberInput(String(sale.paidAmount || 0));
+  document.getElementById("paid-date").value = sale.paidDate || "";
+  document.getElementById("sale-due-date").value = sale.dueDate || "";
+  setSaleInvoiceNumberDisplay(sale.invoiceNumber || "");
+  saleSubmitBtn.textContent = "売上を更新";
+  activateTab("sales");
+  activateSubtab("sales", "entry");
+  renderPayments();
+  saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function editExpense(expenseId) {
@@ -4847,7 +4874,7 @@ function renderSales() {
         <td>${paymentHistory}</td>
         <td>${canRecordReminder ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : "-"}</td>
         <td><button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-sale-id="${sale.id}">入金登録</button></td>
-        <td><button type="button" class="edit-btn secondary-btn">編集</button></td>
+        <td><button type="button" class="edit-sale-btn secondary-btn" data-sale-id="${sale.id}">編集</button></td>
         <td><button type="button" class="danger-btn delete-btn delete-sale-btn" data-sale-id="${sale.id}">削除</button></td>
       `;
       salesListBody.appendChild(tr);
