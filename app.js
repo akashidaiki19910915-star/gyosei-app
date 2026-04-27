@@ -56,6 +56,7 @@ const state = {
   estimateTitleQuery: "",
   estimateStatusFilter: "all",
   estimateExpiredFilter: "all",
+  alerts: [],
   isInitialDataReady: false,
 };
 const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null };
@@ -1500,6 +1501,12 @@ function handleUnpaidListAction(event) {
 function handleTodayTaskAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
+  if (btn.classList.contains("record-reminder-btn")) {
+    const saleId = btn.dataset.saleId;
+    if (!saleId) return;
+    handleRecordReminder(saleId).catch(() => {});
+    return;
+  }
   const taskId = btn.dataset.taskId;
   const target = btn.dataset.taskTarget;
   if (!taskId || !target) return;
@@ -2854,7 +2861,31 @@ function renderPayments() {
 
 function renderTodayTasks() {
   if (!todayTaskCard || !todayTaskSummary || !todayTaskBody || !todayTaskEmpty || !todayTaskListWrap) return;
-  renderTodayTaskCard();
+  safeRender("todayTaskCard", () => {
+    const alerts = buildIntegratedAlerts();
+    state.alerts = alerts;
+    todayTaskCard.classList.toggle("has-alert", alerts.length > 0);
+    todayTaskSummary.textContent = `対象 ${alerts.length}件`;
+    todayTaskBody.innerHTML = "";
+    todayTaskEmpty.hidden = alerts.length > 0;
+    todayTaskListWrap.hidden = alerts.length === 0;
+    if (!alerts.length) return;
+    alerts.forEach((alert) => {
+      const tr = document.createElement("tr");
+      tr.className = `task-priority-${alert.priority || "low"}`;
+      tr.innerHTML = `
+        <td>${escapeHtml(alert.typeLabel || "通知")}</td>
+        <td>${escapeHtml(alert.clientName || "顧客不明")}</td>
+        <td>${escapeHtml(alert.caseName || "案件なし")}</td>
+        <td>${escapeHtml(alert.title || "-")}</td>
+        <td>${escapeHtml(alert.dateLabel || "-")}</td>
+        <td>${escapeHtml(alert.subInfo || "-")}</td>
+        <td><button type="button" class="secondary-btn" data-task-target="${alert.target || "case"}" data-task-id="${alert.id || ""}">編集</button></td>
+        <td>${alert.actionButtonHtml || "-"}</td>
+      `;
+      todayTaskBody.appendChild(tr);
+    });
+  });
 }
 
 function renderCaseTasks() {
@@ -3041,30 +3072,111 @@ function renderDashboard() {
 }
 
 function renderTodayTaskCard() {
-  if (!todayTaskCard || !todayTaskSummary || !todayTaskBody || !todayTaskEmpty || !todayTaskListWrap) return;
-  const rows = buildTodayTasks();
-  todayTaskCard.classList.toggle("has-alert", rows.length > 0);
-  todayTaskSummary.textContent = `対象 ${rows.length}件`;
-  todayTaskBody.innerHTML = "";
-  todayTaskEmpty.hidden = rows.length > 0;
-  todayTaskListWrap.hidden = rows.length === 0;
-  if (!rows.length) return;
-  rows
-    .sort((a, b) => toSortTimestamp(a.date) - toSortTimestamp(b.date))
-    .forEach((row) => {
-      const tr = document.createElement("tr");
-      tr.className = row.urgencyClass;
-      tr.innerHTML = `
-        <td>${escapeHtml(row.type)}</td>
-        <td>${escapeHtml(row.customerName)}</td>
-        <td>${escapeHtml(row.caseName)}</td>
-        <td>${escapeHtml(row.taskTitle || "-")}</td>
-        <td>${row.dueDateLabel || formatDate(row.date)}</td>
-        <td>${escapeHtml(row.subInfo || "-")}</td>
-        <td><button type="button" class="secondary-btn" data-task-target="${row.target}" data-task-id="${row.id}">編集</button></td>
-        <td>${row.actionButtonHtml || (row.showReminderButton ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${row.id}">督促記録</button>` : "-")}</td>
-      `;
-      todayTaskBody.appendChild(tr);
+  renderTodayTasks();
+}
+
+function buildIntegratedAlerts() {
+  const todayTs = getTodayTimestamp();
+  const threeDaysLater = todayTs + (3 * 86400000);
+  const priorityOrder = { high: 0, medium: 1, low: 2 };
+  const alerts = [];
+  const caseMap = new Map((Array.isArray(state.cases) ? state.cases : []).map((entry) => [entry.id, entry]));
+  const clientMap = new Map((Array.isArray(state.clients) ? state.clients : []).map((entry) => [entry.id, entry]));
+
+  (Array.isArray(state.caseTasks) ? state.caseTasks : []).forEach((task) => {
+    const dueTs = toDateOnlyTimestamp(task?.dueDate);
+    if (task?.status === "完了" || !Number.isFinite(dueTs) || dueTs > todayTs) return;
+    const linkedCase = task?.caseId ? caseMap.get(task.caseId) : null;
+    const linkedClient = linkedCase?.clientId ? clientMap.get(linkedCase.clientId) : null;
+    alerts.push({
+      id: task?.id,
+      type: "task",
+      typeLabel: "案件タスク",
+      priority: "high",
+      title: task?.taskTitle || "未設定",
+      clientName: linkedClient?.name || linkedCase?.customerName || "顧客不明",
+      caseName: linkedCase?.caseName || "案件なし",
+      dueDate: task?.dueDate || "",
+      dateSort: dueTs,
+      dateLabel: task?.dueDate ? formatDate(task.dueDate) : "未設定",
+      subInfo: dueTs < todayTs ? "期限切れ" : "本日期限",
+      target: "case-task",
+      actionButtonHtml: `<button type="button" class="secondary-btn" data-task-target="case-task-complete" data-task-id="${task?.id || ""}">完了</button>`,
+    });
+  });
+
+  (Array.isArray(state.sales) ? state.sales : []).forEach((sale) => {
+    const dueTs = toDateOnlyTimestamp(sale?.dueDate);
+    const isUnpaid = sale?.paymentStatus !== "入金済";
+    if (!isUnpaid || !Number.isFinite(dueTs)) return;
+    const linkedCase = sale?.caseId ? caseMap.get(sale.caseId) : null;
+    const linkedClient = linkedCase?.clientId ? clientMap.get(linkedCase.clientId) : null;
+    if (dueTs <= todayTs) {
+      alerts.push({
+        id: sale?.id,
+        type: "payment",
+        typeLabel: "未入金",
+        priority: "high",
+        title: "未入金",
+        amount: getRemainingAmount(sale),
+        clientName: linkedClient?.name || linkedCase?.customerName || "顧客不明",
+        caseName: linkedCase?.caseName || "案件なし",
+        dueDate: sale?.dueDate || "",
+        dateSort: dueTs,
+        dateLabel: sale?.dueDate ? formatDate(sale.dueDate) : "未設定",
+        subInfo: `残額: ${formatCurrency(getRemainingAmount(sale))}`,
+        target: "sale",
+        actionButtonHtml: isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale?.id || ""}">督促記録</button>` : "-",
+      });
+    }
+    const reminderTs = toDateOnlyTimestamp(sale?.lastReminderDate);
+    const reminderElapsed = Number.isFinite(reminderTs) && ((todayTs - reminderTs) / 86400000 >= 7);
+    if (reminderElapsed) {
+      alerts.push({
+        id: sale?.id,
+        type: "reminder",
+        typeLabel: "督促",
+        priority: "medium",
+        title: "督促必要",
+        clientName: linkedClient?.name || linkedCase?.customerName || "顧客不明",
+        caseName: linkedCase?.caseName || "案件なし",
+        lastReminderDate: sale?.lastReminderDate || "",
+        dateSort: reminderTs,
+        dateLabel: sale?.lastReminderDate ? `最終督促: ${formatDate(sale.lastReminderDate)}` : "最終督促日なし",
+        subInfo: `残額: ${formatCurrency(getRemainingAmount(sale))}`,
+        target: "sale",
+        actionButtonHtml: isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale?.id || ""}">督促記録</button>` : "-",
+      });
+    }
+  });
+
+  (Array.isArray(state.cases) ? state.cases : []).forEach((caseRow) => {
+    if (getStatusCategory(caseRow?.status) === "完了") return;
+    const dueTs = toDateOnlyTimestamp(caseRow?.dueDate);
+    if (!Number.isFinite(dueTs) || dueTs > threeDaysLater) return;
+    const linkedClient = caseRow?.clientId ? clientMap.get(caseRow.clientId) : null;
+    alerts.push({
+      id: caseRow?.id,
+      type: "deadline",
+      typeLabel: "期限",
+      priority: "medium",
+      title: "期限間近",
+      clientName: linkedClient?.name || caseRow?.customerName || "顧客不明",
+      caseName: caseRow?.caseName || "案件なし",
+      dueDate: caseRow?.dueDate || "",
+      dateSort: dueTs,
+      dateLabel: caseRow?.dueDate ? formatDate(caseRow.dueDate) : "未設定",
+      subInfo: formatRemainingDays(Math.floor((dueTs - todayTs) / 86400000)),
+      target: "case",
+    });
+  });
+
+  return alerts
+    .slice()
+    .sort((a, b) => {
+      const priorityDiff = (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99);
+      if (priorityDiff !== 0) return priorityDiff;
+      return (a.dateSort || 0) - (b.dateSort || 0);
     });
 }
 
