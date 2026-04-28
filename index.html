@@ -1195,7 +1195,7 @@
           <p class="meta case-work-meta"></p>
           <p class="meta profit-meta"></p>
         </div>
-        <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
+        <div class="row-actions"><button type="button" class="edit-btn secondary-btn" data-action="edit_case" data-list-action="edit_case">編集</button><button type="button" class="danger-btn delete-btn" data-action="delete_case" data-list-action="delete_case">削除</button></div>
       </li>
     </template>
     <template id="expense-item-template">
@@ -1204,7 +1204,7 @@
           <p class="title"></p>
           <p class="meta"></p>
         </div>
-        <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
+        <div class="row-actions"><button type="button" class="edit-btn secondary-btn" data-action="edit_expense" data-list-action="edit_expense">編集</button><button type="button" class="danger-btn delete-btn" data-action="delete_expense" data-list-action="delete_expense">削除</button></div>
       </li>
     </template>
 
@@ -1215,9 +1215,9 @@
           <p class="meta"></p>
         </div>
         <div class="row-actions">
-          <button type="button" class="toggle-btn secondary-btn">有効/無効</button>
-          <button type="button" class="edit-btn secondary-btn">編集</button>
-          <button type="button" class="danger-btn delete-btn">削除</button>
+          <button type="button" class="toggle-btn secondary-btn" data-action="toggle_fixed_expense" data-list-action="toggle_fixed_expense">有効/無効</button>
+          <button type="button" class="edit-btn secondary-btn" data-action="edit_fixed_expense" data-list-action="edit_fixed_expense">編集</button>
+          <button type="button" class="danger-btn delete-btn" data-action="delete_fixed_expense" data-list-action="delete_fixed_expense">削除</button>
         </div>
       </li>
     </template>
@@ -1229,7 +1229,7 @@
           <p class="meta"></p>
           <p class="meta"></p>
         </div>
-        <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
+        <div class="row-actions"><button type="button" class="edit-btn secondary-btn" data-action="edit_work_template" data-list-action="edit_work_template">編集</button><button type="button" class="danger-btn delete-btn" data-action="delete_work_template" data-list-action="delete_work_template">削除</button></div>
       </li>
     </template>
   </body>
