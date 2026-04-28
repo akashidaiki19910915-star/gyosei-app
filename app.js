@@ -475,7 +475,7 @@ function bindEvents() {
   targetMonthInput?.addEventListener("input", handleTargetMonthChange);
   targetYearInput?.addEventListener("input", handleTargetYearChange);
   aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
-  document.addEventListener("pointerup", handleGlobalPointerAction);
+  document.addEventListener("click", handleGlobalClick);
   document.addEventListener("keydown", handleGlobalKeyAction);
   caseSearchInput?.addEventListener("input", handleCaseSearchInput);
   caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
@@ -561,15 +561,14 @@ function setupActionAttributes() {
   ].forEach(([element, action]) => setActionAttribute(element, action));
 }
 
-async function handleGlobalPointerAction(event) {
-  if (event.button !== 0) return;
+async function handleGlobalClick(event) {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   event.preventDefault();
   const action = button.dataset.action;
   const id = button.dataset.id || null;
   const type = button.dataset.type || null;
-  console.log("GLOBAL ACTION", action, id, button);
+  console.log("CLICK", action, id);
   await dispatchAction({ action, id, type, button, event });
 }
 
@@ -592,6 +591,7 @@ const actionHandlers = {
   "auth.logout": handleLogout,
   "data.refresh": handleManualReload,
   "case.clearAll": handleClearAll,
+  "case.status.filter": ({ type }) => applyCaseStatusFilter(type || "all"),
   "case.status.clear": async () => applyCaseStatusFilter("all"),
   "case.filter.clear": clearCaseFilters,
   "sales.search.clear": clearSalesSearch,
@@ -676,7 +676,7 @@ async function dispatchAction(ctx) {
 
 const KNOWN_DATA_ACTIONS = new Set([
   "tab.activate", "subtab.activate", "diagnostics.subtab.activate", "auth.signup", "auth.logout", "data.refresh",
-  "case.clearAll", "case.status.clear", "case.filter.clear", "sales.search.clear", "expenses.search.clear", "dailyReport.filter.clear",
+  "case.clearAll", "case.status.filter", "case.status.clear", "case.filter.clear", "sales.search.clear", "expenses.search.clear", "dailyReport.filter.clear",
   "loading.forceClose", "backup.exportJson", "csv.export.cases", "csv.export.sales", "csv.export.payments", "csv.export.expenses",
   "csv.export.fixedExpenses", "csv.export.caseDocuments", "csv.export.all", "csv.export.clientAnalysis", "csv.export.referralAnalysis",
   "excel.export", "excel.export.analysis", "estimate.item.add", "estimate.item.remove", "client.edit", "client.delete",
@@ -824,7 +824,7 @@ async function applyAuthState() {
   userLabel.textContent = currentUser.email || "ログイン中";
 
   try {
-    await loadAllDataSafely();
+    await refreshAll();
     resetCaseForm();
     resetCaseTaskForm();
     resetCaseDocumentForm();
@@ -833,7 +833,6 @@ async function applyAuthState() {
     resetExpenseForm();
     resetFixedExpenseForm();
     resetDailyReportForm();
-    safeRender("renderAfterDataChanged", renderAfterDataChanged);
     state.isInitialDataReady = true;
     setDataMutationControlsEnabled(true);
   } finally {
@@ -896,8 +895,7 @@ async function handleManualReload(event) {
   if (manualReloadBtn) manualReloadBtn.disabled = true;
   startLoading("最新データ再読込");
   try {
-    await loadAllDataSafely();
-    renderAfterDataChanged();
+    await refreshAll();
     showAppMessage("最新データを読み込みました", false);
   } catch (error) {
     showAppMessage(`最新データ再読込に失敗しました。${formatSupabaseError(error)}`, true);
@@ -2430,13 +2428,17 @@ async function handleClearAll() {
   await deleteAllData();
 }
 
+async function refreshAll() {
+  await loadAllDataSafely();
+  renderAfterDataChanged();
+}
+
 async function runMutation(actionName, mutationFn, options = {}) {
   startLoading(actionName);
   try {
     clearAppMessage();
     const result = await mutationFn();
-    await loadAllDataSafely();
-    renderAfterDataChanged();
+    await refreshAll();
     if (typeof options.afterSuccess === "function") await options.afterSuccess(result);
     if (typeof options.resetForm === "function") options.resetForm();
     if (options.log) {
@@ -4301,7 +4303,8 @@ function renderStatusSummaryCard() {
     const count = counts[statusKey] || 0;
     button.type = "button";
     button.className = `status-filter-btn status-${toStatusClassKey(statusKey)}`.trim();
-    button.dataset.statusFilter = statusKey;
+    button.dataset.action = "case.status.filter";
+    button.dataset.type = statusKey;
     button.setAttribute("aria-pressed", String(state.caseStatusFilter === statusKey));
     button.innerHTML = `<span>${statusKey}</span><strong>${count}件</strong>`;
     statusSummaryList.appendChild(button);
@@ -5840,7 +5843,7 @@ function renderSales() {
     salesListBody.innerHTML = "";
     const sales = Array.isArray(state.sales) ? state.sales : [];
     const sorted = sales.slice().sort((a, b) => (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0));
-    const keyword = (salesSearchInput?.value || state.salesSearchQuery || "").trim().toLowerCase();
+    const keyword = String(state.salesSearchQuery || "").trim().toLowerCase();
     const filteredSales = sorted.filter((sale) => {
       if (!keyword) return true;
       const caseInfo = state.cases.find((entry) => entry.id === sale.caseId);
