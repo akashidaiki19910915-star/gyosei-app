@@ -375,7 +375,7 @@ const settingsForm = document.getElementById("settings-form");
 let currentUser = null;
 let isLoggingOut = false;
 let eventsBound = false;
-let loadingCount = 0;
+let isLoadingActive = false;
 let loadingTimer = null;
 const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
 const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
@@ -445,12 +445,13 @@ async function initialize() {
       if (isLoggingOut) return;
       try {
         currentUser = sessionState?.user ?? null;
-        await withLoading("認証状態変更", async () => {
-          await applyAuthState();
-        }, { messageTarget: "auth" });
+        console.log("LOADING START", "認証状態変更", "background");
+        await applyAuthState();
       } catch (error) {
         console.error("認証状態の更新に失敗しました。", error);
         showAuthMessage("認証状態の確認に失敗しました。ページを再読み込みしてください。", true);
+      } finally {
+        forceHideLoading();
       }
     });
   } catch (error) {
@@ -8228,14 +8229,13 @@ function setDataMutationControlsEnabled(enabled) {
 
 function updateLoadingOverlay() {
   if (!loadingOverlay) return;
-  const isLoading = loadingCount > 0;
-  loadingOverlay.hidden = !isLoading;
-  loadingOverlay.style.display = isLoading ? "grid" : "none";
+  loadingOverlay.hidden = !isLoadingActive;
+  loadingOverlay.style.display = isLoadingActive ? "grid" : "none";
 }
 
 function startLoading(taskName) {
-  loadingCount += 1;
-  console.log("LOADING START", taskName, loadingCount);
+  isLoadingActive = true;
+  console.log("LOADING START", taskName);
   updateLoadingOverlay();
   if (loadingTimer) window.clearTimeout(loadingTimer);
   loadingTimer = window.setTimeout(() => {
@@ -8245,9 +8245,9 @@ function startLoading(taskName) {
 }
 
 function endLoading(taskName) {
-  loadingCount = Math.max(0, loadingCount - 1);
-  console.log("LOADING END", taskName, loadingCount);
-  if (loadingCount === 0 && loadingTimer) {
+  isLoadingActive = false;
+  console.log("LOADING END", taskName);
+  if (loadingTimer) {
     window.clearTimeout(loadingTimer);
     loadingTimer = null;
   }
@@ -8255,7 +8255,7 @@ function endLoading(taskName) {
 }
 
 function forceHideLoading() {
-  loadingCount = 0;
+  isLoadingActive = false;
   if (loadingTimer) {
     window.clearTimeout(loadingTimer);
     loadingTimer = null;
