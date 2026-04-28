@@ -8532,9 +8532,8 @@ function startLoading(label = "処理中") {
   document.body.classList.add("is-loading");
   console.log("LOADING START", label, loadingCount);
 
-  if (loadingTimer) {
-    clearTimeout(loadingTimer);
-  }
+  clearTimeout(loadingTimer);
+  loadingTimer = null;
 
   loadingTimer = setTimeout(() => {
     console.warn("LOADING FORCE TIMEOUT", label);
@@ -8544,11 +8543,8 @@ function startLoading(label = "処理中") {
 
 function forceHideLoading() {
   loadingCount = 0;
-
-  if (loadingTimer) {
-    clearTimeout(loadingTimer);
-    loadingTimer = null;
-  }
+  clearTimeout(loadingTimer);
+  loadingTimer = null;
 
   if (loadingOverlay) {
     loadingOverlay.hidden = true;
