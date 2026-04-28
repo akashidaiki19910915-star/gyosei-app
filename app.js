@@ -452,12 +452,7 @@ async function initialize() {
 function bindEvents() {
   if (eventsBound) return;
   bindCommaInputFields();
-  tabs.forEach((btn) => btn.addEventListener("click", () => activateTab(btn.dataset.tab)));
-  subtabButtons.forEach((btn) => btn.addEventListener("click", () => activateSubtab(btn.dataset.parentTab, btn.dataset.subtab)));
   bindSubmitWithTracking("authForm", authForm, handleLogin);
-  signupBtn.addEventListener("click", handleSignup);
-  logoutBtn.addEventListener("click", handleLogout);
-  manualReloadBtn?.addEventListener("click", handleManualReload);
 
   bindSubmitWithTracking("clientForm", clientForm, handleClientSubmit);
   bindSubmitWithTracking("caseForm", caseForm, handleCaseSubmit);
@@ -474,56 +469,31 @@ function bindEvents() {
   bindSubmitWithTracking("estimateForm", estimateForm, handleEstimateSubmit);
   bindSubmitWithTracking("settingsForm", settingsForm, handleSettingsSubmit);
 
-  clearBtn.addEventListener("click", handleClearAll);
   reportCaseSelect?.addEventListener("change", syncDailyReportClientFromCase);
   reportClientSelect?.addEventListener("change", syncDailyReportClientLabel);
   clientHistoryClientSelect?.addEventListener("change", renderClientHistory);
   targetMonthInput?.addEventListener("input", handleTargetMonthChange);
   targetYearInput?.addEventListener("input", handleTargetYearChange);
   aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
-  statusFilterClearBtn?.addEventListener("click", () => applyCaseStatusFilter("all"));
-  document.addEventListener("click", handleGlobalListAction);
+  document.addEventListener("click", handleDocumentClickDispatch);
   caseSearchInput?.addEventListener("input", handleCaseSearchInput);
   caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
   caseDeadlineFilterSelect?.addEventListener("change", handleCaseDeadlineFilterChange);
-  caseFilterClearBtn?.addEventListener("click", clearCaseFilters);
   salesSearchInput?.addEventListener("input", handleSalesSearchInput);
-  salesFilterClearBtn?.addEventListener("click", clearSalesSearch);
   expensesSearchInput?.addEventListener("input", handleExpensesSearchInput);
-  expensesFilterClearBtn?.addEventListener("click", clearExpensesSearch);
   dailyReportSearchInput?.addEventListener("input", handleDailyReportSearchInput);
   dailyReportDateFilterSelect?.addEventListener("change", handleDailyReportDateFilterChange);
-  dailyReportFilterClearBtn?.addEventListener("click", clearDailyReportFilters);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") forceHideLoading();
   });
   window.addEventListener("focus", forceHideLoading);
   window.addEventListener("pageshow", forceHideLoading);
-  loadingForceCloseBtn?.addEventListener("click", () => {
-    forceHideLoading();
-    showAppMessage("読み込みを強制解除しました。必要なら再操作してください。", true);
-  });
-  exportCasesCsvBtn?.addEventListener("click", handleExportCasesCsv);
-  exportSalesCsvBtn?.addEventListener("click", handleExportSalesCsv);
-  exportPaymentsCsvBtn?.addEventListener("click", handleExportPaymentsCsv);
-  exportExpensesCsvBtn?.addEventListener("click", handleExportExpensesCsv);
-  exportFixedExpensesCsvBtn?.addEventListener("click", handleExportFixedExpensesCsv);
-  exportCaseDocumentsCsvBtn?.addEventListener("click", handleExportCaseDocumentsCsv);
-  exportAllCsvBtn?.addEventListener("click", handleExportAllCsv);
-  exportClientAnalysisCsvBtn?.addEventListener("click", handleExportClientAnalysisCsv);
-  exportReferralAnalysisCsvBtn?.addEventListener("click", handleExportReferralAnalysisCsv);
   csvImportForm?.addEventListener("submit", handleCsvImportSubmit);
-  exportExcelBtn?.addEventListener("click", handleExportExcel);
-  exportAnalysisExcelBtn?.addEventListener("click", handleExportAnalysisExcel);
   excelImportForm?.addEventListener("submit", handleExcelImportSubmit);
   console.log("BACKUP BUTTON FOUND", !!exportBackupJsonBtn);
-  exportBackupJsonBtn?.addEventListener("click", handleExportBackupJson);
   backupRestoreForm?.addEventListener("submit", handleBackupRestoreSubmit);
-  diagnosticsSubtabButtons.forEach((btn) => btn.addEventListener("click", () => activateDiagnosticsSubtab(btn.dataset.subtab)));
   document.addEventListener("wheel", handleNumberInputWheel, { passive: true });
-  estimateAddItemBtn?.addEventListener("click", () => addEstimateItemRow());
   estimateItemsWrap?.addEventListener("input", handleEstimateItemsInput);
-  estimateItemsWrap?.addEventListener("click", handleEstimateItemsClick);
   caseClientSelect?.addEventListener("change", syncCaseCustomerFromClient);
   caseTemplateSelect?.addEventListener("change", handleCaseTemplateChange);
   estimateClientSelect?.addEventListener("change", syncEstimateCustomerFromClient);
@@ -559,12 +529,85 @@ function bindEvents() {
     state.operationLogToDate = event.target.value || "";
     safeRender("operationLogs", renderOperationLogs);
   });
+  setupActionAttributes();
   eventsBound = true;
   console.log("EVENTS BOUND");
   state.diagnosticLogs = getDiagnosticsLogsFromStorage();
   safeRender("diagnostics", renderDiagnostics);
   activateTab("cases");
 }
+
+
+function setActionAttribute(element, action) {
+  if (!element || !action) return;
+  element.dataset.action = action;
+}
+
+function setupActionAttributes() {
+  tabs.forEach((btn) => setActionAttribute(btn, "tab.activate"));
+  subtabButtons.forEach((btn) => setActionAttribute(btn, "subtab.activate"));
+  diagnosticsSubtabButtons.forEach((btn) => setActionAttribute(btn, "diagnostics.subtab.activate"));
+  [
+    [signupBtn, "auth.signup"], [logoutBtn, "auth.logout"], [manualReloadBtn, "data.reload"], [clearBtn, "case.clearAll"],
+    [statusFilterClearBtn, "case.status.clear"], [caseFilterClearBtn, "case.filter.clear"], [salesFilterClearBtn, "sales.search.clear"],
+    [expensesFilterClearBtn, "expenses.search.clear"], [dailyReportFilterClearBtn, "dailyReport.filter.clear"],
+    [loadingForceCloseBtn, "loading.forceClose"], [exportCasesCsvBtn, "export.csv.cases"], [exportSalesCsvBtn, "export.csv.sales"],
+    [exportPaymentsCsvBtn, "export.csv.payments"], [exportExpensesCsvBtn, "export.csv.expenses"], [exportFixedExpensesCsvBtn, "export.csv.fixedExpenses"],
+    [exportCaseDocumentsCsvBtn, "export.csv.caseDocuments"], [exportAllCsvBtn, "export.csv.all"], [exportClientAnalysisCsvBtn, "export.csv.clientAnalysis"],
+    [exportReferralAnalysisCsvBtn, "export.csv.referralAnalysis"], [exportExcelBtn, "export.excel"], [exportAnalysisExcelBtn, "export.analysis.excel"],
+    [exportBackupJsonBtn, "backup.export.json"], [estimateAddItemBtn, "estimate.item.add"],
+  ].forEach(([element, action]) => setActionAttribute(element, action));
+}
+
+function inferLegacyAction(button) {
+  const mappings = [[".run-diagnostics-btn","diagnostic.run"],[".create-diagnostic-test-data-btn","diagnostic.create"],[".delete-diagnostic-test-data-btn","diagnostic.delete"],[".edit-sale-btn","sale.edit"],[".delete-sale-btn","sale.delete"],[".record-payment-btn","payment.record"],[".record-reminder-btn","reminder.record"],[".edit-expense-btn","expense.edit"],[".delete-expense-btn","expense.delete"],[".delete-payment-btn","payment.delete"],[".estimate-item-remove-btn","estimate.item.remove"]];
+  const match = mappings.find(([selector]) => button.matches(selector));
+  return match ? match[1] : "legacy.global";
+}
+
+async function handleDocumentClickDispatch(e) {
+  const target = e.target.closest("button,[data-action]");
+  if (!target) return;
+  if (!target.dataset.action) target.dataset.action = inferLegacyAction(target);
+  const action = target.closest("[data-action]")?.dataset.action;
+  if (!action) return;
+  await dispatchAction(action, e);
+}
+
+async function dispatchAction(action, e) {
+  console.log("ACTION:", action);
+  const handlers = {
+    "tab.activate": async (event) => activateTab(event.target.closest("[data-action]")?.dataset.tab),
+    "subtab.activate": async (event) => { const node = event.target.closest("[data-action]"); activateSubtab(node?.dataset.parentTab, node?.dataset.subtab); },
+    "diagnostics.subtab.activate": async (event) => activateDiagnosticsSubtab(event.target.closest("[data-action]")?.dataset.subtab),
+    "auth.signup": handleSignup, "auth.logout": handleLogout, "data.reload": handleManualReload, "case.clearAll": handleClearAll,
+    "case.status.clear": async () => applyCaseStatusFilter("all"), "case.filter.clear": clearCaseFilters, "sales.search.clear": clearSalesSearch,
+    "expenses.search.clear": clearExpensesSearch, "dailyReport.filter.clear": clearDailyReportFilters,
+    "loading.forceClose": async () => { forceHideLoading(); showAppMessage("読み込みを強制解除しました。必要なら再操作してください。", true); },
+    "export.csv.cases": handleExportCasesCsv, "export.csv.sales": handleExportSalesCsv, "export.csv.payments": handleExportPaymentsCsv,
+    "export.csv.expenses": handleExportExpensesCsv, "export.csv.fixedExpenses": handleExportFixedExpensesCsv,
+    "export.csv.caseDocuments": handleExportCaseDocumentsCsv, "export.csv.all": handleExportAllCsv,
+    "export.csv.clientAnalysis": handleExportClientAnalysisCsv, "export.csv.referralAnalysis": handleExportReferralAnalysisCsv,
+    "export.excel": handleExportExcel, "export.analysis.excel": handleExportAnalysisExcel, "backup.export.json": handleExportBackupJson,
+    "estimate.item.add": async () => addEstimateItemRow(), "estimate.item.remove": handleEstimateItemRemoveAction,
+    "sale.edit": handleSaleEdit, "sale.delete": handleSaleDelete, "payment.record": handlePaymentRecord, "reminder.record": handleReminderRecord,
+    "expense.edit": handleExpenseEdit, "expense.delete": handleExpenseDelete, "diagnostic.delete": deleteDiagnosticTestData,
+    "diagnostic.create": createDiagnosticTestData, "diagnostic.run": runSystemDiagnostics, "payment.delete": handlePaymentDelete,
+    "legacy.global": handleGlobalListAction,
+  };
+  const handler = handlers[action];
+  if (!handler) { console.error("UNKNOWN ACTION", action); return; }
+  try { await handler(e); } catch (err) { console.error("ACTION ERROR", action, err); showAppMessage("操作に失敗しました", true); }
+}
+
+async function handleSaleEdit(event) { const saleId = event.target.closest("button")?.dataset.saleId || event.target.closest("[data-sale-id]")?.dataset.saleId || event.target.closest("[data-id]")?.dataset.id; if (!saleId) return; await editSale(saleId); }
+async function handleSaleDelete(event) { const saleId = event.target.closest("button")?.dataset.saleId || event.target.closest("[data-sale-id]")?.dataset.saleId || event.target.closest("[data-id]")?.dataset.id; if (!saleId) return; await deleteSale(saleId); }
+async function handlePaymentRecord(event) { const saleId = event.target.closest("button")?.dataset.saleId || event.target.closest("[data-sale-id]")?.dataset.saleId || event.target.closest("[data-id]")?.dataset.id; if (!saleId) return; await handleRecordPayment(saleId); }
+async function handleReminderRecord(event) { const saleId = event.target.closest("button")?.dataset.saleId || event.target.closest("[data-sale-id]")?.dataset.saleId || event.target.closest("[data-id]")?.dataset.id; if (!saleId) return; await handleRecordReminder(saleId); }
+async function handleExpenseEdit(event) { const id = event.target.closest("[data-id]")?.dataset.id; if (!id) return; await editExpense(id); }
+async function handleExpenseDelete(event) { const id = event.target.closest("[data-id]")?.dataset.id; if (!id) return; await deleteExpense(id); }
+async function handlePaymentDelete(event) { const paymentId = event.target.closest("button")?.dataset.paymentId; if (!paymentId) return; await deletePayment(paymentId); }
+async function handleEstimateItemRemoveAction(event) { const btn = event.target.closest("button"); if (!btn) return; btn.closest(".estimate-item-row")?.remove(); if (!estimateItemsWrap.children.length) addEstimateItemRow(); recalcEstimateTotals(); }
 
 function handleAggregationChange(event) {
   const next = event?.target?.value;
@@ -3683,6 +3726,7 @@ function safeRender(name, fn) {
 }
 
 function renderAfterDataChanged() {
+  setupActionAttributes();
   safeRender("clients", renderClients);
   safeRender("clientOptions", renderClientOptions);
   safeRender("clientHistory", renderClientHistory);
@@ -5332,7 +5376,7 @@ function addEstimateItemRow(defaultItem = {}) {
     <input type="text" inputmode="decimal" pattern="[0-9.,]*" data-key="quantity" placeholder="数量" value="${defaultItem.quantity ?? 1}" />
     <input type="text" inputmode="numeric" pattern="[0-9,]*" data-key="unitPrice" placeholder="単価" value="${defaultItem.unitPrice ?? 0}" />
     <p class="meta item-amount">${formatCurrency(defaultItem.amount ?? 0)}</p>
-    <button type="button" class="danger-btn estimate-item-remove-btn">削除</button>
+    <button type="button" class="danger-btn estimate-item-remove-btn" data-action="estimate.item.remove">削除</button>
   `;
   estimateItemsWrap.appendChild(row);
   bindCommaInput(row.querySelector('[data-key="unitPrice"]'));
@@ -5340,14 +5384,6 @@ function addEstimateItemRow(defaultItem = {}) {
 }
 
 function handleEstimateItemsInput() {
-  recalcEstimateTotals();
-}
-
-function handleEstimateItemsClick(event) {
-  const btn = event.target.closest(".estimate-item-remove-btn");
-  if (!btn) return;
-  btn.closest(".estimate-item-row")?.remove();
-  if (!estimateItemsWrap.children.length) addEstimateItemRow();
   recalcEstimateTotals();
 }
 
@@ -6998,7 +7034,7 @@ body {
 </style>
 </head>
 <body>
-  <div class="print-toolbar no-print"><button class="print-btn" onclick="window.print()">印刷 / PDF保存</button></div>
+  <div class="print-toolbar no-print"><button class="print-btn" data-action="print.execute">印刷 / PDF保存</button></div>
   <main class="sheet">
     <h1 class="title">${title}</h1>
     <div class="title-divider" aria-hidden="true"></div>
@@ -7038,6 +7074,12 @@ body {
       </section>
     </section>
   </main>
+<script>
+document.addEventListener("click", (e) => {
+  const action = e.target.closest("[data-action]")?.dataset.action;
+  if (action === "print.execute") window.print();
+});
+</script>
 </body>
 </html>`;
 }
