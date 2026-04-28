@@ -84,7 +84,18 @@ const state = {
   diagnosticLogs: [],
   isInitialDataReady: false,
 };
-const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
+const editState = {
+  clientId: null,
+  caseId: null,
+  estimateId: null,
+  saleId: null,
+  expenseId: null,
+  fixedExpenseId: null,
+  dailyReportId: null,
+  workTemplateId: null,
+  caseTaskId: null,
+  documentId: null,
+};
 
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
@@ -483,9 +494,11 @@ function bindEvents() {
   dailyReportSearchInput?.addEventListener("input", handleDailyReportSearchInput);
   dailyReportDateFilterSelect?.addEventListener("change", handleDailyReportDateFilterChange);
   dailyReportFilterClearBtn?.addEventListener("click", clearDailyReportFilters);
-  document.addEventListener("visibilitychange", handleVisibilityChange);
-  window.addEventListener("focus", handleWindowFocus);
-  window.addEventListener("pageshow", handlePageShow);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") forceHideLoading();
+  });
+  window.addEventListener("focus", forceHideLoading);
+  window.addEventListener("pageshow", forceHideLoading);
   loadingForceCloseBtn?.addEventListener("click", () => {
     forceHideLoading();
     showAppMessage("読み込みを強制解除しました。必要なら再操作してください。", true);
@@ -506,9 +519,6 @@ function bindEvents() {
   console.log("BACKUP BUTTON FOUND", !!exportBackupJsonBtn);
   exportBackupJsonBtn?.addEventListener("click", handleExportBackupJson);
   backupRestoreForm?.addEventListener("submit", handleBackupRestoreSubmit);
-  diagnosticsRunBtn?.addEventListener("click", handleRunDiagnosticsClick);
-  diagnosticsCreateTestDataBtn?.addEventListener("click", handleCreateDiagnosticsTestDataClick);
-  diagnosticsDeleteTestDataBtn?.addEventListener("click", handleDeleteDiagnosticsTestDataClick);
   diagnosticsSubtabButtons.forEach((btn) => btn.addEventListener("click", () => activateDiagnosticsSubtab(btn.dataset.subtab)));
   document.addEventListener("wheel", handleNumberInputWheel, { passive: true });
   estimateAddItemBtn?.addEventListener("click", () => addEstimateItemRow());
@@ -945,6 +955,7 @@ async function runSystemDiagnostics() {
       renderDailyReports();
       return true;
     });
+    forceHideLoading();
     await pushCheck("loading overlay 非表示", () => {
       const overlay = document.getElementById("loading-overlay");
       return !overlay || overlay.hidden || overlay.style.display === "none";
@@ -1066,54 +1077,64 @@ async function handleCreateDiagnosticsTestDataClick(event) {
 
 async function handleDeleteDiagnosticsTestDataClick(event) {
   if (event) event.preventDefault();
+  await deleteDiagnosticTestData();
+}
+
+async function deleteDiagnosticTestData() {
   if (!currentUser) {
     showAppMessage("ログイン状態を確認できません。", true);
     return;
   }
   if (!window.confirm("「診断テスト」を含むデータのみ削除します。実行しますか？")) return;
-  try {
-    await runMutation("診断テストデータ削除", async () => {
-      const { data: targetClients, error: targetClientError } = await sbClient.from("clients")
-        .select("id")
-        .eq("user_id", currentUser.id)
-        .ilike("name", "%診断テスト%");
-      if (targetClientError) throw targetClientError;
-      const clientIds = (targetClients || []).map((entry) => entry.id);
-
-      const { data: targetCases, error: targetCaseError } = await sbClient.from("cases")
-        .select("id")
-        .eq("user_id", currentUser.id)
-        .or("case_name.ilike.%診断テスト%,customer_name.ilike.%診断テスト%");
-      if (targetCaseError) throw targetCaseError;
-      const caseIds = (targetCases || []).map((entry) => entry.id);
-
-      const assertNoDeleteError = (response, label) => {
-        if (response?.error) throw new Error(`${label}の削除に失敗しました: ${response.error.message || response.error}`);
-      };
-
-      if (caseIds.length) {
-        assertNoDeleteError(await sbClient.from("sales").delete().eq("user_id", currentUser.id).in("case_id", caseIds), "売上");
-        assertNoDeleteError(await sbClient.from("case_tasks").delete().eq("user_id", currentUser.id).in("case_id", caseIds).ilike("task_title", "%診断テスト%"), "案件タスク");
-        assertNoDeleteError(await sbClient.from("daily_reports").delete().eq("user_id", currentUser.id).in("case_id", caseIds).ilike("work_content", "%診断テスト%"), "日報");
-        assertNoDeleteError(await sbClient.from("expenses").delete().eq("user_id", currentUser.id).in("case_id", caseIds).ilike("content", "%診断テスト%"), "経費");
-        assertNoDeleteError(await sbClient.from("cases").delete().eq("user_id", currentUser.id).in("id", caseIds), "案件");
+  await runMutation("診断テストデータ削除", async () => {
+    const keyword = "%診断テスト%";
+    const swallowMissingTable = (label, error) => {
+      const message = `${error?.message || ""} ${error?.details || ""}`.toLowerCase();
+      if (message.includes("does not exist") || error?.code === "42P01") {
+        console.error(`${label}テーブルが存在しないためスキップ`, error);
+        return true;
       }
-      if (clientIds.length) {
-        assertNoDeleteError(await sbClient.from("daily_reports").delete().eq("user_id", currentUser.id).in("client_id", clientIds).ilike("work_content", "%診断テスト%"), "日報");
-        assertNoDeleteError(await sbClient.from("clients").delete().eq("user_id", currentUser.id).in("id", clientIds), "顧客");
+      return false;
+    };
+    const execDelete = async (label, fn) => {
+      try {
+        const response = await fn();
+        if (response?.error) throw response.error;
+      } catch (error) {
+        if (!swallowMissingTable(label, error)) throw new Error(`${label}削除に失敗: ${formatSupabaseError(error)}`);
       }
-      return { deletedCaseCount: caseIds.length, deletedClientCount: clientIds.length };
-    }, {
-      successMessage: "診断テストデータを削除しました。",
-      log: {
-        actionType: "診断テストデータ削除",
-        targetType: "diagnostics",
-        targetName: "診断テストデータ",
-      },
-    });
-  } catch (error) {
-    showAppMessage(`診断テストデータ削除に失敗しました。${formatSupabaseError(error)}`, true);
-  }
+    };
+
+    const { data: caseRows, error: caseSelectError } = await sbClient.from("cases").select("id").eq("user_id", currentUser.id).ilike("case_name", keyword);
+    if (caseSelectError) throw caseSelectError;
+    const caseIds = (Array.isArray(caseRows) ? caseRows : []).map((row) => row.id);
+
+    const { data: clientRows, error: clientSelectError } = await sbClient.from("clients").select("id").eq("user_id", currentUser.id).ilike("name", keyword);
+    if (clientSelectError) throw clientSelectError;
+    const clientIds = (Array.isArray(clientRows) ? clientRows : []).map((row) => row.id);
+
+    if (caseIds.length) await execDelete("case_tasks", () => sbClient.from("case_tasks").delete().eq("user_id", currentUser.id).in("case_id", caseIds).ilike("task_title", keyword));
+    if (caseIds.length || clientIds.length) await execDelete("daily_reports", () => sbClient.from("daily_reports").delete().eq("user_id", currentUser.id).or(`work_content.ilike.${keyword}`));
+    if (caseIds.length) await execDelete("expenses", () => sbClient.from("expenses").delete().eq("user_id", currentUser.id).in("case_id", caseIds).ilike("content", keyword));
+    if (caseIds.length) {
+      const { data: saleRows, error: saleSelectError } = await sbClient.from("sales").select("id").eq("user_id", currentUser.id).in("case_id", caseIds);
+      if (saleSelectError && !swallowMissingTable("sales", saleSelectError)) throw saleSelectError;
+      const saleIds = (Array.isArray(saleRows) ? saleRows : []).map((row) => row.id);
+      if (saleIds.length) await execDelete("payments", () => sbClient.from("payments").delete().eq("user_id", currentUser.id).in("sale_id", saleIds));
+    }
+    if (caseIds.length) await execDelete("sales", () => sbClient.from("sales").delete().eq("user_id", currentUser.id).in("case_id", caseIds));
+    if (caseIds.length) await execDelete("case_documents", () => sbClient.from("case_documents").delete().eq("user_id", currentUser.id).in("case_id", caseIds));
+    if (caseIds.length) await execDelete("cases", () => sbClient.from("cases").delete().eq("user_id", currentUser.id).in("id", caseIds).ilike("case_name", keyword));
+    if (clientIds.length) await execDelete("clients", () => sbClient.from("clients").delete().eq("user_id", currentUser.id).in("id", clientIds).ilike("name", keyword));
+    return { caseCount: caseIds.length, clientCount: clientIds.length };
+  }, {
+    successMessage: "診断テストデータを削除しました。",
+    log: {
+      actionType: "診断テストデータ削除",
+      targetType: "diagnostics",
+      targetName: "診断テストデータ",
+    },
+  });
 }
 
 async function loadAllDataSafely() {
@@ -1421,6 +1442,7 @@ async function handleSaleSubmit(event) {
 
   try {
     console.log("SALE SUBMIT FIRED");
+    console.log("SALE EDIT STATE", editState.saleId);
 
     const isEdit = Boolean(editState.saleId);
     const caseId = saleCaseSelect?.value || null;
@@ -1446,7 +1468,7 @@ async function handleSaleSubmit(event) {
     };
     const payload = pickObjectKeys(rawPayload, SALES_MUTATION_COLUMNS);
 
-    console.log("SALE PAYLOAD", payload);
+    console.log("SALE UPDATE PAYLOAD", payload);
 
     await runMutation(isEdit ? "売上更新" : "売上登録", async () => {
       if (isEdit) {
@@ -1482,8 +1504,6 @@ async function handleSaleSubmit(event) {
       afterSuccess: () => {
         activateTab("sales");
         activateSubtab("sales", "list");
-        renderSales();
-        renderAfterDataChanged();
       },
       log: (result) => {
         const caseInfo = state.cases.find((entry) => entry.id === (result?.case_id ?? result?.caseId ?? null));
@@ -1517,6 +1537,7 @@ function setSaleInvoiceNumberDisplay(value = "") {
 async function handleExpenseSubmit(event) {
   event.preventDefault();
   console.log("EXPENSE SUBMIT FIRED");
+  console.log("EXPENSE EDIT STATE", editState.expenseId);
   if (!currentUser || !expenseForm) return;
 
   const expenseDate = expenseForm.elements.expenseDate.value;
@@ -1540,7 +1561,7 @@ async function handleExpenseSubmit(event) {
   const taskName = editState.expenseId ? "経費更新" : "経費登録";
   console.log("EDIT STATE", editState);
   console.log("ACTION START", taskName, editState.expenseId || "new");
-  console.log("PAYLOAD", payload);
+  console.log("EXPENSE UPDATE PAYLOAD", payload);
   try {
     await runMutation(taskName, async () => {
       if (editState.expenseId) {
@@ -1755,7 +1776,7 @@ async function handleCaseListAction(event) {
     return;
   }
 
-  if (btn.classList.contains("edit-btn")) {
+  if (btn.classList.contains("edit-btn") || btn.classList.contains("edit-case-btn")) {
     await startCaseEdit(id);
     return;
   }
@@ -1768,7 +1789,7 @@ async function handleCaseListAction(event) {
     return;
   }
 
-  if (btn.classList.contains("delete-btn")) {
+  if (btn.classList.contains("delete-btn") || btn.classList.contains("delete-case-btn")) {
     await deleteCase(id);
   }
 }
@@ -1859,12 +1880,12 @@ async function handleCaseDocumentSubmit(event) {
   if (!currentUser || !caseDocumentForm || !ensureInitialDataReady("書類登録")) return;
   const payload = buildCaseDocumentPayloadFromForm();
   if (!payload.document_name) return;
-  const isEdit = Boolean(editState.caseDocumentId);
+  const isEdit = Boolean(editState.documentId);
   const taskName = isEdit ? "書類更新" : "書類登録";
   try {
     await runMutation(taskName, async () => {
       if (isEdit) {
-        const { data, error } = await sbClient.from("case_documents").update(payload).eq("id", editState.caseDocumentId).eq("user_id", currentUser.id).select().single();
+        const { data, error } = await sbClient.from("case_documents").update(payload).eq("id", editState.documentId).eq("user_id", currentUser.id).select().single();
         if (error) throw error;
         if (!data) throw new Error("更新結果を取得できませんでした。");
         return data;
@@ -1889,7 +1910,7 @@ async function handleCaseDocumentSubmit(event) {
 async function handleCaseDocumentsListAction(event) {
   const button = event.target.closest("button");
   if (!(button instanceof HTMLButtonElement)) return;
-  const id = button.dataset.caseDocumentId || button.closest("[data-id]")?.dataset.id;
+  const id = button.dataset.documentId || button.dataset.caseDocumentId || button.closest("[data-id]")?.dataset.id;
   if (!id) return;
   if (button.classList.contains("edit-btn")) {
     startCaseDocumentEdit(id);
@@ -1900,10 +1921,10 @@ async function handleCaseDocumentsListAction(event) {
   }
 }
 
-function startCaseDocumentEdit(caseDocumentId) {
-  const target = state.caseDocuments.find((entry) => entry.id === caseDocumentId);
+function startCaseDocumentEdit(documentId) {
+  const target = state.caseDocuments.find((entry) => entry.id === documentId);
   if (!target || !caseDocumentForm) return;
-  editState.caseDocumentId = target.id;
+  editState.documentId = target.id;
   caseDocumentForm.elements.caseDocumentCaseId.value = target.caseId || "";
   caseDocumentForm.elements.caseDocumentName.value = target.documentName || "";
   caseDocumentForm.elements.caseDocumentStatus.value = normalizeCaseDocumentStatus(target.status);
@@ -1916,19 +1937,19 @@ function startCaseDocumentEdit(caseDocumentId) {
   activateTab("cases");
 }
 
-async function deleteCaseDocument(caseDocumentId) {
-  if (!currentUser || !caseDocumentId) return;
+async function deleteCaseDocument(documentId) {
+  if (!currentUser || !documentId) return;
   if (!window.confirm("この書類データを削除しますか？")) return;
   try {
     await runMutation("書類削除", async () => {
-      const { data, error } = await sbClient.from("case_documents").delete().eq("id", caseDocumentId).eq("user_id", currentUser.id).select().single();
+      const { data, error } = await sbClient.from("case_documents").delete().eq("id", documentId).eq("user_id", currentUser.id).select().single();
       if (error) throw error;
       if (!data) throw new Error("削除結果を取得できませんでした。");
       return data;
     }, {
       successMessage: "書類を削除しました。",
       afterSuccess: () => {
-        if (editState.caseDocumentId === caseDocumentId) resetCaseDocumentForm();
+        if (editState.documentId === documentId) resetCaseDocumentForm();
       },
     });
   } catch (error) {
@@ -1964,11 +1985,11 @@ async function handleWorkTemplateListAction(event) {
   if (!item || !currentUser) return;
   const id = item.dataset.id;
   if (!id) return;
-  if (btn.classList.contains("edit-btn")) {
+  if (btn.classList.contains("edit-btn") || btn.classList.contains("edit-sale-btn")) {
     startWorkTemplateEdit(id);
     return;
   }
-  if (btn.classList.contains("delete-btn")) {
+  if (btn.classList.contains("delete-btn") || btn.classList.contains("delete-sale-btn")) {
     await deleteWorkTemplate(id);
   }
 }
@@ -1999,12 +2020,12 @@ async function handleSalesListAction(event) {
     return;
   }
 
-  if (btn.classList.contains("edit-btn")) {
+  if (btn.classList.contains("edit-btn") || btn.classList.contains("edit-expense-btn")) {
     await editSale(id);
     return;
   }
 
-  if (btn.classList.contains("delete-btn")) {
+  if (btn.classList.contains("delete-btn") || btn.classList.contains("delete-expense-btn")) {
     await deleteSale(id);
     return;
   }
@@ -2019,6 +2040,18 @@ async function handleSalesListAction(event) {
 async function handleGlobalListAction(event) {
   const button = event.target.closest("button");
   if (!(button instanceof HTMLButtonElement)) return;
+  if (button.matches(".run-diagnostics-btn")) {
+    await handleRunDiagnosticsClick(event);
+    return;
+  }
+  if (button.matches(".create-diagnostic-test-data-btn")) {
+    await handleCreateDiagnosticsTestDataClick(event);
+    return;
+  }
+  if (button.matches(".delete-diagnostic-test-data-btn")) {
+    await deleteDiagnosticTestData();
+    return;
+  }
 
   if (button.closest("#status-summary-list")) {
     handleStatusSummaryClick(event);
@@ -2097,26 +2130,26 @@ async function handleGlobalListAction(event) {
     return;
   }
 
-  if (button.classList.contains("delete-sale-btn")) {
+  if (button.matches(".delete-sale-btn")) {
     const saleId = button.dataset.saleId || button.closest("[data-id]")?.dataset.id;
     console.log("DELETE SALE CLICKED", saleId);
     if (!saleId) return;
     await deleteSale(saleId);
     return;
   }
-  if (button.classList.contains("edit-sale-btn")) {
+  if (button.matches(".edit-sale-btn")) {
     const saleId = button.dataset.saleId || button.closest("[data-id]")?.dataset.id;
     if (!saleId) return;
     await editSale(saleId);
     return;
   }
-  if (button.classList.contains("record-payment-btn")) {
+  if (button.matches(".record-payment-btn")) {
     const saleId = button.dataset.saleId || button.closest("[data-sale-id]")?.dataset.saleId || button.closest("[data-id]")?.dataset.id;
     if (!saleId) return;
     await handleRecordPayment(saleId);
     return;
   }
-  if (button.classList.contains("record-reminder-btn")) {
+  if (button.matches(".record-reminder-btn")) {
     const saleId = button.dataset.saleId || button.closest("[data-sale-id]")?.dataset.saleId || button.closest("[data-id]")?.dataset.id;
     if (!saleId) return;
     await handleRecordReminder(saleId);
@@ -2200,9 +2233,9 @@ function handleTodayTaskAction(event) {
 function handleDocumentAlertAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
-  const caseDocumentId = btn.dataset.caseDocumentId;
-  if (!caseDocumentId) return;
-  startCaseDocumentEdit(caseDocumentId);
+  const documentId = btn.dataset.documentId || btn.dataset.caseDocumentId;
+  if (!documentId) return;
+  startCaseDocumentEdit(documentId);
 }
 
 async function handleCaseTaskSubmit(event) {
@@ -2252,7 +2285,7 @@ function handleCaseTaskListAction(event) {
     startCaseTaskEdit(taskId);
     return;
   }
-  if (btn.classList.contains("complete-case-task-btn")) {
+  if (btn.classList.contains("complete-case-task-btn") || btn.classList.contains("complete-task-btn")) {
     completeCaseTask(taskId).catch(() => {});
     return;
   }
@@ -2624,42 +2657,30 @@ async function handleClearAll() {
 
 async function runMutation(actionName, mutationFn, options = {}) {
   startLoading(actionName);
-  console.log("MUTATION START", actionName);
   try {
     clearAppMessage();
     const result = await mutationFn();
-    console.log("MUTATION RESULT", result);
-    console.log("BEFORE LOAD sales count", state.sales?.length);
     await loadAllDataSafely();
-    console.log("AFTER LOAD sales count", state.sales?.length);
-    console.log("BEFORE RENDER");
     renderAfterDataChanged();
-    console.log("AFTER RENDER");
-    console.log("MUTATION SUCCESS", actionName);
-    if (typeof options.resetForm === "function") options.resetForm();
     if (typeof options.afterSuccess === "function") options.afterSuccess(result);
-    const logPayload = options.log === false
-      ? null
-      : (resolveOperationLogOption(options.log, result) || {
-        actionType: actionName,
-        targetType: "mutation",
-        targetName: actionName,
-      });
-    if (logPayload) {
-      addOperationLog({
-        actionType: actionName,
-        ...logPayload,
-      });
+    if (typeof options.resetForm === "function") options.resetForm();
+    if (options.log) {
+      try {
+        const logPayload = typeof options.log === "function" ? options.log(result) : options.log;
+        await addOperationLog(logPayload);
+      } catch (logError) {
+        console.error("operation log failed", logError);
+      }
     }
     showAppMessage(options.successMessage || `${actionName}が完了しました。`, false);
     return result;
   } catch (error) {
-    console.error(`${actionName}に失敗しました`, error);
+    console.error(`${actionName} failed`, error);
     showAppMessage(
-      `${actionName}に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.trim(),
+      `${actionName}に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`,
       true
     );
-    throw error;
+    return null;
   } finally {
     forceHideLoading();
   }
@@ -5022,7 +5043,7 @@ function renderCaseTasksTable() {
       <td>${escapeHtml(entry.status)}</td>
       <td>${formatDate(entry.completedAt)}</td>
       <td><button type="button" class="secondary-btn edit-case-task-btn" data-task-id="${entry.id}">編集</button></td>
-      <td>${entry.status !== "完了" ? `<button type="button" class="secondary-btn complete-case-task-btn" data-task-id="${entry.id}">完了</button>` : "-"}</td>
+      <td>${entry.status !== "完了" ? `<button type="button" class="secondary-btn complete-case-task-btn complete-task-btn" data-task-id="${entry.id}">完了</button>` : "-"}</td>
       <td><button type="button" class="danger-btn delete-case-task-btn" data-task-id="${entry.id}">削除</button></td>
     `;
     caseTasksBody.appendChild(tr);
@@ -5609,8 +5630,8 @@ function renderEstimates() {
         </div>
       </div>
       <div class="row-actions estimate-card-actions">
-        <button type="button" class="secondary-btn estimate-edit-btn">編集</button>
-        <button type="button" class="danger-btn estimate-delete-btn">削除</button>
+        <button type="button" class="secondary-btn estimate-edit-btn edit-estimate-btn">編集</button>
+        <button type="button" class="danger-btn estimate-delete-btn delete-estimate-btn">削除</button>
         <button type="button" class="secondary-btn create-case-btn" ${isCaseCreated ? "disabled" : ""}>${isCaseCreated ? "案件化済み" : "案件化"}</button>
         <button type="button" class="secondary-btn estimate-estimate-print-btn">見積書出力</button>
         <button type="button" class="secondary-btn estimate-print-btn">請求書出力</button>
@@ -6342,7 +6363,7 @@ function resetEditMode(target) {
   if (target === "dailyReport") editState.dailyReportId = null;
   if (target === "estimate") editState.estimateId = null;
   if (target === "caseTask") editState.caseTaskId = null;
-  if (target === "caseDocument") editState.caseDocumentId = null;
+  if (target === "caseDocument") editState.documentId = null;
 }
 
 function normalizeEstimateStatus(status) {
@@ -8858,7 +8879,7 @@ function resetEditState() {
   editState.dailyReportId = null;
   editState.estimateId = null;
   editState.caseTaskId = null;
-  editState.caseDocumentId = null;
+  editState.documentId = null;
 }
 
 function clearAppState() {

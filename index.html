@@ -1174,9 +1174,9 @@
               <h2>システム診断</h2>
               <p class="meta">機能追加前のE2E動作確認用です。通常業務データは変更しません。</p>
               <div class="csv-actions">
-                <button id="diagnostics-run-btn" type="button">システム診断を実行</button>
-                <button id="diagnostics-create-test-data-btn" type="button" class="secondary-btn">診断テストデータ作成</button>
-                <button id="diagnostics-delete-test-data-btn" type="button" class="danger-btn">診断テストデータ削除</button>
+                <button id="diagnostics-run-btn" type="button" class="run-diagnostics-btn">システム診断を実行</button>
+                <button id="diagnostics-create-test-data-btn" type="button" class="secondary-btn create-diagnostic-test-data-btn">診断テストデータ作成</button>
+                <button id="diagnostics-delete-test-data-btn" type="button" class="danger-btn delete-diagnostic-test-data-btn">診断テストデータ削除</button>
               </div>
               <p id="diagnostics-summary" class="filter-count">未実行</p>
               <ul id="diagnostics-results" class="diagnostics-results"></ul>
@@ -1271,7 +1271,7 @@
           <p class="meta case-work-meta"></p>
           <p class="meta profit-meta"></p>
         </div>
-        <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
+        <div class="row-actions"><button type="button" class="edit-btn edit-case-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn delete-case-btn">削除</button></div>
       </li>
     </template>
     <template id="expense-item-template">
@@ -1280,7 +1280,7 @@
           <p class="title"></p>
           <p class="meta"></p>
         </div>
-        <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
+        <div class="row-actions"><button type="button" class="edit-btn edit-expense-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn delete-expense-btn">削除</button></div>
       </li>
     </template>
 
