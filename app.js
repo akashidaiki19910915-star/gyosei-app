@@ -475,7 +475,7 @@ function bindEvents() {
   targetMonthInput?.addEventListener("input", handleTargetMonthChange);
   targetYearInput?.addEventListener("input", handleTargetYearChange);
   aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
-  document.addEventListener("click", handleDocumentClickDispatch);
+  document.addEventListener("click", handleGlobalClick);
   caseSearchInput?.addEventListener("input", handleCaseSearchInput);
   caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
   caseDeadlineFilterSelect?.addEventListener("change", handleCaseDeadlineFilterChange);
@@ -560,94 +560,102 @@ function setupActionAttributes() {
   ].forEach(([element, action]) => setActionAttribute(element, action));
 }
 
-async function handleDocumentClickDispatch(e) {
-  const button = e.target.closest("[data-action]");
+async function handleGlobalClick(event) {
+  const button = event.target.closest("[data-action]");
   if (!button) return;
-  await dispatchAction(e);
+  event.preventDefault();
+  const action = button.dataset.action;
+  const id = button.dataset.id || null;
+  const type = button.dataset.type || null;
+  await dispatchAction({ action, id, type, button, event });
 }
 
-async function dispatchAction(event) {
-  const button = event.target.closest("[data-action]");
-  const action = button?.dataset.action;
-  const id = button?.dataset.id || null;
-  const type = button?.dataset.type || null;
-  if (!action) return;
-  const actionHandlers = {
-    "tab.activate": async ({ button: node }) => activateTab(node?.dataset.tab),
-    "subtab.activate": async ({ button: node }) => activateSubtab(node?.dataset.parentTab, node?.dataset.subtab),
-    "diagnostics.subtab.activate": async ({ button: node }) => activateDiagnosticsSubtab(node?.dataset.subtab),
-    "auth.signup": handleSignup,
-    "auth.logout": handleLogout,
-    "data.refresh": handleManualReload,
-    "case.clearAll": handleClearAll,
-    "case.status.clear": async () => applyCaseStatusFilter("all"),
-    "case.filter.clear": clearCaseFilters,
-    "sales.search.clear": clearSalesSearch,
-    "expenses.search.clear": clearExpensesSearch,
-    "dailyReport.filter.clear": clearDailyReportFilters,
-    "loading.forceClose": async () => { forceHideLoading(); showAppMessage("読み込みを強制解除しました。必要なら再操作してください。", true); },
-    "backup.exportJson": handleExportBackupJson,
-    "csv.export.cases": handleExportCasesCsv,
-    "csv.export.sales": handleExportSalesCsv,
-    "csv.export.payments": handleExportPaymentsCsv,
-    "csv.export.expenses": handleExportExpensesCsv,
-    "csv.export.fixedExpenses": handleExportFixedExpensesCsv,
-    "csv.export.caseDocuments": handleExportCaseDocumentsCsv,
-    "csv.export.all": handleExportAllCsv,
-    "csv.export.clientAnalysis": handleExportClientAnalysisCsv,
-    "csv.export.referralAnalysis": handleExportReferralAnalysisCsv,
-    "excel.export": handleExportExcel,
-    "excel.export.analysis": handleExportAnalysisExcel,
-    "estimate.item.add": async () => addEstimateItemRow(),
-    "estimate.item.remove": handleEstimateItemRemoveAction,
-    "client.edit": async ({ id: targetId }) => startClientEdit(targetId),
-    "client.delete": async ({ id: targetId }) => deleteClient(targetId),
-    "case.edit": async ({ id: targetId }) => startCaseEdit(targetId),
-    "case.delete": async ({ id: targetId }) => deleteCase(targetId),
-    "case.printInvoice": async ({ id: targetId }) => openInvoicePrintPreviewFromCase(targetId),
-    "case.exportInvoiceExcel": async ({ id: targetId }) => exportInvoiceDataForCase(targetId),
-    "caseTask.edit": async ({ id: targetId }) => startCaseTaskEdit(targetId),
-    "task.complete": async ({ id: targetId }) => completeCaseTask(targetId),
-    "task.delete": async ({ id: targetId }) => deleteCaseTask(targetId),
-    "document.edit": async ({ id: targetId }) => startCaseDocumentEdit(targetId),
-    "document.delete": async ({ id: targetId }) => deleteCaseDocument(targetId),
-    "workTemplate.edit": async ({ id: targetId }) => startWorkTemplateEdit(targetId),
-    "workTemplate.delete": async ({ id: targetId }) => deleteWorkTemplate(targetId),
-    "estimate.edit": async ({ id: targetId }) => startEstimateEdit(targetId),
-    "estimate.delete": async ({ id: targetId }) => deleteEstimate(targetId),
-    "estimate.createCase": async ({ id: targetId }) => handleCreateCaseFromEstimate(targetId),
-    "estimate.createInvoice": async ({ id: targetId }) => handleCreateInvoiceFromEstimate(targetId),
-    "estimate.print": async ({ id: targetId }) => openEstimatePrintPreview(targetId),
-    "invoice.print.fromEstimate": async ({ id: targetId }) => openInvoicePrintPreviewFromEstimate(targetId),
-    "estimate.excel": async ({ id: targetId }) => exportEstimateDataForEstimate(targetId),
-    "invoice.excel.fromEstimate": async ({ id: targetId }) => exportInvoiceDataForEstimate(targetId),
-    "sale.edit": async ({ id: targetId }) => editSale(targetId),
-    "sale.delete": async ({ id: targetId }) => deleteSale(targetId),
-    "sale.registerFromCase": async ({ id: targetId }) => openSaleFormForCase(targetId),
-    "payment.record": async ({ id: targetId }) => handleRecordPayment(targetId),
-    "payment.delete": async ({ id: targetId }) => deletePayment(targetId),
-    "reminder.record": async ({ id: targetId }) => handleRecordReminder(targetId),
-    "expense.edit": async ({ id: targetId }) => editExpense(targetId),
-    "expense.delete": async ({ id: targetId }) => deleteExpense(targetId),
-    "fixedExpense.edit": async ({ id: targetId }) => editFixedExpense(targetId),
-    "fixedExpense.delete": async ({ id: targetId }) => deleteFixedExpense(targetId),
-    "fixedExpense.toggle": async ({ id: targetId }) => toggleFixedExpense(targetId),
-    "dailyReport.edit": async ({ id: targetId }) => editDailyReport(targetId),
-    "dailyReport.delete": async ({ id: targetId }) => deleteDailyReport(targetId),
-    "diagnostic.run": runSystemDiagnostics,
-    "diagnostic.createTestData": createDiagnosticTestData,
-    "diagnostic.deleteTestData": deleteDiagnosticTestData,
-    "deadline.filter": async ({ type: filter }) => applyCaseDeadlineFilter(filter || "all", { activateCases: true }),
-    "dataIntegrity.select": async ({ type: key }) => { state.selectedIntegrityCheckKey = key || ""; safeRender("dataIntegrity", renderDataIntegrityCheck); },
-    "task.open": async ({ id: targetId, type: targetType }) => openTodayTaskTarget(targetType, targetId),
-  };
-  const handler = actionHandlers[action];
+const actionHandlers = {
+  "tab.activate": async ({ button }) => activateTab(button?.dataset.tab),
+  "subtab.activate": async ({ button }) => activateSubtab(button?.dataset.parentTab, button?.dataset.subtab),
+  "diagnostics.subtab.activate": async ({ button }) => activateDiagnosticsSubtab(button?.dataset.subtab),
+  "auth.signup": handleSignup,
+  "auth.logout": handleLogout,
+  "data.refresh": handleManualReload,
+  "case.clearAll": handleClearAll,
+  "case.status.clear": async () => applyCaseStatusFilter("all"),
+  "case.filter.clear": clearCaseFilters,
+  "sales.search.clear": clearSalesSearch,
+  "expenses.search.clear": clearExpensesSearch,
+  "dailyReport.filter.clear": clearDailyReportFilters,
+  "loading.forceClose": async () => { forceHideLoading(); showAppMessage("読み込みを強制解除しました。必要なら再操作してください。", true); },
+  "backup.exportJson": handleExportBackupJson,
+  "csv.export.cases": handleExportCasesCsv,
+  "csv.export.sales": handleExportSalesCsv,
+  "csv.export.payments": handleExportPaymentsCsv,
+  "csv.export.expenses": handleExportExpensesCsv,
+  "csv.export.fixedExpenses": handleExportFixedExpensesCsv,
+  "csv.export.caseDocuments": handleExportCaseDocumentsCsv,
+  "csv.export.all": handleExportAllCsv,
+  "csv.export.clientAnalysis": handleExportClientAnalysisCsv,
+  "csv.export.referralAnalysis": handleExportReferralAnalysisCsv,
+  "excel.export": handleExportExcel,
+  "excel.export.analysis": handleExportAnalysisExcel,
+  "estimate.item.add": async () => addEstimateItemRow(),
+  "estimate.item.remove": handleEstimateItemRemoveAction,
+  "client.edit": ({ id }) => startClientEdit(id),
+  "client.delete": ({ id }) => deleteClient(id),
+  "case.edit": ({ id }) => startCaseEdit(id),
+  "case.delete": ({ id }) => deleteCase(id),
+  "case.printInvoice": ({ id }) => openInvoicePrintPreviewFromCase(id),
+  "case.exportInvoiceExcel": ({ id }) => exportInvoiceDataForCase(id),
+  "caseTask.edit": ({ id }) => startCaseTaskEdit(id),
+  "task.edit": ({ id }) => startCaseTaskEdit(id),
+  "task.complete": ({ id }) => completeCaseTask(id),
+  "task.delete": ({ id }) => deleteCaseTask(id),
+  "document.edit": ({ id }) => startCaseDocumentEdit(id),
+  "document.delete": ({ id }) => deleteCaseDocument(id),
+  "workTemplate.edit": ({ id }) => startWorkTemplateEdit(id),
+  "workTemplate.delete": ({ id }) => deleteWorkTemplate(id),
+  "estimate.edit": ({ id }) => startEstimateEdit(id),
+  "estimate.delete": ({ id }) => deleteEstimate(id),
+  "estimate.createCase": ({ id }) => handleCreateCaseFromEstimate(id),
+  "estimate.createInvoice": ({ id }) => handleCreateInvoiceFromEstimate(id),
+  "estimate.print": ({ id }) => openEstimatePrintPreview(id),
+  "invoice.print.fromEstimate": ({ id }) => openInvoicePrintPreviewFromEstimate(id),
+  "estimate.excel": ({ id }) => exportEstimateDataForEstimate(id),
+  "invoice.excel.fromEstimate": ({ id }) => exportInvoiceDataForEstimate(id),
+  "sale.edit": ({ id }) => editSale(id),
+  "sale.delete": ({ id }) => deleteSale(id),
+  "sale.registerFromCase": ({ id }) => openSaleFormForCase(id),
+  "payment.record": ({ id }) => handleRecordPayment(id),
+  "payment.delete": ({ id }) => deletePayment(id),
+  "reminder.record": ({ id }) => handleRecordReminder(id),
+  "expense.edit": ({ id }) => editExpense(id),
+  "expense.delete": ({ id }) => deleteExpense(id),
+  "fixedExpense.edit": ({ id }) => editFixedExpense(id),
+  "fixedExpense.delete": ({ id }) => deleteFixedExpense(id),
+  "fixedExpense.toggle": ({ id }) => toggleFixedExpense(id),
+  "dailyReport.edit": ({ id }) => editDailyReport(id),
+  "dailyReport.delete": ({ id }) => deleteDailyReport(id),
+  "diagnostic.run": () => runSystemDiagnostics(),
+  "diagnostic.createTestData": () => createDiagnosticTestData(),
+  "diagnostic.deleteTestData": () => deleteDiagnosticTestData(),
+  "deadline.filter": ({ type }) => applyCaseDeadlineFilter(type || "all", { activateCases: true }),
+  "dataIntegrity.select": ({ type }) => { state.selectedIntegrityCheckKey = type || ""; safeRender("dataIntegrity", renderDataIntegrityCheck); },
+  "task.open": ({ id, type }) => openTodayTaskTarget(type, id),
+};
+
+async function dispatchAction(ctx) {
+  const handler = actionHandlers[ctx.action];
   if (!handler) {
-    console.error("未登録のdata-actionです", action, button);
-    showAppMessage(`未登録の操作です: ${action}`, true);
+    console.error("未登録data-action", ctx);
+    showAppMessage(`未登録の操作です: ${ctx.action}`, true);
     return;
   }
-  try { await handler({ event, button, id, type, action }); } catch (err) { console.error("ACTION ERROR", action, err); showAppMessage("操作に失敗しました", true); }
+  try {
+    await handler(ctx);
+  } catch (error) {
+    console.error("dispatchAction error", ctx.action, error);
+    showAppMessage(`操作に失敗しました: ${ctx.action} ${error?.message || ""}`, true);
+  } finally {
+    forceHideLoading();
+  }
 }
 
 const KNOWN_DATA_ACTIONS = new Set([
@@ -656,7 +664,7 @@ const KNOWN_DATA_ACTIONS = new Set([
   "loading.forceClose", "backup.exportJson", "csv.export.cases", "csv.export.sales", "csv.export.payments", "csv.export.expenses",
   "csv.export.fixedExpenses", "csv.export.caseDocuments", "csv.export.all", "csv.export.clientAnalysis", "csv.export.referralAnalysis",
   "excel.export", "excel.export.analysis", "estimate.item.add", "estimate.item.remove", "client.edit", "client.delete",
-  "case.edit", "case.delete", "case.printInvoice", "case.exportInvoiceExcel", "caseTask.edit", "task.complete", "task.delete",
+  "case.edit", "case.delete", "case.printInvoice", "case.exportInvoiceExcel", "caseTask.edit", "task.edit", "task.complete", "task.delete",
   "document.edit", "document.delete", "workTemplate.edit", "workTemplate.delete", "estimate.edit", "estimate.delete",
   "estimate.createCase", "estimate.createInvoice", "estimate.print", "invoice.print.fromEstimate", "estimate.excel",
   "invoice.excel.fromEstimate", "sale.edit", "sale.delete", "sale.registerFromCase", "payment.record", "payment.delete",
@@ -665,13 +673,6 @@ const KNOWN_DATA_ACTIONS = new Set([
   "deadline.filter", "dataIntegrity.select", "task.open",
 ]);
 
-async function handleSaleEdit(event) { const saleId = event.target.closest("button")?.dataset.saleId || event.target.closest("[data-sale-id]")?.dataset.saleId || event.target.closest("[data-id]")?.dataset.id; if (!saleId) return; await editSale(saleId); }
-async function handleSaleDelete(event) { const saleId = event.target.closest("button")?.dataset.saleId || event.target.closest("[data-sale-id]")?.dataset.saleId || event.target.closest("[data-id]")?.dataset.id; if (!saleId) return; await deleteSale(saleId); }
-async function handlePaymentRecord(event) { const saleId = event.target.closest("button")?.dataset.saleId || event.target.closest("[data-sale-id]")?.dataset.saleId || event.target.closest("[data-id]")?.dataset.id; if (!saleId) return; await handleRecordPayment(saleId); }
-async function handleReminderRecord(event) { const saleId = event.target.closest("button")?.dataset.saleId || event.target.closest("[data-sale-id]")?.dataset.saleId || event.target.closest("[data-id]")?.dataset.id; if (!saleId) return; await handleRecordReminder(saleId); }
-async function handleExpenseEdit(event) { const id = event.target.closest("[data-id]")?.dataset.id; if (!id) return; await editExpense(id); }
-async function handleExpenseDelete(event) { const id = event.target.closest("[data-id]")?.dataset.id; if (!id) return; await deleteExpense(id); }
-async function handlePaymentDelete(event) { const paymentId = event.target.closest("button")?.dataset.paymentId; if (!paymentId) return; await deletePayment(paymentId); }
 async function handleEstimateItemRemoveAction(event) { const btn = event.target.closest("button"); if (!btn) return; btn.closest(".estimate-item-row")?.remove(); if (!estimateItemsWrap.children.length) addEstimateItemRow(); recalcEstimateTotals(); }
 
 function handleAggregationChange(event) {
@@ -728,27 +729,6 @@ function clearCaseFilters() {
   if (caseSearchInput) caseSearchInput.value = "";
   if (caseDeadlineFilterSelect) caseDeadlineFilterSelect.value = "all";
   safeRender("cases", renderCases);
-}
-
-function handleDeadlineAlertClick(event) {
-  const button = event.target.closest("button");
-  if (!(button instanceof HTMLButtonElement)) return;
-  const filter = button.dataset.deadlineFilter;
-  if (filter) {
-    applyCaseDeadlineFilter(filter, { activateCases: true });
-    return;
-  }
-  const caseId = button.dataset.caseId;
-  if (caseId) startCaseEdit(caseId);
-  const taskId = button.dataset.taskId;
-  if (taskId) startCaseTaskEdit(taskId);
-}
-
-function handleNextActionAlertClick(event) {
-  const button = event.target.closest("button");
-  if (!(button instanceof HTMLButtonElement)) return;
-  const caseId = button.dataset.caseId;
-  if (caseId) startCaseEdit(caseId);
 }
 
 function applyCaseDeadlineFilter(nextFilter, options = {}) {
@@ -1073,6 +1053,8 @@ async function runSystemDiagnostics() {
     await pushCheck("document clickイベント委任存在", () => eventsBound && typeof dispatchAction === "function");
     await pushCheck("フォームsubmitイベント登録状態", () => Object.values(submitBindingState).every((bound) => bound === true));
     await pushCheck("data-actionボタン棚卸し", () => inspectDataActionButtons());
+    await pushCheck("旧クリックイベント残存チェック", () => inspectLegacyClickHandlers());
+    await pushCheck("runMutation未使用DB変更処理チェック", () => inspectMutationRouting());
     await pushCheck("操作ログ読込", () => ({ ok: Array.isArray(state.operationLogs), detail: `${state.operationLogs?.length ?? 0}件` }));
 
     setDiagnosticResult(results);
@@ -1105,6 +1087,41 @@ function inspectDataActionButtons() {
   return {
     ok: unknownActions.length === 0,
     detail: `data-action:${actionButtons.length}件 / 未登録:${unknownActions.length}件 / data-id不足:${missingIdButtons.length}件 / type未指定:${missingTypeButtons.length}件 / submit誤設定:${submitMisconfigured.length}件`,
+  };
+}
+
+function inspectLegacyClickHandlers() {
+  const legacyFunctionNames = [
+    "handleGlobalListAction", "handleClientListAction", "handleCaseListAction", "handleSalesListAction", "handleExpensesListAction",
+    "handleFixedExpensesListAction", "handleDailyReportsListAction", "handleEstimateListAction", "handleCaseTaskListAction",
+    "handleUnpaidListAction", "handleTodayTaskAction", "handleDocumentAlertAction", "handlePendingEstimateAction",
+  ];
+  const remainingLegacyFunctions = legacyFunctionNames.filter((name) => typeof window[name] === "function");
+  const onclickNodes = Array.from(document.querySelectorAll("[onclick]"));
+  return {
+    ok: remainingLegacyFunctions.length === 0 && onclickNodes.length === 0,
+    detail: `旧関数:${remainingLegacyFunctions.length}件 / onclick属性:${onclickNodes.length}件`,
+  };
+}
+
+function inspectMutationRouting() {
+  const mutationFunctionNames = [
+    "handleClientSubmit", "handleCaseSubmit", "handleCaseTaskSubmit", "handleCaseDocumentSubmit", "handleWorkTemplateSubmit",
+    "handleSaleSubmit", "handleExpenseSubmit", "handleFixedExpenseSubmit", "handleDailyReportSubmit", "handleEstimateSubmit",
+    "deleteClient", "deleteCase", "deleteCaseTask", "deleteCaseDocument", "deleteWorkTemplate", "deleteSale", "deleteExpense",
+    "deleteFixedExpense", "deleteDailyReport", "deleteEstimate", "handleRecordPayment", "handleRecordReminder", "deletePayment",
+    "handleCreateCaseFromEstimate", "handleCreateInvoiceFromEstimate", "handleSettingsSubmit", "createDiagnosticTestData", "deleteDiagnosticTestData",
+  ];
+  const missing = mutationFunctionNames.filter((name) => {
+    const fn = window[name];
+    if (typeof fn !== "function") return false;
+    const source = fn.toString();
+    if (!/(insert|update|delete)\(/.test(source)) return false;
+    return !source.includes("runMutation(");
+  });
+  return {
+    ok: missing.length === 0,
+    detail: `runMutation未使用候補:${missing.length}件${missing.length ? ` (${missing.slice(0, 5).join(", ")})` : ""}`,
   };
 }
 
@@ -1865,37 +1882,6 @@ async function handleDailyReportSubmit(event) {
   }
 }
 
-async function handleClientListAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement) || !currentUser) return;
-  const item = btn.closest("[data-id]");
-  const id = item?.dataset.id;
-  if (!id) {
-    showAppMessage("対象データIDを取得できませんでした。", true);
-    return;
-  }
-  if (btn.classList.contains("edit-client-btn")) {
-    const target = state.clients.find((entry) => entry.id === id);
-    if (!target || !clientForm) return;
-    subtabState.clients = "entry";
-    activateTab("clients");
-    editState.clientId = target.id;
-    clientForm.elements.clientName.value = target.name || "";
-    clientForm.elements.clientType.value = target.clientType || "";
-    clientForm.elements.clientAddress.value = target.address || "";
-    clientForm.elements.clientTel.value = target.tel || "";
-    clientForm.elements.clientEmail.value = target.email || "";
-    clientForm.elements.clientReferralSource.value = target.referralSource || "";
-    clientForm.elements.clientMemo.value = target.memo || "";
-    if (clientSubmitBtn) clientSubmitBtn.textContent = "顧客を更新";
-    clientForm.scrollIntoView({ behavior: "smooth", block: "start" });
-    return;
-  }
-  if (btn.classList.contains("delete-client-btn")) {
-    await deleteClient(id);
-  }
-}
-
 function startClientEdit(clientId) {
   const target = state.clients.find((entry) => entry.id === clientId);
   if (!target || !clientForm) return;
@@ -1911,35 +1897,6 @@ function startClientEdit(clientId) {
   clientForm.elements.clientMemo.value = target.memo || "";
   if (clientSubmitBtn) clientSubmitBtn.textContent = "顧客を更新";
   clientForm.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-async function handleCaseListAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement)) return;
-  const item = btn.closest("[data-id]");
-  if (!item || !currentUser) return;
-  const id = item.dataset.id;
-  if (!id) {
-    showAppMessage("対象データIDを取得できませんでした。", true);
-    return;
-  }
-
-  if (btn.classList.contains("edit-btn") || btn.classList.contains("edit-case-btn")) {
-    await startCaseEdit(id);
-    return;
-  }
-  if (btn.classList.contains("case-print-btn")) {
-    openInvoicePrintPreviewFromCase(id);
-    return;
-  }
-  if (btn.classList.contains("case-xlsx-btn")) {
-    exportInvoiceDataForCase(id);
-    return;
-  }
-
-  if (btn.classList.contains("delete-btn") || btn.classList.contains("delete-case-btn")) {
-    await deleteCase(id);
-  }
 }
 
 async function startCaseEdit(caseId) {
@@ -2055,20 +2012,6 @@ async function handleCaseDocumentSubmit(event) {
   }
 }
 
-async function handleCaseDocumentsListAction(event) {
-  const button = event.target.closest("button");
-  if (!(button instanceof HTMLButtonElement)) return;
-  const id = button.dataset.documentId || button.dataset.caseDocumentId || button.closest("[data-id]")?.dataset.id;
-  if (!id) return;
-  if (button.classList.contains("edit-btn")) {
-    startCaseDocumentEdit(id);
-    return;
-  }
-  if (button.classList.contains("delete-btn")) {
-    await deleteCaseDocument(id);
-  }
-}
-
 function startCaseDocumentEdit(documentId) {
   const target = state.caseDocuments.find((entry) => entry.id === documentId);
   if (!target || !caseDocumentForm) return;
@@ -2126,22 +2069,6 @@ function handleCaseTemplateChange(event) {
   }
 }
 
-async function handleWorkTemplateListAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement)) return;
-  const item = btn.closest("[data-id]");
-  if (!item || !currentUser) return;
-  const id = item.dataset.id;
-  if (!id) return;
-  if (btn.classList.contains("edit-btn") || btn.classList.contains("edit-sale-btn")) {
-    startWorkTemplateEdit(id);
-    return;
-  }
-  if (btn.classList.contains("delete-btn") || btn.classList.contains("delete-sale-btn")) {
-    await deleteWorkTemplate(id);
-  }
-}
-
 function startWorkTemplateEdit(templateId) {
   const target = state.workTemplates.find((entry) => entry.id === templateId);
   if (!target || !workTemplateForm) return;
@@ -2156,235 +2083,6 @@ function startWorkTemplateEdit(templateId) {
   workTemplateForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-
-async function handleSalesListAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement)) return;
-  const item = btn.closest("[data-id]");
-  if (!item || !currentUser) return;
-  const id = item.dataset.id;
-  if (!id) {
-    showAppMessage("対象データIDを取得できませんでした。", true);
-    return;
-  }
-
-  if (btn.classList.contains("edit-btn") || btn.classList.contains("edit-expense-btn")) {
-    await editSale(id);
-    return;
-  }
-
-  if (btn.classList.contains("delete-btn") || btn.classList.contains("delete-expense-btn")) {
-    await deleteSale(id);
-    return;
-  }
-  if (btn.classList.contains("delete-payment-btn")) {
-    const paymentId = btn.dataset.paymentId;
-    if (!paymentId) return;
-    await deletePayment(paymentId);
-  }
-
-}
-
-async function handleGlobalListAction(event) {
-  const button = event.target.closest("button");
-  if (!(button instanceof HTMLButtonElement)) return;
-  if (button.matches(".run-diagnostics-btn")) {
-    await handleRunDiagnosticsClick(event);
-    return;
-  }
-  if (button.matches(".create-diagnostic-test-data-btn")) {
-    await handleCreateDiagnosticsTestDataClick(event);
-    return;
-  }
-  if (button.matches(".delete-diagnostic-test-data-btn")) {
-    await deleteDiagnosticTestData();
-    return;
-  }
-
-  if (button.closest("#status-summary-list")) {
-    handleStatusSummaryClick(event);
-    return;
-  }
-  if (button.closest("#deadline-alert-summary") || button.closest("#deadline-alert-body")) {
-    handleDeadlineAlertClick(event);
-    return;
-  }
-  if (button.closest("#next-action-alert-body")) {
-    handleNextActionAlertClick(event);
-    return;
-  }
-  if (button.closest("#today-task-body")) {
-    handleTodayTaskAction(event);
-    return;
-  }
-  if (button.closest("#document-alert-body")) {
-    handleDocumentAlertAction(event);
-    return;
-  }
-  if (button.closest("#pending-estimates-body")) {
-    handlePendingEstimateAction(event);
-    return;
-  }
-  if (button.closest("#data-integrity-list")) {
-    handleDataIntegrityAction(event);
-    return;
-  }
-  if (button.closest("#clients-list")) {
-    await handleClientListAction(event);
-    return;
-  }
-  if (button.closest("#case-list")) {
-    await handleCaseListAction(event);
-    return;
-  }
-  if (button.closest("#case-tasks-body")) {
-    handleCaseTaskListAction(event);
-    return;
-  }
-  if (button.closest("#case-documents-body")) {
-    await handleCaseDocumentsListAction(event);
-    return;
-  }
-  if (button.closest("#work-templates-list")) {
-    await handleWorkTemplateListAction(event);
-    return;
-  }
-  if (button.closest("#estimate-list")) {
-    await handleEstimateListAction(event);
-    return;
-  }
-  if (button.closest("#expenses-list")) {
-    await handleExpensesListAction(event);
-    return;
-  }
-  if (button.closest("#fixed-expenses-list")) {
-    await handleFixedExpensesListAction(event);
-    return;
-  }
-  if (button.closest("#daily-reports-body")) {
-    await handleDailyReportsListAction(event);
-    return;
-  }
-  if (button.closest("#sales-list-body")) {
-    await handleSalesListAction(event);
-    return;
-  }
-  if (button.closest("#unpaid-list-body") || button.closest("#unpaid-alert-body")) {
-    handleUnpaidListAction(event);
-    return;
-  }
-  if (button.closest("#billing-leak-alert-body")) {
-    handleBillingLeakAlertAction(event);
-    return;
-  }
-
-  if (button.matches(".delete-sale-btn")) {
-    const saleId = button.dataset.saleId || button.closest("[data-id]")?.dataset.id;
-    console.log("DELETE SALE CLICKED", saleId);
-    if (!saleId) return;
-    await deleteSale(saleId);
-    return;
-  }
-  if (button.matches(".edit-sale-btn")) {
-    const saleId = button.dataset.saleId || button.closest("[data-id]")?.dataset.id;
-    if (!saleId) return;
-    await editSale(saleId);
-    return;
-  }
-  if (button.matches(".record-payment-btn")) {
-    const saleId = button.dataset.saleId || button.closest("[data-sale-id]")?.dataset.saleId || button.closest("[data-id]")?.dataset.id;
-    if (!saleId) return;
-    await handleRecordPayment(saleId);
-    return;
-  }
-  if (button.matches(".record-reminder-btn")) {
-    const saleId = button.dataset.saleId || button.closest("[data-sale-id]")?.dataset.saleId || button.closest("[data-id]")?.dataset.id;
-    if (!saleId) return;
-    await handleRecordReminder(saleId);
-  }
-}
-
-async function handleExpensesListAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement)) return;
-  const item = btn.closest("[data-id]");
-  if (!item || !currentUser) return;
-  const id = item.dataset.id;
-  if (!id) {
-    showAppMessage("対象データIDを取得できませんでした。", true);
-    return;
-  }
-
-  if (btn.classList.contains("edit-btn")) {
-    await editExpense(id);
-    return;
-  }
-
-  if (btn.classList.contains("delete-btn")) {
-    await deleteExpense(id);
-  }
-}
-
-function handleUnpaidListAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement)) return;
-  const saleId = btn.dataset.saleId;
-  if (!saleId) return;
-  if (btn.classList.contains("edit-sale-btn")) {
-    editSale(saleId).catch(() => {});
-    return;
-  }
-  if (btn.classList.contains("delete-payment-btn")) {
-    const paymentId = btn.dataset.paymentId;
-    if (!paymentId) return;
-    deletePayment(paymentId).catch(() => {});
-  }
-}
-
-function handleTodayTaskAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement)) return;
-  if (btn.classList.contains("record-reminder-btn")) {
-    const saleId = btn.dataset.saleId;
-    if (!saleId) return;
-    handleRecordReminder(saleId).catch(() => {});
-    return;
-  }
-  const taskId = btn.dataset.taskId;
-  const target = btn.dataset.taskTarget;
-  if (!taskId || !target) return;
-  if (target === "case-task-complete") {
-    completeCaseTask(taskId).catch(() => {});
-    return;
-  }
-  if (target === "case") {
-    startCaseEdit(taskId).catch(() => {});
-    return;
-  }
-  if (target === "sale") {
-    editSale(taskId).catch(() => {});
-    return;
-  }
-  if (target === "case-task") {
-    startCaseTaskEdit(taskId);
-    return;
-  }
-  if (target === "case-document") {
-    startCaseDocumentEdit(taskId);
-    return;
-  }
-  if (target === "daily-report") {
-    editDailyReport(taskId).catch(() => {});
-  }
-}
-
-function handleDocumentAlertAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement)) return;
-  const documentId = btn.dataset.documentId || btn.dataset.caseDocumentId;
-  if (!documentId) return;
-  startCaseDocumentEdit(documentId);
-}
 
 function openTodayTaskTarget(target, taskId) {
   if (!taskId || !target) return;
@@ -2433,53 +2131,6 @@ async function handleCaseTaskSubmit(event) {
   } catch (error) {
     showAppMessage(`案件タスク保存に失敗しました。${formatSupabaseError(error)}`, true);
   }
-}
-
-function handleCaseTaskListAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement)) return;
-  const taskId = btn.dataset.taskId;
-  if (!taskId) return;
-  if (btn.classList.contains("edit-case-task-btn")) {
-    startCaseTaskEdit(taskId);
-    return;
-  }
-  if (btn.classList.contains("complete-case-task-btn") || btn.classList.contains("complete-task-btn")) {
-    completeCaseTask(taskId).catch(() => {});
-    return;
-  }
-  if (btn.classList.contains("delete-case-task-btn")) {
-    deleteCaseTask(taskId).catch(() => {});
-  }
-}
-
-function handleBillingLeakAlertAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement)) return;
-  const caseId = btn.dataset.caseId;
-  if (!caseId) return;
-  if (btn.classList.contains("register-sale-btn")) {
-    openSaleFormForCase(caseId);
-  }
-}
-
-function handlePendingEstimateAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement)) return;
-  const estimateId = btn.dataset.estimateId;
-  if (!estimateId) return;
-  if (btn.classList.contains("edit-pending-estimate-btn")) {
-    startEstimateEdit(estimateId).catch(() => {});
-  }
-}
-
-function handleDataIntegrityAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement)) return;
-  const checkKey = btn.dataset.checkKey;
-  if (!checkKey) return;
-  state.selectedIntegrityCheckKey = checkKey;
-  safeRender("dataIntegrity", renderDataIntegrityCheck);
 }
 
 async function handleRecordReminder(saleId) {
@@ -2690,73 +2341,6 @@ async function startFixedExpenseEdit(fixedExpenseId) {
 }
 
 
-async function handleFixedExpensesListAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement)) return;
-  const item = btn.closest("[data-id]");
-  if (!item || !currentUser) return;
-  const id = item.dataset.id;
-  if (!id) {
-    showAppMessage("対象データIDを取得できませんでした。", true);
-    return;
-  }
-
-  if (btn.classList.contains("edit-btn")) {
-    await startFixedExpenseEdit(id);
-    return;
-  }
-
-  if (btn.classList.contains("toggle-btn")) {
-    const target = state.fixedExpenses.find((entry) => entry.id === id);
-    if (!target) return;
-
-    try {
-      await runMutation("固定費更新", async () => {
-        const { data, error } = await sbClient
-          .from("fixed_expenses")
-          .update({ active: !target.active })
-          .eq("id", id)
-          .eq("user_id", currentUser.id)
-          .select()
-          .single();
-        if (error) throw error;
-        if (!data) throw new Error("更新結果を取得できませんでした。");
-        console.log("DB success", "固定費更新");
-        return data;
-      }, {
-        successMessage: "固定費の有効/無効を更新しました。",
-      });
-    } catch (error) {
-      showAppMessage(`固定費更新に失敗しました。${formatSupabaseError(error)}`, true);
-    }
-    return;
-  }
-
-  if (btn.classList.contains("delete-btn")) {
-    await deleteFixedExpense(id);
-  }
-}
-
-async function handleDailyReportsListAction(event) {
-  const btn = event.target.closest("button");
-  if (!(btn instanceof HTMLButtonElement) || !currentUser) return;
-  const item = btn.closest("[data-id]");
-  const id = item?.dataset.id;
-  if (!id) {
-    showAppMessage("対象データIDを取得できませんでした。", true);
-    return;
-  }
-
-  if (btn.classList.contains("edit-daily-report-btn")) {
-    await editDailyReport(id);
-    return;
-  }
-
-  if (btn.classList.contains("delete-daily-report-btn")) {
-    await deleteDailyReport(id);
-  }
-}
-
 async function startDailyReportEdit(dailyReportId) {
     const target = state.dailyReports.find((entry) => entry.id === dailyReportId);
     if (!target) return;
@@ -2821,7 +2405,7 @@ async function runMutation(actionName, mutationFn, options = {}) {
     const result = await mutationFn();
     await loadAllDataSafely();
     renderAfterDataChanged();
-    if (typeof options.afterSuccess === "function") options.afterSuccess(result);
+    if (typeof options.afterSuccess === "function") await options.afterSuccess(result);
     if (typeof options.resetForm === "function") options.resetForm();
     if (options.log) {
       try {
@@ -5381,10 +4965,8 @@ function renderWorkTemplates() {
     title.textContent = entry.name;
     if (metas[0]) metas[0].textContent = `標準期限: ${Number.isFinite(entry.defaultDueDays) ? `${entry.defaultDueDays}日後` : "未設定"} / 必要書類: ${truncateText(entry.requiredDocuments || "未設定", 80)}`;
     if (metas[1]) metas[1].textContent = `標準タスク: ${truncateText(entry.defaultTasks || "未設定", 90)} / メモ: ${truncateText(entry.memo || "未設定", 60)}`;
-    node.querySelector(".edit-btn")?.setAttribute("data-action", "workTemplate.edit");
-    node.querySelector(".edit-btn")?.setAttribute("data-id", entry.id);
-    node.querySelector(".delete-btn")?.setAttribute("data-action", "workTemplate.delete");
-    node.querySelector(".delete-btn")?.setAttribute("data-id", entry.id);
+    node.querySelector('[data-action="workTemplate.edit"]')?.setAttribute("data-id", entry.id);
+    node.querySelector('[data-action="workTemplate.delete"]')?.setAttribute("data-id", entry.id);
     workTemplatesList.appendChild(node);
   });
   workTemplatesEmpty.hidden = sorted.length > 0;
@@ -5810,36 +5392,6 @@ function isEstimateExpired(entry) {
   return toDateOnlyTimestamp(entry.validUntil) < getTodayTimestamp();
 }
 
-async function handleEstimateListAction(event) {
-  const button = event.target.closest("button");
-  if (!(button instanceof HTMLButtonElement) || !currentUser) return;
-  const item = button.closest("[data-id]");
-  const estimateId = item?.dataset.id;
-  console.log("ESTIMATE LIST BUTTON CLICKED", button.className, estimateId);
-  if (!estimateId) {
-    showAppMessage("対象データIDを取得できませんでした。", true);
-    return;
-  }
-  if (button.classList.contains("estimate-edit-btn")) return startEstimateEdit(estimateId);
-  if (button.classList.contains("estimate-delete-btn")) {
-    await deleteEstimate(estimateId);
-    return;
-  }
-  if (button.classList.contains("create-case-btn")) {
-    console.log("CREATE CASE CLICKED", estimateId);
-    await handleCreateCaseFromEstimate(estimateId);
-    return;
-  }
-  if (button.classList.contains("estimate-estimate-print-btn")) return openEstimatePrintPreview(estimateId);
-  if (button.classList.contains("estimate-print-btn")) return openInvoicePrintPreviewFromEstimate(estimateId);
-  if (button.classList.contains("estimate-estimate-xlsx-btn")) return exportEstimateDataForEstimate(estimateId);
-  if (button.classList.contains("estimate-xlsx-btn")) return exportInvoiceDataForEstimate(estimateId);
-  if (button.classList.contains("create-invoice-btn") || button.classList.contains("estimate-create-invoice-btn")) {
-    console.log("CREATE INVOICE CLICKED", estimateId);
-    await handleCreateInvoiceFromEstimate(estimateId);
-  }
-}
-
 async function handleEstimateConversionAction(options) {
   const {
     estimateId,
@@ -6136,10 +5688,8 @@ function renderCases() {
       xlsxBtn.textContent = "請求Excel";
       rowActions.appendChild(xlsxBtn);
     }
-    node.querySelector(".edit-case-btn")?.setAttribute("data-action", "case.edit");
-    node.querySelector(".edit-case-btn")?.setAttribute("data-id", entry.id);
-    node.querySelector(".delete-case-btn")?.setAttribute("data-action", "case.delete");
-    node.querySelector(".delete-case-btn")?.setAttribute("data-id", entry.id);
+    node.querySelector('[data-action="case.edit"]')?.setAttribute("data-id", entry.id);
+    node.querySelector('[data-action="case.delete"]')?.setAttribute("data-id", entry.id);
     caseList.appendChild(node);
   });
 
@@ -6361,10 +5911,8 @@ function renderExpenses() {
     item.dataset.id = expense.id;
     title.textContent = `日付: ${formatDate(expense.date)}｜内容: ${expense.content}｜金額: ${formatCurrency(expense.amount)}`;
     meta.innerHTML = `支払先: ${escapeHtml(payeeLabel)} / 支払方法: ${escapeHtml(paymentMethodLabel)} / 紐付け案件: ${escapeHtml(expense.caseId ? resolveCaseName(expense.caseId) : "なし")}${expense.receiptUrl ? ` / <a href="${escapeHtml(expense.receiptUrl)}" target="_blank" rel="noopener noreferrer">領収書を開く</a>` : ""}`;
-    node.querySelector(".edit-btn")?.setAttribute("data-action", "expense.edit");
-    node.querySelector(".edit-btn")?.setAttribute("data-id", expense.id);
-    node.querySelector(".delete-btn")?.setAttribute("data-action", "expense.delete");
-    node.querySelector(".delete-btn")?.setAttribute("data-id", expense.id);
+    node.querySelector('[data-action="expense.edit"]')?.setAttribute("data-id", expense.id);
+    node.querySelector('[data-action="expense.delete"]')?.setAttribute("data-id", expense.id);
     expensesList.appendChild(node);
   });
 
@@ -6393,12 +5941,9 @@ function renderFixedExpenses() {
     title.textContent = `${entry.content}｜${formatCurrency(entry.amount)}`;
     meta.textContent = `毎月${entry.dayOfMonth}日 / 開始日: ${formatDate(entry.startDate)} / 状態: ${entry.active ? "有効" : "無効"}`;
     toggleBtn.textContent = entry.active ? "無効にする" : "有効にする";
-    node.querySelector(".edit-btn")?.setAttribute("data-action", "fixedExpense.edit");
-    node.querySelector(".edit-btn")?.setAttribute("data-id", entry.id);
-    node.querySelector(".delete-btn")?.setAttribute("data-action", "fixedExpense.delete");
-    node.querySelector(".delete-btn")?.setAttribute("data-id", entry.id);
-    node.querySelector(".toggle-btn")?.setAttribute("data-action", "fixedExpense.toggle");
-    node.querySelector(".toggle-btn")?.setAttribute("data-id", entry.id);
+    node.querySelector('[data-action="fixedExpense.edit"]')?.setAttribute("data-id", entry.id);
+    node.querySelector('[data-action="fixedExpense.delete"]')?.setAttribute("data-id", entry.id);
+    node.querySelector('[data-action="fixedExpense.toggle"]')?.setAttribute("data-id", entry.id);
     fixedExpensesList.appendChild(node);
   });
 

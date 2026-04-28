@@ -1271,7 +1271,7 @@
           <p class="meta case-work-meta"></p>
           <p class="meta profit-meta"></p>
         </div>
-        <div class="row-actions"><button type="button" class="edit-btn edit-case-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn delete-case-btn">削除</button></div>
+        <div class="row-actions"><button type="button" class="edit-btn edit-case-btn secondary-btn" data-action="case.edit">編集</button><button type="button" class="danger-btn delete-btn delete-case-btn" data-action="case.delete">削除</button></div>
       </li>
     </template>
     <template id="expense-item-template">
@@ -1280,7 +1280,7 @@
           <p class="title"></p>
           <p class="meta"></p>
         </div>
-        <div class="row-actions"><button type="button" class="edit-btn edit-expense-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn delete-expense-btn">削除</button></div>
+        <div class="row-actions"><button type="button" class="edit-btn edit-expense-btn secondary-btn" data-action="expense.edit">編集</button><button type="button" class="danger-btn delete-btn delete-expense-btn" data-action="expense.delete">削除</button></div>
       </li>
     </template>
 
@@ -1291,9 +1291,9 @@
           <p class="meta"></p>
         </div>
         <div class="row-actions">
-          <button type="button" class="toggle-btn secondary-btn">有効/無効</button>
-          <button type="button" class="edit-btn secondary-btn">編集</button>
-          <button type="button" class="danger-btn delete-btn">削除</button>
+          <button type="button" class="toggle-btn secondary-btn" data-action="fixedExpense.toggle">有効/無効</button>
+          <button type="button" class="edit-btn secondary-btn" data-action="fixedExpense.edit">編集</button>
+          <button type="button" class="danger-btn delete-btn" data-action="fixedExpense.delete">削除</button>
         </div>
       </li>
     </template>
@@ -1305,7 +1305,7 @@
           <p class="meta"></p>
           <p class="meta"></p>
         </div>
-        <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
+        <div class="row-actions"><button type="button" class="edit-btn secondary-btn" data-action="workTemplate.edit">編集</button><button type="button" class="danger-btn delete-btn" data-action="workTemplate.delete">削除</button></div>
       </li>
     </template>
   </body>
