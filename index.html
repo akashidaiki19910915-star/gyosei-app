@@ -1164,13 +1164,18 @@
         </section>
 
         <section id="tab-diagnostics" class="tab-panel">
-          <div class="layout two-col">
+          <div class="subtabs" data-parent-tab="diagnostics">
+            <button type="button" class="subtab-btn diagnostics-subtab-btn active" data-parent-tab="diagnostics" data-subtab="run">診断実行</button>
+            <button type="button" class="subtab-btn diagnostics-subtab-btn" data-parent-tab="diagnostics" data-subtab="logs">診断ログ</button>
+          </div>
+
+          <div id="diagnostics-run-panel" class="layout two-col diagnostics-subtab-panel">
             <section class="panel">
               <h2>システム診断</h2>
               <p class="meta">機能追加前のE2E動作確認用です。通常業務データは変更しません。</p>
               <div class="csv-actions">
-                <button id="diagnostics-run-btn" type="button">診断実行</button>
-                <button id="diagnostics-create-test-data-btn" type="button" class="secondary-btn">簡易テストデータ作成</button>
+                <button id="diagnostics-run-btn" type="button">システム診断を実行</button>
+                <button id="diagnostics-create-test-data-btn" type="button" class="secondary-btn">診断テストデータ作成</button>
                 <button id="diagnostics-delete-test-data-btn" type="button" class="danger-btn">診断テストデータ削除</button>
               </div>
               <p id="diagnostics-summary" class="filter-count">未実行</p>
@@ -1181,11 +1186,17 @@
               <ul class="item-list compact-list">
                 <li class="item"><p class="meta">診断実行：DB変更なし（再読込・再描画・状態点検のみ）</p></li>
                 <li class="item"><p class="meta">テストデータ作成/削除：runMutation経由で実行</p></li>
-                <li class="item"><p class="meta">削除対象は「診断テスト」で始まるデータのみ</p></li>
-                <li class="item"><p class="meta">エラーは画面表示し、読み込み中の固着を防止</p></li>
+                <li class="item"><p class="meta">削除対象は「診断テスト」を含むデータのみ</p></li>
+                <li class="item"><p class="meta">エラー時もloadingをfinallyで解除します</p></li>
               </ul>
             </section>
           </div>
+
+          <section id="diagnostics-logs-panel" class="panel diagnostics-subtab-panel" hidden>
+            <h2>診断ログ</h2>
+            <p class="meta">localStorageキー: gyosei_diagnostic_logs（DB保存なし）</p>
+            <ul id="diagnostics-log-list" class="item-list compact-list"></ul>
+          </section>
         </section>
 
         <section id="tab-settings" class="tab-panel">
