@@ -375,7 +375,7 @@ const settingsForm = document.getElementById("settings-form");
 let currentUser = null;
 let isLoggingOut = false;
 let eventsBound = false;
-let isLoadingActive = false;
+let loadingCount = 0;
 let loadingTimer = null;
 const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
 const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
@@ -445,7 +445,6 @@ async function initialize() {
       if (isLoggingOut) return;
       try {
         currentUser = sessionState?.user ?? null;
-        console.log("LOADING START", "認証状態変更", "background");
         await applyAuthState();
       } catch (error) {
         console.error("認証状態の更新に失敗しました。", error);
@@ -509,9 +508,13 @@ function bindEvents() {
   dailyReportSearchInput?.addEventListener("input", handleDailyReportSearchInput);
   dailyReportDateFilterSelect?.addEventListener("change", handleDailyReportDateFilterChange);
   if (dailyReportFilterClearBtn) dailyReportFilterClearBtn.dataset.action = "clear_daily_report_filters";
-  document.addEventListener("visibilitychange", handleVisibilityChange);
-  window.addEventListener("focus", handleWindowFocus);
-  window.addEventListener("pageshow", handlePageShow);
+  window.addEventListener("pageshow", forceHideLoading);
+  window.addEventListener("focus", forceHideLoading);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      forceHideLoading();
+    }
+  });
   if (loadingForceCloseBtn) loadingForceCloseBtn.dataset.action = "force_close_loading";
   if (exportCasesCsvBtn) exportCasesCsvBtn.dataset.action = "export_cases_csv";
   if (exportSalesCsvBtn) exportSalesCsvBtn.dataset.action = "export_sales_csv";
@@ -730,16 +733,16 @@ async function handlePageShow() {
 }
 
 async function applyAuthState() {
-  if (!currentUser) {
-    clearAppState();
-    return;
-  }
-
-  setDataMutationControlsEnabled(false);
-  state.isInitialDataReady = false;
-  userLabel.textContent = currentUser.email || "ログイン中";
-
   try {
+    if (!currentUser) {
+      clearAppState();
+      return;
+    }
+
+    setDataMutationControlsEnabled(false);
+    state.isInitialDataReady = false;
+    userLabel.textContent = currentUser.email || "ログイン中";
+
     await loadAllDataSafely();
     resetCaseForm();
     resetCaseTaskForm();
@@ -752,6 +755,9 @@ async function applyAuthState() {
     safeRender("renderAfterDataChanged", renderAfterDataChanged);
     state.isInitialDataReady = true;
     setDataMutationControlsEnabled(true);
+  } catch (error) {
+    console.error("applyAuthState failed", error);
+    throw error;
   } finally {
     authView.hidden = true;
     appView.hidden = false;
@@ -823,44 +829,293 @@ async function handleManualReload(event) {
   }
 }
 
+async function loadClients() {
+  if (!currentUser || isLoggingOut) {
+    state.clients = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("clients").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD clients ERROR", error);
+      state.clients = [];
+      return;
+    }
+    state.clients = (data || []).map(mapClientFromDb);
+  } catch (error) {
+    console.error("LOAD clients ERROR", error);
+    state.clients = [];
+  }
+}
+
+async function loadWorkTemplates() {
+  if (!currentUser || isLoggingOut) {
+    state.workTemplates = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("work_templates").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD workTemplates ERROR", error);
+      state.workTemplates = [];
+      return;
+    }
+    state.workTemplates = (data || []).map(mapWorkTemplateFromDb);
+    if (!state.workTemplates.length) {
+      try {
+        const seeded = await seedDefaultWorkTemplates();
+        if (seeded.length) state.workTemplates = seeded;
+      } catch (seedError) {
+        console.error("LOAD workTemplates seed ERROR", seedError);
+      }
+    }
+  } catch (error) {
+    console.error("LOAD workTemplates ERROR", error);
+    state.workTemplates = [];
+  }
+}
+
+async function loadCases() {
+  if (!currentUser || isLoggingOut) {
+    state.cases = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("cases").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD cases ERROR", error);
+      state.cases = [];
+      return;
+    }
+    state.cases = (data || []).map(mapCaseFromDb);
+  } catch (error) {
+    console.error("LOAD cases ERROR", error);
+    state.cases = [];
+  }
+}
+
+async function loadCaseTasks() {
+  if (!currentUser || isLoggingOut) {
+    state.caseTasks = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("case_tasks").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD caseTasks ERROR", error);
+      state.caseTasks = [];
+      return;
+    }
+    state.caseTasks = (data || []).map(mapCaseTaskFromDb);
+  } catch (error) {
+    console.error("LOAD caseTasks ERROR", error);
+    state.caseTasks = [];
+  }
+}
+
+async function loadCaseDocuments() {
+  if (!currentUser || isLoggingOut) {
+    state.caseDocuments = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("case_documents").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD caseDocuments ERROR", error);
+      state.caseDocuments = [];
+      return;
+    }
+    state.caseDocuments = (data || []).map(mapCaseDocumentFromDb);
+  } catch (error) {
+    console.error("LOAD caseDocuments ERROR", error);
+    state.caseDocuments = [];
+  }
+}
+
+async function loadEstimates() {
+  if (!currentUser || isLoggingOut) {
+    state.estimates = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("estimates").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD estimates ERROR", error);
+      state.estimates = [];
+      return;
+    }
+    state.estimates = (data || []).map(mapEstimateFromDb);
+  } catch (error) {
+    console.error("LOAD estimates ERROR", error);
+    state.estimates = [];
+  }
+}
+
+async function loadEstimateItems() {
+  if (!currentUser || isLoggingOut) {
+    state.estimateItems = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("estimate_items").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD estimateItems ERROR", error);
+      state.estimateItems = [];
+      return;
+    }
+    state.estimateItems = (data || []).map(mapEstimateItemFromDb);
+  } catch (error) {
+    console.error("LOAD estimateItems ERROR", error);
+    state.estimateItems = [];
+  }
+}
+
+async function loadSales() {
+  if (!currentUser || isLoggingOut) {
+    state.sales = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("sales").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD sales ERROR", error);
+      state.sales = [];
+      return;
+    }
+    state.sales = (data || []).map(mapSaleFromDb);
+  } catch (error) {
+    console.error("LOAD sales ERROR", error);
+    state.sales = [];
+  }
+}
+
+async function loadPayments() {
+  if (!currentUser || isLoggingOut) {
+    state.payments = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("payments").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD payments ERROR", error);
+      state.payments = [];
+      return;
+    }
+    state.payments = (data || []).map(mapPaymentFromDb);
+  } catch (error) {
+    console.error("LOAD payments ERROR", error);
+    state.payments = [];
+  }
+}
+
+async function loadExpenses() {
+  if (!currentUser || isLoggingOut) {
+    state.expenses = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("expenses").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD expenses ERROR", error);
+      state.expenses = [];
+      return;
+    }
+    state.expenses = (data || []).map(mapExpenseFromDb);
+  } catch (error) {
+    console.error("LOAD expenses ERROR", error);
+    state.expenses = [];
+  }
+}
+
+async function loadFixedExpenses() {
+  if (!currentUser || isLoggingOut) {
+    state.fixedExpenses = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("fixed_expenses").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD fixedExpenses ERROR", error);
+      state.fixedExpenses = [];
+      return;
+    }
+    state.fixedExpenses = (data || []).map(mapFixedExpenseFromDb);
+  } catch (error) {
+    console.error("LOAD fixedExpenses ERROR", error);
+    state.fixedExpenses = [];
+  }
+}
+
+async function loadDailyReports() {
+  if (!currentUser || isLoggingOut) {
+    state.dailyReports = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("daily_reports").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD dailyReports ERROR", error);
+      state.dailyReports = [];
+      return;
+    }
+    state.dailyReports = (data || []).map(mapDailyReportFromDb);
+  } catch (error) {
+    console.error("LOAD dailyReports ERROR", error);
+    state.dailyReports = [];
+  }
+}
+
+async function loadAppSettings() {
+  if (!currentUser || isLoggingOut) {
+    state.appSettings = { ...DEFAULT_APP_SETTINGS };
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("app_settings").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD appSettings ERROR", error);
+      state.appSettings = { ...DEFAULT_APP_SETTINGS };
+      return;
+    }
+    const loadedSettings = (data || []).map(mapAppSettingsFromDb);
+    state.appSettings = loadedSettings[0] ? { ...DEFAULT_APP_SETTINGS, ...loadedSettings[0] } : { ...DEFAULT_APP_SETTINGS };
+  } catch (error) {
+    console.error("LOAD appSettings ERROR", error);
+    state.appSettings = { ...DEFAULT_APP_SETTINGS };
+  }
+}
+
 async function loadAllDataSafely() {
   if (!currentUser || isLoggingOut) return;
 
-  const loadTable = async (tableName, mapFn, options = {}) => {
-    const { optional = false, fallback = [] } = options;
-    try {
-      const { data, error } = await sbClient.from(tableName).select("*").eq("user_id", currentUser.id);
-      if (error) throw error;
-      return (data || []).map(mapFn);
-    } catch (error) {
-      const level = optional ? "warn" : "error";
-      console[level](`LOAD ${tableName} ERROR`, error);
-      if (!optional) {
-        showAppMessage(`${tableName} の読み込みでエラーが発生しました。既存データの表示を続行します。`, true);
-      }
-      return fallback;
-    }
-  };
-  const safeSelectTable = async (tableName, mapFn, fallback = []) => loadTable(tableName, mapFn, { optional: true, fallback });
+  const loaders = [
+    ["clients", loadClients],
+    ["workTemplates", loadWorkTemplates],
+    ["cases", loadCases],
+    ["caseTasks", loadCaseTasks],
+    ["caseDocuments", loadCaseDocuments],
+    ["estimates", loadEstimates],
+    ["estimateItems", loadEstimateItems],
+    ["sales", loadSales],
+    ["payments", loadPayments],
+    ["expenses", loadExpenses],
+    ["fixedExpenses", loadFixedExpenses],
+    ["dailyReports", loadDailyReports],
+    ["appSettings", loadAppSettings],
+  ];
 
-  state.clients = await loadTable("clients", mapClientFromDb);
-  state.workTemplates = await loadTable("work_templates", mapWorkTemplateFromDb);
-  if (!state.workTemplates.length) {
-    const seeded = await seedDefaultWorkTemplates();
-    if (seeded.length) state.workTemplates = seeded;
+  for (const [name, loader] of loaders) {
+    try {
+      if (typeof loader === "function") {
+        await loader();
+      }
+    } catch (error) {
+      console.error(`LOAD ${name} ERROR`, error);
+      if (Array.isArray(state[name])) {
+        state[name] = [];
+      }
+    }
   }
-  state.cases = await loadTable("cases", mapCaseFromDb);
-  state.caseTasks = await loadTable("case_tasks", mapCaseTaskFromDb, { optional: true, fallback: [] });
-  state.caseDocuments = await loadTable("case_documents", mapCaseDocumentFromDb, { optional: true, fallback: [] });
-  state.estimates = await loadTable("estimates", mapEstimateFromDb);
-  state.estimateItems = await loadTable("estimate_items", mapEstimateItemFromDb);
-  state.sales = await loadTable("sales", mapSaleFromDb);
-  state.payments = await safeSelectTable("payments", mapPaymentFromDb, []);
-  state.expenses = await loadTable("expenses", mapExpenseFromDb);
-  state.fixedExpenses = await loadTable("fixed_expenses", mapFixedExpenseFromDb);
-  state.dailyReports = await loadTable("daily_reports", mapDailyReportFromDb);
-  const loadedSettings = await safeSelectTable("app_settings", mapAppSettingsFromDb, []);
-  state.appSettings = loadedSettings[0] ? { ...DEFAULT_APP_SETTINGS, ...loadedSettings[0] } : { ...DEFAULT_APP_SETTINGS };
 
   state.sales = state.sales.map((sale) => hydrateSaleWithPayments(sale));
 
@@ -878,19 +1133,23 @@ async function loadAllDataSafely() {
     appSettings: state.appSettings?.id ? 1 : 0,
   });
 
-  await cleanupLegacyEstimateMemoMarkers();
-
-  const createdCount = await ensureMonthlyFixedExpenses();
-  if (createdCount > 0) {
-    try {
-      const refreshExpensesRes = await sbClient.from("expenses").select("*").eq("user_id", currentUser.id);
-      if (refreshExpensesRes.error) throw refreshExpensesRes.error;
-      state.expenses = (refreshExpensesRes.data || []).map(mapExpenseFromDb);
-      showAppMessage(`${createdCount}件の固定費を当月分として自動計上しました。`, false);
-    } catch (error) {
-      console.error("LOAD expenses refresh ERROR", error);
-    }
+  try {
+    await cleanupLegacyEstimateMemoMarkers();
+  } catch (error) {
+    console.error("LOAD cleanupLegacyEstimateMemoMarkers ERROR", error);
   }
+
+  try {
+    const createdCount = await ensureMonthlyFixedExpenses();
+    if (createdCount > 0) {
+      await loadExpenses();
+      showAppMessage(`${createdCount}件の固定費を当月分として自動計上しました。`, false);
+    }
+  } catch (error) {
+    console.error("LOAD ensureMonthlyFixedExpenses ERROR", error);
+  }
+
+  state.isInitialDataReady = true;
 }
 
 function ensureInitialDataReady(actionName = "操作") {
@@ -2250,24 +2509,47 @@ async function handleClearAll() {
 
 async function runMutation(actionName, mutationFn, options = {}) {
   startLoading(actionName);
-  console.log("MUTATION START", actionName);
+
   try {
     clearAppMessage();
+
+    console.log("MUTATION START", actionName);
+
     const result = await mutationFn();
+
     await loadAllDataSafely();
     renderAfterDataChanged();
+
+    if (typeof options.afterSuccess === "function") {
+      await options.afterSuccess(result);
+    }
+
+    if (typeof options.resetForm === "function") {
+      options.resetForm();
+    }
+
+    if (options.log) {
+      try {
+        const logPayload = typeof options.log === "function"
+          ? options.log(result)
+          : options.log;
+        await addOperationLog(logPayload);
+      } catch (logError) {
+        console.error("operation log failed", logError);
+      }
+    }
+
     console.log("MUTATION SUCCESS", actionName);
-    if (typeof options.resetForm === "function") options.resetForm();
-    if (typeof options.afterSuccess === "function") options.afterSuccess(result);
     showAppMessage(options.successMessage || `${actionName}が完了しました。`, false);
+
     return result;
   } catch (error) {
-    console.error(`${actionName}に失敗しました`, error);
+    console.error(`${actionName} failed`, error);
     showAppMessage(
-      `${actionName}に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`.trim(),
+      `${actionName}に失敗しました。${error.message || ""} ${error.details || ""} ${error.hint || ""} ${error.code || ""}`,
       true
     );
-    throw error;
+    return null;
   } finally {
     forceHideLoading();
   }
@@ -7433,10 +7715,22 @@ async function importWorkbookBySheet(workbook) {
 }
 
 async function loadCasesOnly() {
-  if (!currentUser) return;
-  const casesRes = await sbClient.from("cases").select("*").eq("user_id", currentUser.id);
-  if (casesRes.error) throw casesRes.error;
-  state.cases = (casesRes.data || []).map(mapCaseFromDb);
+  if (!currentUser || isLoggingOut) {
+    state.cases = [];
+    return;
+  }
+  try {
+    const casesRes = await sbClient.from("cases").select("*").eq("user_id", currentUser.id);
+    if (casesRes.error) {
+      console.error("LOAD casesOnly ERROR", casesRes.error);
+      state.cases = [];
+      return;
+    }
+    state.cases = (casesRes.data || []).map(mapCaseFromDb);
+  } catch (error) {
+    console.error("LOAD casesOnly ERROR", error);
+    state.cases = [];
+  }
 }
 
 async function importCsvByType(importType, csvText) {
@@ -8227,61 +8521,62 @@ function setDataMutationControlsEnabled(enabled) {
   });
 }
 
-function updateLoadingOverlay() {
-  if (!loadingOverlay) return;
-  loadingOverlay.hidden = !isLoadingActive;
-  loadingOverlay.style.display = isLoadingActive ? "grid" : "none";
-}
+function startLoading(label = "処理中") {
+  loadingCount = 1;
 
-function startLoading(taskName) {
-  isLoadingActive = true;
-  console.log("LOADING START", taskName);
-  updateLoadingOverlay();
-  if (loadingTimer) window.clearTimeout(loadingTimer);
-  loadingTimer = window.setTimeout(() => {
-    console.warn("LOADING FORCE TIMEOUT", taskName);
+  if (loadingOverlay) {
+    loadingOverlay.hidden = false;
+    loadingOverlay.style.display = "flex";
+  }
+
+  document.body.classList.add("is-loading");
+  console.log("LOADING START", label, loadingCount);
+
+  if (loadingTimer) {
+    clearTimeout(loadingTimer);
+  }
+
+  loadingTimer = setTimeout(() => {
+    console.warn("LOADING FORCE TIMEOUT", label);
     forceHideLoading();
   }, 8000);
 }
 
-function endLoading(taskName) {
-  isLoadingActive = false;
-  console.log("LOADING END", taskName);
-  if (loadingTimer) {
-    window.clearTimeout(loadingTimer);
-    loadingTimer = null;
-  }
-  updateLoadingOverlay();
-}
-
 function forceHideLoading() {
-  isLoadingActive = false;
+  loadingCount = 0;
+
   if (loadingTimer) {
-    window.clearTimeout(loadingTimer);
+    clearTimeout(loadingTimer);
     loadingTimer = null;
   }
-  updateLoadingOverlay();
+
+  if (loadingOverlay) {
+    loadingOverlay.hidden = true;
+    loadingOverlay.style.display = "none";
+  }
+
+  document.body.classList.remove("is-loading");
 }
 
-async function withLoading(taskName, asyncFn, options = {}) {
+async function withLoading(label, fn, options = {}) {
   const { messageTarget = "app", triggerButton = null } = options;
-  startLoading(taskName);
+  startLoading(label);
   setSubmitButtonsDisabled(true);
   if (triggerButton instanceof HTMLButtonElement) triggerButton.disabled = true;
+
   try {
     clearAppMessage();
     if (messageTarget === "auth") showAuthMessage("", false);
-    return await asyncFn();
+    return await fn();
   } catch (error) {
-    console.error("ERROR", taskName, error);
-    const detail = error?.message ? String(error.message) : "";
-    const message = `${taskName}に失敗しました。${detail}`;
+    console.error(`${label} failed`, error);
+    const message = `${label}に失敗しました。${error.message || ""}`;
     if (messageTarget === "auth") {
       showAuthMessage(message, true);
     } else {
       showAppMessage(message, true);
     }
-    throw error;
+    return null;
   } finally {
     setSubmitButtonsDisabled(false);
     if (triggerButton instanceof HTMLButtonElement) triggerButton.disabled = false;
