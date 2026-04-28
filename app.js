@@ -567,6 +567,7 @@ async function handleGlobalClick(event) {
   const action = button.dataset.action;
   const id = button.dataset.id || null;
   const type = button.dataset.type || null;
+  console.log("GLOBAL CLICK", action, id, button);
   await dispatchAction({ action, id, type, button, event });
 }
 
@@ -643,6 +644,8 @@ const actionHandlers = {
 
 async function dispatchAction(ctx) {
   const handler = actionHandlers[ctx.action];
+  console.log("DISPATCH ACTION", ctx.action);
+  console.log("HANDLER EXISTS", !!handler);
   if (!handler) {
     console.error("未登録data-action", ctx);
     showAppMessage(`未登録の操作です: ${ctx.action}`, true);
@@ -1117,7 +1120,7 @@ function inspectMutationRouting() {
     if (typeof fn !== "function") return false;
     const source = fn.toString();
     if (!/(insert|update|delete)\(/.test(source)) return false;
-    return !source.includes("runMutation(");
+    return !source.includes("runMutation(") && !source.includes("deleteRecord(");
   });
   return {
     ok: missing.length === 0,
@@ -1233,54 +1236,70 @@ async function deleteDiagnosticTestData() {
     showAppMessage("ログイン状態を確認できません。", true);
     return;
   }
-  if (!window.confirm("「診断テスト」を含むデータのみ削除します。実行しますか？")) return;
+  if (!confirm("診断テストデータのみ削除します。本番データは削除しません。よろしいですか？")) return;
+
   await runMutation("診断テストデータ削除", async () => {
-    const keyword = "%診断テスト%";
-    const swallowMissingTable = (label, error) => {
-      const message = `${error?.message || ""} ${error?.details || ""}`.toLowerCase();
-      if (message.includes("does not exist") || error?.code === "42P01") {
-        console.error(`${label}テーブルが存在しないためスキップ`, error);
-        return true;
+    console.log("DELETE DIAGNOSTIC TEST DATA START");
+
+    const diagnosticCases = state.cases.filter((c) =>
+      String(c.caseName || c.name || "").includes("診断テスト")
+    );
+    const diagnosticCaseIds = diagnosticCases.map((c) => c.id);
+
+    const diagnosticClients = state.clients.filter((c) =>
+      String(c.name || "").includes("診断テスト")
+    );
+    const diagnosticClientIds = diagnosticClients.map((c) => c.id);
+
+    if (diagnosticCaseIds.length > 0) {
+      let result = await sbClient.from("case_tasks").delete().in("case_id", diagnosticCaseIds).eq("user_id", currentUser.id);
+      if (result.error) throw result.error;
+      result = await sbClient.from("case_documents").delete().in("case_id", diagnosticCaseIds).eq("user_id", currentUser.id);
+      if (result.error) throw result.error;
+      result = await sbClient.from("daily_reports").delete().in("case_id", diagnosticCaseIds).eq("user_id", currentUser.id);
+      if (result.error) throw result.error;
+      result = await sbClient.from("expenses").delete().in("case_id", diagnosticCaseIds).eq("user_id", currentUser.id);
+      if (result.error) throw result.error;
+
+      const saleRes = await sbClient
+        .from("sales")
+        .select("id")
+        .in("case_id", diagnosticCaseIds)
+        .eq("user_id", currentUser.id);
+      if (saleRes.error) throw saleRes.error;
+
+      const saleIds = (saleRes.data || []).map((s) => s.id);
+      if (saleIds.length > 0) {
+        result = await sbClient.from("payments").delete().in("sale_id", saleIds).eq("user_id", currentUser.id);
+        if (result.error) throw result.error;
+        result = await sbClient.from("sales").delete().in("id", saleIds).eq("user_id", currentUser.id);
+        if (result.error) throw result.error;
       }
-      return false;
-    };
-    const execDelete = async (label, fn) => {
-      try {
-        const response = await fn();
-        if (response?.error) throw response.error;
-      } catch (error) {
-        if (!swallowMissingTable(label, error)) throw new Error(`${label}削除に失敗: ${formatSupabaseError(error)}`);
-      }
-    };
 
-    const { data: caseRows, error: caseSelectError } = await sbClient.from("cases").select("id").eq("user_id", currentUser.id).ilike("case_name", keyword);
-    if (caseSelectError) throw caseSelectError;
-    const caseIds = (Array.isArray(caseRows) ? caseRows : []).map((row) => row.id);
-
-    const { data: clientRows, error: clientSelectError } = await sbClient.from("clients").select("id").eq("user_id", currentUser.id).ilike("name", keyword);
-    if (clientSelectError) throw clientSelectError;
-    const clientIds = (Array.isArray(clientRows) ? clientRows : []).map((row) => row.id);
-
-    if (caseIds.length) await execDelete("case_tasks", () => sbClient.from("case_tasks").delete().eq("user_id", currentUser.id).in("case_id", caseIds).ilike("task_title", keyword));
-    if (caseIds.length || clientIds.length) await execDelete("daily_reports", () => sbClient.from("daily_reports").delete().eq("user_id", currentUser.id).or(`work_content.ilike.${keyword}`));
-    if (caseIds.length) await execDelete("expenses", () => sbClient.from("expenses").delete().eq("user_id", currentUser.id).in("case_id", caseIds).ilike("content", keyword));
-    if (caseIds.length) {
-      const { data: saleRows, error: saleSelectError } = await sbClient.from("sales").select("id").eq("user_id", currentUser.id).in("case_id", caseIds);
-      if (saleSelectError && !swallowMissingTable("sales", saleSelectError)) throw saleSelectError;
-      const saleIds = (Array.isArray(saleRows) ? saleRows : []).map((row) => row.id);
-      if (saleIds.length) await execDelete("payments", () => sbClient.from("payments").delete().eq("user_id", currentUser.id).in("sale_id", saleIds));
+      result = await sbClient.from("cases").delete().in("id", diagnosticCaseIds).eq("user_id", currentUser.id);
+      if (result.error) throw result.error;
     }
-    if (caseIds.length) await execDelete("sales", () => sbClient.from("sales").delete().eq("user_id", currentUser.id).in("case_id", caseIds));
-    if (caseIds.length) await execDelete("case_documents", () => sbClient.from("case_documents").delete().eq("user_id", currentUser.id).in("case_id", caseIds));
-    if (caseIds.length) await execDelete("cases", () => sbClient.from("cases").delete().eq("user_id", currentUser.id).in("id", caseIds).ilike("case_name", keyword));
-    if (clientIds.length) await execDelete("clients", () => sbClient.from("clients").delete().eq("user_id", currentUser.id).in("id", clientIds).ilike("name", keyword));
-    return { caseCount: caseIds.length, clientCount: clientIds.length };
+
+    if (diagnosticClientIds.length > 0) {
+      const result = await sbClient.from("clients").delete().in("id", diagnosticClientIds).eq("user_id", currentUser.id);
+      if (result.error) throw result.error;
+    }
+
+    let result = await sbClient.from("expenses").delete().ilike("content", "%診断テスト%").eq("user_id", currentUser.id);
+    if (result.error) throw result.error;
+    result = await sbClient.from("daily_reports").delete().ilike("work_content", "%診断テスト%").eq("user_id", currentUser.id);
+    if (result.error) throw result.error;
+    result = await sbClient.from("case_tasks").delete().ilike("task_title", "%診断テスト%").eq("user_id", currentUser.id);
+    if (result.error) throw result.error;
+
+    return { deleted: true };
   }, {
     successMessage: "診断テストデータを削除しました。",
     log: {
       actionType: "診断テストデータ削除",
-      targetType: "diagnostics",
+      targetType: "diagnostic",
       targetName: "診断テストデータ",
+      detail: "診断テストを含むデータのみ削除",
     },
   });
 }

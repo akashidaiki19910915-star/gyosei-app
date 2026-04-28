@@ -1176,7 +1176,9 @@
               <div class="csv-actions">
                 <button id="diagnostics-run-btn" type="button" class="run-diagnostics-btn">システム診断を実行</button>
                 <button id="diagnostics-create-test-data-btn" type="button" class="secondary-btn create-diagnostic-test-data-btn">診断テストデータ作成</button>
-                <button id="diagnostics-delete-test-data-btn" type="button" class="danger-btn delete-diagnostic-test-data-btn">診断テストデータ削除</button>
+                <button type="button" data-action="diagnostic.deleteTestData">
+                  診断テストデータ削除
+                </button>
               </div>
               <p id="diagnostics-summary" class="filter-count">未実行</p>
               <ul id="diagnostics-results" class="diagnostics-results"></ul>
