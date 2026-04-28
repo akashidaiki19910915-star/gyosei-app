@@ -475,7 +475,8 @@ function bindEvents() {
   targetMonthInput?.addEventListener("input", handleTargetMonthChange);
   targetYearInput?.addEventListener("input", handleTargetYearChange);
   aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
-  document.addEventListener("click", handleGlobalClick);
+  document.addEventListener("pointerup", handleGlobalPointerAction);
+  document.addEventListener("keydown", handleGlobalKeyAction);
   caseSearchInput?.addEventListener("input", handleCaseSearchInput);
   caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
   caseDeadlineFilterSelect?.addEventListener("change", handleCaseDeadlineFilterChange);
@@ -560,14 +561,26 @@ function setupActionAttributes() {
   ].forEach(([element, action]) => setActionAttribute(element, action));
 }
 
-async function handleGlobalClick(event) {
+async function handleGlobalPointerAction(event) {
+  if (event.button !== 0) return;
   const button = event.target.closest("[data-action]");
   if (!button) return;
   event.preventDefault();
   const action = button.dataset.action;
   const id = button.dataset.id || null;
   const type = button.dataset.type || null;
-  console.log("GLOBAL CLICK", action, id, button);
+  console.log("GLOBAL ACTION", action, id, button);
+  await dispatchAction({ action, id, type, button, event });
+}
+
+async function handleGlobalKeyAction(event) {
+  if (!["Enter", " "].includes(event.key)) return;
+  const button = event.target.closest("[data-action]");
+  if (!button) return;
+  event.preventDefault();
+  const action = button.dataset.action;
+  const id = button.dataset.id || null;
+  const type = button.dataset.type || null;
   await dispatchAction({ action, id, type, button, event });
 }
 
@@ -4352,7 +4365,7 @@ function renderUnpaidAlert(filter = {}) {
         <td>${paymentHistory}</td>
         <td>
           <button type="button" class="secondary-btn" data-action="sale.edit" data-id="${sale.id}">編集</button>
-          <button type="button" class="secondary-btn register-payment-btn" data-action="payment.record" data-id="${sale.id}">入金登録</button>
+          <button type="button" class="secondary-btn" data-action="payment.record" data-id="${sale.id}">入金登録</button>
           ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn" data-action="reminder.record" data-id="${sale.id}">督促記録</button>` : ""}
         </td>
       `;
@@ -4387,7 +4400,7 @@ function renderUnpaidList() {
       <td>${escapeHtml(sale.reminderMethod || "-")}</td>
       <td>${escapeHtml(sale.reminderMemo || "-")}</td>
       <td>${paymentHistory}</td>
-      <td><button type="button" class="secondary-btn" data-action="sale.edit" data-id="${sale.id}">編集</button> <button type="button" class="secondary-btn register-payment-btn" data-action="payment.record" data-id="${sale.id}">入金登録</button> ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn" data-action="reminder.record" data-id="${sale.id}">督促記録</button>` : ""}</td>
+      <td><button type="button" class="secondary-btn" data-action="sale.edit" data-id="${sale.id}">編集</button> <button type="button" class="secondary-btn" data-action="payment.record" data-id="${sale.id}">入金登録</button> ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn" data-action="reminder.record" data-id="${sale.id}">督促記録</button>` : ""}</td>
     `;
     tr.classList.add(getSaleRowClass(sale));
     unpaidListBody.appendChild(tr);
@@ -4810,7 +4823,7 @@ function renderCaseTasksTable() {
       <td>${escapeHtml(entry.status)}</td>
       <td>${formatDate(entry.completedAt)}</td>
       <td><button type="button" class="secondary-btn" data-action="caseTask.edit" data-id="${entry.id}">編集</button></td>
-      <td>${entry.status !== "完了" ? `<button type="button" class="secondary-btn complete-task-btn" data-action="task.complete" data-id="${entry.id}">完了</button>` : "-"}</td>
+      <td>${entry.status !== "完了" ? `<button type="button" class="secondary-btn" data-action="task.complete" data-id="${entry.id}">完了</button>` : "-"}</td>
       <td><button type="button" class="danger-btn" data-action="task.delete" data-id="${entry.id}">削除</button></td>
     `;
     caseTasksBody.appendChild(tr);
@@ -4840,8 +4853,8 @@ function renderCaseDocuments() {
       <td>${formatDate(entry.checkedDate)}</td>
       <td>${escapeHtml(truncateText(entry.memo || "", 80) || "-")}</td>
       <td>${entry.fileUrl ? `<a href="${escapeHtml(entry.fileUrl)}" target="_blank" rel="noopener noreferrer">開く</a>` : "-"}</td>
-      <td><button type="button" class="secondary-btn edit-btn" data-action="document.edit" data-id="${entry.id}">編集</button></td>
-      <td><button type="button" class="danger-btn delete-btn" data-action="document.delete" data-id="${entry.id}">削除</button></td>
+      <td><button type="button" class="secondary-btn" data-action="document.edit" data-id="${entry.id}">編集</button></td>
+      <td><button type="button" class="danger-btn" data-action="document.delete" data-id="${entry.id}">削除</button></td>
     `;
     caseDocumentsBody.appendChild(tr);
   });
@@ -5101,7 +5114,7 @@ function addEstimateItemRow(defaultItem = {}) {
     <input type="text" inputmode="decimal" pattern="[0-9.,]*" data-key="quantity" placeholder="数量" value="${defaultItem.quantity ?? 1}" />
     <input type="text" inputmode="numeric" pattern="[0-9,]*" data-key="unitPrice" placeholder="単価" value="${defaultItem.unitPrice ?? 0}" />
     <p class="meta item-amount">${formatCurrency(defaultItem.amount ?? 0)}</p>
-    <button type="button" class="danger-btn estimate-item-remove-btn" data-action="estimate.item.remove">削除</button>
+    <button type="button" class="danger-btn" data-action="estimate.item.remove">削除</button>
   `;
   estimateItemsWrap.appendChild(row);
   bindCommaInput(row.querySelector('[data-key="unitPrice"]'));
@@ -5886,9 +5899,9 @@ function renderSales() {
           <td>${escapeHtml(reminderMemo)}</td>
           <td>${paymentHistory}</td>
           <td>${canRecordReminder ? `<button type="button" class="secondary-btn" data-action="reminder.record" data-id="${sale.id}">督促記録</button>` : "-"}</td>
-          <td><button type="button" class="secondary-btn register-payment-btn" data-action="payment.record" data-id="${sale.id}">入金登録</button></td>
+          <td><button type="button" class="secondary-btn" data-action="payment.record" data-id="${sale.id}">入金登録</button></td>
           <td><button type="button" class="secondary-btn" data-action="sale.edit" data-id="${sale.id}">編集</button></td>
-          <td><button type="button" class="danger-btn delete-btn" data-action="sale.delete" data-id="${sale.id}">削除</button></td>
+          <td><button type="button" class="danger-btn" data-action="sale.delete" data-id="${sale.id}">削除</button></td>
         `;
         salesListBody.appendChild(tr);
       } catch (error) {
@@ -6740,7 +6753,11 @@ body {
 </style>
 </head>
 <body>
-  <div class="print-toolbar no-print"><button class="print-btn" data-action="print.execute">印刷 / PDF保存</button></div>
+  <div class="print-toolbar no-print">
+    <form id="print-action-form">
+      <button type="submit" class="print-btn" data-action="print.execute">印刷 / PDF保存</button>
+    </form>
+  </div>
   <main class="sheet">
     <h1 class="title">${title}</h1>
     <div class="title-divider" aria-hidden="true"></div>
@@ -6781,9 +6798,9 @@ body {
     </section>
   </main>
 <script>
-document.addEventListener("click", (e) => {
-  const action = e.target.closest("[data-action]")?.dataset.action;
-  if (action === "print.execute") window.print();
+document.getElementById("print-action-form")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  window.print();
 });
 </script>
 </body>
