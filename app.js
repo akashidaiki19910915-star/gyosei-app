@@ -34,6 +34,7 @@ const DEFAULT_APP_SETTINGS = {
   estimateNote: OFFICE_INFO.estimateNote,
   invoiceNote: OFFICE_INFO.invoiceNote,
 };
+const DIAGNOSTIC_LOG_STORAGE_KEY = "gyosei_diagnostic_logs";
 
 const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
@@ -79,6 +80,8 @@ const state = {
   alerts: [],
   selectedIntegrityCheckKey: "",
   appSettings: { ...DEFAULT_APP_SETTINGS },
+  diagnosticResults: [],
+  diagnosticLogs: [],
   isInitialDataReady: false,
 };
 const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
@@ -133,6 +136,7 @@ const subtabState = {
   sales: "entry",
   expenses: "entry",
   "daily-reports": "entry",
+  diagnostics: "run",
 };
 
 const summaryGrid = document.getElementById("summary-grid");
@@ -309,8 +313,12 @@ const settingsForm = document.getElementById("settings-form");
 const diagnosticsRunBtn = document.getElementById("diagnostics-run-btn");
 const diagnosticsCreateTestDataBtn = document.getElementById("diagnostics-create-test-data-btn");
 const diagnosticsDeleteTestDataBtn = document.getElementById("diagnostics-delete-test-data-btn");
+const diagnosticsSubtabButtons = Array.from(document.querySelectorAll(".diagnostics-subtab-btn"));
+const diagnosticsRunPanel = document.getElementById("diagnostics-run-panel");
+const diagnosticsLogsPanel = document.getElementById("diagnostics-logs-panel");
 const diagnosticsSummary = document.getElementById("diagnostics-summary");
 const diagnosticsResults = document.getElementById("diagnostics-results");
+const diagnosticsLogList = document.getElementById("diagnostics-log-list");
 const operationLogsBody = document.getElementById("operation-logs-body");
 const operationLogsEmpty = document.getElementById("operation-logs-empty");
 const operationLogsWrap = document.getElementById("operation-logs-wrap");
@@ -501,6 +509,7 @@ function bindEvents() {
   diagnosticsRunBtn?.addEventListener("click", handleRunDiagnosticsClick);
   diagnosticsCreateTestDataBtn?.addEventListener("click", handleCreateDiagnosticsTestDataClick);
   diagnosticsDeleteTestDataBtn?.addEventListener("click", handleDeleteDiagnosticsTestDataClick);
+  diagnosticsSubtabButtons.forEach((btn) => btn.addEventListener("click", () => activateDiagnosticsSubtab(btn.dataset.subtab)));
   document.addEventListener("wheel", handleNumberInputWheel, { passive: true });
   estimateAddItemBtn?.addEventListener("click", () => addEstimateItemRow());
   estimateItemsWrap?.addEventListener("input", handleEstimateItemsInput);
@@ -542,6 +551,8 @@ function bindEvents() {
   });
   eventsBound = true;
   console.log("EVENTS BOUND");
+  state.diagnosticLogs = getDiagnosticsLogsFromStorage();
+  safeRender("diagnostics", renderDiagnostics);
   activateTab("cases");
 }
 
@@ -782,19 +793,6 @@ async function handleManualReload(event) {
   }
 }
 
-function setDiagnosticsResults(items, summaryText = "") {
-  if (!diagnosticsResults || !diagnosticsSummary) return;
-  diagnosticsResults.innerHTML = "";
-  const normalized = Array.isArray(items) ? items : [];
-  normalized.forEach((item) => {
-    const li = document.createElement("li");
-    li.className = `diagnostics-result ${item.ok ? "ok" : "ng"}`;
-    li.textContent = `${item.ok ? "OK" : "NG"}: ${item.label}`;
-    diagnosticsResults.appendChild(li);
-  });
-  diagnosticsSummary.textContent = summaryText || `実行件数 ${normalized.length}件`;
-}
-
 function collectDiagnosticsTableCounts() {
   return {
     clients: state.clients.length,
@@ -807,70 +805,165 @@ function collectDiagnosticsTableCounts() {
   };
 }
 
-async function runSystemDiagnostics() {
-  const results = [];
-  const pushResult = (label, ok) => results.push({ label, ok: Boolean(ok) });
+function getDiagnosticsLogsFromStorage() {
   try {
-    pushResult("ログイン状態", Boolean(currentUser?.id));
-
-    let supabaseOk = false;
-    try {
-      const { error } = await sbClient.from("clients").select("id").eq("user_id", currentUser?.id || "").limit(1);
-      supabaseOk = !error;
-    } catch (_error) {
-      supabaseOk = false;
-    }
-    pushResult("Supabase接続", supabaseOk);
-
-    await loadAllDataSafely();
-    renderAfterDataChanged();
-    const counts = collectDiagnosticsTableCounts();
-    pushResult(`主要テーブル読込件数: 顧客${counts.clients} / 案件${counts.cases} / 売上${counts.sales} / 経費${counts.expenses} / 日報${counts.dailyReports}`, true);
-
-    try {
-      renderSales();
-      pushResult("renderSales 実行", true);
-    } catch (_error) {
-      pushResult("renderSales 実行", false);
-    }
-    try {
-      renderCases();
-      pushResult("renderCases 実行", true);
-    } catch (_error) {
-      pushResult("renderCases 実行", false);
-    }
-    try {
-      renderExpenses();
-      pushResult("renderExpenses 実行", true);
-    } catch (_error) {
-      pushResult("renderExpenses 実行", false);
-    }
-    try {
-      renderDailyReports();
-      pushResult("renderDailyReports 実行", true);
-    } catch (_error) {
-      pushResult("renderDailyReports 実行", false);
-    }
-
-    pushResult("loading overlay 解除", (loadingOverlay?.hidden ?? true) && loadingCount <= 0);
-    pushResult("eventsBound 状態", eventsBound);
-
-    const requiredSubmitForms = ["saleForm", "expenseForm", "dailyReportForm", "caseForm", "clientForm", "settingsForm"];
-    requiredSubmitForms.forEach((key) => {
-      pushResult(`${key} submit 登録`, submitBindingState[key] === true);
-    });
-
-    pushResult("runMutation 存在", typeof runMutation === "function");
-    pushResult("safeFileExport 存在", typeof safeFileExport === "function");
-    pushResult("売上一覧DOM表示件数", Boolean(salesListBody && salesListBody.childElementCount >= 0));
-    pushResult("案件一覧DOM表示件数", Boolean(caseList && caseList.childElementCount >= 0));
-    pushResult("経費一覧DOM表示件数", Boolean(expensesList && expensesList.childElementCount >= 0));
-    pushResult("日報一覧DOM表示件数", Boolean(dailyReportsBody && dailyReportsBody.childElementCount >= 0));
-    pushResult("操作ログ保存状態（件数参照可能）", Array.isArray(state.operationLogs));
-  } catch (error) {
-    pushResult(`診断処理例外: ${error?.message || "不明なエラー"}`, false);
+    const raw = localStorage.getItem(DIAGNOSTIC_LOG_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((entry) => entry && typeof entry === "object")
+      .slice(0, 100);
+  } catch (_error) {
+    return [];
   }
-  return results;
+}
+
+function saveDiagnosticsLogsToStorage(logs) {
+  try {
+    localStorage.setItem(DIAGNOSTIC_LOG_STORAGE_KEY, JSON.stringify(logs.slice(0, 100)));
+  } catch (error) {
+    console.warn("診断ログの保存に失敗しました。", error);
+  }
+}
+
+function appendDiagnosticsLog(results) {
+  const normalized = Array.isArray(results) ? results : [];
+  const ngResults = normalized.filter((entry) => !entry.ok).map((entry) => entry.name);
+  const logEntry = {
+    executedAt: new Date().toISOString(),
+    okCount: normalized.filter((entry) => entry.ok).length,
+    ngCount: ngResults.length,
+    ngItems: ngResults,
+  };
+  const nextLogs = [logEntry, ...(Array.isArray(state.diagnosticLogs) ? state.diagnosticLogs : [])].slice(0, 100);
+  state.diagnosticLogs = nextLogs;
+  saveDiagnosticsLogsToStorage(nextLogs);
+}
+
+function renderDiagnostics() {
+  if (diagnosticsRunPanel) diagnosticsRunPanel.hidden = subtabState.diagnostics !== "run";
+  if (diagnosticsLogsPanel) diagnosticsLogsPanel.hidden = subtabState.diagnostics !== "logs";
+  diagnosticsSubtabButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.subtab === subtabState.diagnostics);
+  });
+
+  if (diagnosticsResults && diagnosticsSummary) {
+    diagnosticsResults.innerHTML = "";
+    const normalized = Array.isArray(state.diagnosticResults) ? state.diagnosticResults : [];
+    const okCount = normalized.filter((item) => item.ok).length;
+    const ngCount = normalized.length - okCount;
+    diagnosticsSummary.textContent = normalized.length ? `診断結果: OK ${okCount}件 / NG ${ngCount}件` : "未実行";
+    normalized.forEach((item) => {
+      const li = document.createElement("li");
+      li.className = `diagnostics-result ${item.ok ? "ok" : "ng"}`;
+      li.textContent = `${item.ok ? "OK" : "NG"}: ${item.name}${item.detail ? `（${item.detail}）` : ""}`;
+      diagnosticsResults.appendChild(li);
+    });
+  }
+
+  if (diagnosticsLogList) {
+    diagnosticsLogList.innerHTML = "";
+    const logs = Array.isArray(state.diagnosticLogs) ? state.diagnosticLogs : [];
+    if (!logs.length) {
+      const li = document.createElement("li");
+      li.className = "item";
+      li.innerHTML = "<p class=\"meta\">診断ログはまだありません。</p>";
+      diagnosticsLogList.appendChild(li);
+    } else {
+      logs.forEach((log) => {
+        const li = document.createElement("li");
+        li.className = "item";
+        const ngLabel = Array.isArray(log.ngItems) && log.ngItems.length ? escapeHtml(log.ngItems.join(" / ")) : "なし";
+        li.innerHTML = `
+          <p><strong>${escapeHtml(formatDateTime(log.executedAt))}</strong></p>
+          <p class="meta">OK ${Number(log.okCount) || 0}件 / NG ${Number(log.ngCount) || 0}件</p>
+          <p class="meta">NG内容: ${ngLabel}</p>
+        `;
+        diagnosticsLogList.appendChild(li);
+      });
+    }
+  }
+}
+
+function setDiagnosticResult(results) {
+  state.diagnosticResults = Array.isArray(results) ? results : [];
+  appendDiagnosticsLog(state.diagnosticResults);
+  renderDiagnostics();
+}
+
+async function runSystemDiagnostics() {
+  startLoading("システム診断");
+  try {
+    const results = [];
+    const pushResult = (name, ok, detail = "") => results.push({ name, ok: Boolean(ok), detail });
+    const pushCheck = async (name, fn) => {
+      try {
+        const output = await fn();
+        if (output && typeof output === "object" && "ok" in output) {
+          pushResult(name, output.ok, output.detail || "");
+        } else {
+          pushResult(name, Boolean(output), "");
+        }
+      } catch (error) {
+        pushResult(name, false, error?.message || "エラー");
+      }
+    };
+
+    await pushCheck("ログイン状態", () => !!currentUser);
+    await pushCheck("currentUser.id取得", () => !!currentUser?.id);
+    await pushCheck("Supabase接続", async () => {
+      const { error } = await sbClient.from("clients").select("id").eq("user_id", currentUser?.id || "").limit(1);
+      return !error;
+    });
+    await pushCheck("loadAllDataSafely実行", async () => {
+      await loadAllDataSafely();
+      return true;
+    });
+    await pushCheck("clients読込", () => ({ ok: Array.isArray(state.clients), detail: `${state.clients?.length ?? 0}件` }));
+    await pushCheck("cases読込", () => ({ ok: Array.isArray(state.cases), detail: `${state.cases?.length ?? 0}件` }));
+    await pushCheck("sales読込", () => ({ ok: Array.isArray(state.sales), detail: `${state.sales?.length ?? 0}件` }));
+    await pushCheck("expenses読込", () => ({ ok: Array.isArray(state.expenses), detail: `${state.expenses?.length ?? 0}件` }));
+    await pushCheck("dailyReports読込", () => ({ ok: Array.isArray(state.dailyReports), detail: `${state.dailyReports?.length ?? 0}件` }));
+    await pushCheck("renderAfterDataChanged実行", () => {
+      renderAfterDataChanged();
+      return true;
+    });
+    await pushCheck("renderSales実行", () => {
+      renderSales();
+      return true;
+    });
+    await pushCheck("renderCases実行", () => {
+      renderCases();
+      return true;
+    });
+    await pushCheck("renderExpenses実行", () => {
+      renderExpenses();
+      return true;
+    });
+    await pushCheck("renderDailyReports実行", () => {
+      renderDailyReports();
+      return true;
+    });
+    await pushCheck("loading overlay 非表示", () => {
+      const overlay = document.getElementById("loading-overlay");
+      return !overlay || overlay.hidden || overlay.style.display === "none";
+    });
+    await pushCheck("runMutation存在", () => typeof runMutation === "function");
+    await pushCheck("safeFileExport存在", () => typeof safeFileExport === "function");
+    await pushCheck("document clickイベント委任存在", () => eventsBound && typeof handleGlobalListAction === "function");
+    await pushCheck("フォームsubmitイベント登録状態", () => Object.values(submitBindingState).every((bound) => bound === true));
+    await pushCheck("操作ログ読込", () => ({ ok: Array.isArray(state.operationLogs), detail: `${state.operationLogs?.length ?? 0}件` }));
+
+    setDiagnosticResult(results);
+    const ngCount = results.filter((entry) => !entry.ok).length;
+    showAppMessage(ngCount > 0 ? "システム診断でNGが検出されました。" : "システム診断を実行しました。", ngCount > 0);
+  } catch (error) {
+    console.error("システム診断に失敗しました", error);
+    showAppMessage(`システム診断に失敗しました。${error.message || ""}`, true);
+  } finally {
+    forceHideLoading();
+  }
 }
 
 async function handleRunDiagnosticsClick(event) {
@@ -879,18 +972,10 @@ async function handleRunDiagnosticsClick(event) {
     showAppMessage("診断はログイン後に実行してください。", true);
     return;
   }
-  startLoading("システム診断");
   try {
-    const results = await runSystemDiagnostics();
-    const okCount = results.filter((entry) => entry.ok).length;
-    const ngCount = results.length - okCount;
-    setDiagnosticsResults(results, `診断結果: OK ${okCount}件 / NG ${ngCount}件`);
-    showAppMessage(ngCount > 0 ? "システム診断でNGが検出されました。" : "システム診断が完了しました。", ngCount > 0);
+    await runSystemDiagnostics();
   } catch (error) {
     showAppMessage(`システム診断に失敗しました。${formatSupabaseError(error)}`, true);
-    setDiagnosticsResults([{ label: `システム診断に失敗: ${error?.message || "不明なエラー"}`, ok: false }], "診断失敗");
-  } finally {
-    forceHideLoading();
   }
 }
 
@@ -959,7 +1044,7 @@ async function handleCreateDiagnosticsTestDataClick(event) {
 
       return { clientId: clientRow.id, caseId: caseRow.id };
     }, {
-      successMessage: "診断用の簡易テストデータを作成しました。",
+      successMessage: "診断テストデータを作成しました。",
       log: {
         actionType: "診断テストデータ作成",
         targetType: "diagnostics",
@@ -968,13 +1053,12 @@ async function handleCreateDiagnosticsTestDataClick(event) {
     });
 
     const afterCounts = collectDiagnosticsTableCounts();
-    setDiagnosticsResults([
-      { label: `売上登録後、state.sales件数増加 (${beforeCounts.sales}→${afterCounts.sales})`, ok: afterCounts.sales > beforeCounts.sales },
-      { label: "renderSales実行", ok: true },
-      { label: "売上一覧DOM表示件数", ok: Boolean(salesListBody && salesListBody.childElementCount >= 0) },
-      { label: "loading解除", ok: (loadingOverlay?.hidden ?? true) && loadingCount <= 0 },
-      { label: "操作ログ保存", ok: Array.isArray(state.operationLogs) },
-    ], "テストデータ作成後の確認結果");
+    state.diagnosticResults = [
+      { name: "顧客データ作成反映", ok: afterCounts.clients > beforeCounts.clients, detail: `${beforeCounts.clients}→${afterCounts.clients}件` },
+      { name: "案件データ作成反映", ok: afterCounts.cases > beforeCounts.cases, detail: `${beforeCounts.cases}→${afterCounts.cases}件` },
+      { name: "売上データ作成反映", ok: afterCounts.sales > beforeCounts.sales, detail: `${beforeCounts.sales}→${afterCounts.sales}件` },
+    ];
+    renderDiagnostics();
   } catch (error) {
     showAppMessage(`診断テストデータ作成に失敗しました。${formatSupabaseError(error)}`, true);
   }
@@ -986,19 +1070,20 @@ async function handleDeleteDiagnosticsTestDataClick(event) {
     showAppMessage("ログイン状態を確認できません。", true);
     return;
   }
+  if (!window.confirm("「診断テスト」を含むデータのみ削除します。実行しますか？")) return;
   try {
     await runMutation("診断テストデータ削除", async () => {
       const { data: targetClients, error: targetClientError } = await sbClient.from("clients")
         .select("id")
         .eq("user_id", currentUser.id)
-        .ilike("name", "診断テスト%");
+        .ilike("name", "%診断テスト%");
       if (targetClientError) throw targetClientError;
       const clientIds = (targetClients || []).map((entry) => entry.id);
 
       const { data: targetCases, error: targetCaseError } = await sbClient.from("cases")
         .select("id")
         .eq("user_id", currentUser.id)
-        .or("case_name.ilike.診断テスト%,customer_name.ilike.診断テスト%");
+        .or("case_name.ilike.%診断テスト%,customer_name.ilike.%診断テスト%");
       if (targetCaseError) throw targetCaseError;
       const caseIds = (targetCases || []).map((entry) => entry.id);
 
@@ -1007,14 +1092,14 @@ async function handleDeleteDiagnosticsTestDataClick(event) {
       };
 
       if (caseIds.length) {
-        assertNoDeleteError(await sbClient.from("case_tasks").delete().eq("user_id", currentUser.id).in("case_id", caseIds), "案件タスク");
-        assertNoDeleteError(await sbClient.from("daily_reports").delete().eq("user_id", currentUser.id).in("case_id", caseIds), "日報");
-        assertNoDeleteError(await sbClient.from("expenses").delete().eq("user_id", currentUser.id).in("case_id", caseIds), "経費");
         assertNoDeleteError(await sbClient.from("sales").delete().eq("user_id", currentUser.id).in("case_id", caseIds), "売上");
+        assertNoDeleteError(await sbClient.from("case_tasks").delete().eq("user_id", currentUser.id).in("case_id", caseIds).ilike("task_title", "%診断テスト%"), "案件タスク");
+        assertNoDeleteError(await sbClient.from("daily_reports").delete().eq("user_id", currentUser.id).in("case_id", caseIds).ilike("work_content", "%診断テスト%"), "日報");
+        assertNoDeleteError(await sbClient.from("expenses").delete().eq("user_id", currentUser.id).in("case_id", caseIds).ilike("content", "%診断テスト%"), "経費");
         assertNoDeleteError(await sbClient.from("cases").delete().eq("user_id", currentUser.id).in("id", caseIds), "案件");
       }
       if (clientIds.length) {
-        assertNoDeleteError(await sbClient.from("daily_reports").delete().eq("user_id", currentUser.id).in("client_id", clientIds), "日報");
+        assertNoDeleteError(await sbClient.from("daily_reports").delete().eq("user_id", currentUser.id).in("client_id", clientIds).ilike("work_content", "%診断テスト%"), "日報");
         assertNoDeleteError(await sbClient.from("clients").delete().eq("user_id", currentUser.id).in("id", clientIds), "顧客");
       }
       return { deletedCaseCount: caseIds.length, deletedClientCount: clientIds.length };
@@ -3607,6 +3692,7 @@ function renderAfterDataChanged() {
   safeRender("dataIntegrity", renderDataIntegrityCheck);
   safeRender("clientAnalysis", renderClientAnalysis);
   safeRender("referralAnalysis", renderReferralAnalysis);
+  safeRender("diagnostics", renderDiagnostics);
   console.log("RENDER DONE");
 }
 
@@ -3882,6 +3968,12 @@ function activateSubtab(parentTab, subtab) {
   if (!subtab) return;
   subtabState[normalizedTab] = subtab;
   applySubtabVisibility(normalizedTab);
+}
+
+function activateDiagnosticsSubtab(subtab) {
+  if (!["run", "logs"].includes(subtab)) return;
+  subtabState.diagnostics = subtab;
+  safeRender("diagnostics", renderDiagnostics);
 }
 
 function applySubtabVisibility(activeMainTab) {
@@ -8753,6 +8845,7 @@ function resetViewState() {
   state.estimateTitleQuery = "";
   state.estimateStatusFilter = "all";
   state.estimateExpiredFilter = "all";
+  subtabState.diagnostics = "run";
 }
 
 function resetEditState() {
@@ -8789,6 +8882,8 @@ function clearAppState() {
   state.operationLogFromDate = "";
   state.operationLogToDate = "";
   state.appSettings = { ...DEFAULT_APP_SETTINGS };
+  state.diagnosticResults = [];
+  state.diagnosticLogs = getDiagnosticsLogsFromStorage();
   resetViewState();
   resetEditState();
   resetClientForm();
