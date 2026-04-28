@@ -546,7 +546,7 @@ function ensureButtonDataAction(button) {
 }
 
 function inferLegacyClickAction(button) {
-  if (button.closest("#estimate-items") && button.classList.contains("estimate-item-remove-btn")) return "remove_estimate_item_row";
+  if (button.closest("#estimate-items") && button.dataset.listAction === "remove_estimate_item_row") return "remove_estimate_item_row";
   if (button.closest("#clients-list, #case-list, #case-tasks-body, #case-documents-body, #work-templates-list, #estimate-list, #expenses-list, #fixed-expenses-list, #daily-reports-body, #sales-list-body, #unpaid-list-body, #unpaid-alert-body, #billing-leak-alert-body, #status-summary-list, #deadline-alert-summary, #deadline-alert-body, #next-action-alert-body, #today-task-body, #document-alert-body, #pending-estimates-body, #data-integrity-list")) {
     return "global_list_action";
   }
@@ -1368,13 +1368,14 @@ async function handleDailyReportSubmit(event) {
 async function handleClientListAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement) || !currentUser) return;
+  const listAction = btn.dataset.listAction;
   const item = btn.closest("[data-id]");
   const id = item?.dataset.id;
   if (!id) {
     showAppMessage("対象データIDを取得できませんでした。", true);
     return;
   }
-  if (btn.classList.contains("edit-client-btn")) {
+  if (listAction === "edit_client") {
     const target = state.clients.find((entry) => entry.id === id);
     if (!target || !clientForm) return;
     subtabState.clients = "entry";
@@ -1391,7 +1392,7 @@ async function handleClientListAction(event) {
     clientForm.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
-  if (btn.classList.contains("delete-client-btn")) {
+  if (listAction === "delete_client") {
     await deleteClient(id);
   }
 }
@@ -1399,6 +1400,7 @@ async function handleClientListAction(event) {
 async function handleCaseListAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
+  const listAction = btn.dataset.listAction;
   const item = btn.closest("[data-id]");
   if (!item || !currentUser) return;
   const id = item.dataset.id;
@@ -1407,20 +1409,20 @@ async function handleCaseListAction(event) {
     return;
   }
 
-  if (btn.classList.contains("edit-btn")) {
+  if (listAction === "edit_case") {
     await startCaseEdit(id);
     return;
   }
-  if (btn.classList.contains("case-print-btn")) {
+  if (listAction === "print_case_invoice") {
     openInvoicePrintPreviewFromCase(id);
     return;
   }
-  if (btn.classList.contains("case-xlsx-btn")) {
+  if (listAction === "export_case_invoice_excel") {
     exportInvoiceDataForCase(id);
     return;
   }
 
-  if (btn.classList.contains("delete-btn")) {
+  if (listAction === "delete_case") {
     await deleteCase(id);
   }
 }
@@ -1541,13 +1543,14 @@ async function handleCaseDocumentSubmit(event) {
 async function handleCaseDocumentsListAction(event) {
   const button = event.target.closest("button");
   if (!(button instanceof HTMLButtonElement)) return;
+  const listAction = button.dataset.listAction;
   const id = button.dataset.caseDocumentId || button.closest("[data-id]")?.dataset.id;
   if (!id) return;
-  if (button.classList.contains("edit-btn")) {
+  if (listAction === "edit_case_document") {
     startCaseDocumentEdit(id);
     return;
   }
-  if (button.classList.contains("delete-btn")) {
+  if (listAction === "delete_case_document") {
     await deleteCaseDocument(id);
   }
 }
@@ -1612,15 +1615,16 @@ function handleCaseTemplateChange(event) {
 async function handleWorkTemplateListAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
+  const listAction = btn.dataset.listAction;
   const item = btn.closest("[data-id]");
   if (!item || !currentUser) return;
   const id = item.dataset.id;
   if (!id) return;
-  if (btn.classList.contains("edit-btn")) {
+  if (listAction === "edit_work_template") {
     startWorkTemplateEdit(id);
     return;
   }
-  if (btn.classList.contains("delete-btn")) {
+  if (listAction === "delete_work_template") {
     await deleteWorkTemplate(id);
   }
 }
@@ -1643,6 +1647,7 @@ function startWorkTemplateEdit(templateId) {
 async function handleSalesListAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
+  const listAction = btn.dataset.listAction;
   const item = btn.closest("[data-id]");
   if (!item || !currentUser) return;
   const id = item.dataset.id;
@@ -1651,16 +1656,16 @@ async function handleSalesListAction(event) {
     return;
   }
 
-  if (btn.classList.contains("edit-btn")) {
+  if (listAction === "edit_sale") {
     await editSale(id);
     return;
   }
 
-  if (btn.classList.contains("delete-btn")) {
+  if (listAction === "delete_sale") {
     await deleteSale(id);
     return;
   }
-  if (btn.classList.contains("delete-payment-btn")) {
+  if (listAction === "delete_payment") {
     const paymentId = btn.dataset.paymentId;
     if (!paymentId) return;
     await deletePayment(paymentId);
@@ -1749,26 +1754,26 @@ async function handleGlobalListAction(event) {
     return;
   }
 
-  if (button.classList.contains("delete-sale-btn")) {
+  if (button.dataset.listAction === "delete_sale") {
     const saleId = button.dataset.saleId || button.closest("[data-id]")?.dataset.id;
     console.log("DELETE SALE CLICKED", saleId);
     if (!saleId) return;
     await deleteSale(saleId);
     return;
   }
-  if (button.classList.contains("edit-sale-btn")) {
+  if (button.dataset.listAction === "edit_sale") {
     const saleId = button.dataset.saleId || button.closest("[data-id]")?.dataset.id;
     if (!saleId) return;
     await editSale(saleId);
     return;
   }
-  if (button.classList.contains("record-payment-btn")) {
+  if (button.dataset.listAction === "record_payment") {
     const saleId = button.dataset.saleId || button.closest("[data-sale-id]")?.dataset.saleId || button.closest("[data-id]")?.dataset.id;
     if (!saleId) return;
     await handleRecordPayment(saleId);
     return;
   }
-  if (button.classList.contains("record-reminder-btn")) {
+  if (button.dataset.listAction === "record_reminder") {
     const saleId = button.dataset.saleId || button.closest("[data-sale-id]")?.dataset.saleId || button.closest("[data-id]")?.dataset.id;
     if (!saleId) return;
     await handleRecordReminder(saleId);
@@ -1778,6 +1783,7 @@ async function handleGlobalListAction(event) {
 async function handleExpensesListAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
+  const listAction = btn.dataset.listAction;
   const item = btn.closest("[data-id]");
   if (!item || !currentUser) return;
   const id = item.dataset.id;
@@ -1786,12 +1792,12 @@ async function handleExpensesListAction(event) {
     return;
   }
 
-  if (btn.classList.contains("edit-btn")) {
+  if (listAction === "edit_expense") {
     await editExpense(id);
     return;
   }
 
-  if (btn.classList.contains("delete-btn")) {
+  if (listAction === "delete_expense") {
     await deleteExpense(id);
   }
 }
@@ -1799,13 +1805,14 @@ async function handleExpensesListAction(event) {
 function handleUnpaidListAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
+  const listAction = btn.dataset.listAction;
   const saleId = btn.dataset.saleId;
   if (!saleId) return;
-  if (btn.classList.contains("edit-sale-btn")) {
+  if (listAction === "edit_sale") {
     editSale(saleId).catch(() => {});
     return;
   }
-  if (btn.classList.contains("delete-payment-btn")) {
+  if (listAction === "delete_payment") {
     const paymentId = btn.dataset.paymentId;
     if (!paymentId) return;
     deletePayment(paymentId).catch(() => {});
@@ -1815,7 +1822,7 @@ function handleUnpaidListAction(event) {
 function handleTodayTaskAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
-  if (btn.classList.contains("record-reminder-btn")) {
+  if (btn.dataset.listAction === "record_reminder") {
     const saleId = btn.dataset.saleId;
     if (!saleId) return;
     handleRecordReminder(saleId).catch(() => {});
@@ -1898,17 +1905,18 @@ async function handleCaseTaskSubmit(event) {
 function handleCaseTaskListAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
+  const listAction = btn.dataset.listAction;
   const taskId = btn.dataset.taskId;
   if (!taskId) return;
-  if (btn.classList.contains("edit-case-task-btn")) {
+  if (listAction === "edit_case_task") {
     startCaseTaskEdit(taskId);
     return;
   }
-  if (btn.classList.contains("complete-case-task-btn")) {
+  if (listAction === "complete_case_task") {
     completeCaseTask(taskId).catch(() => {});
     return;
   }
-  if (btn.classList.contains("delete-case-task-btn")) {
+  if (listAction === "delete_case_task") {
     deleteCaseTask(taskId).catch(() => {});
   }
 }
@@ -1918,7 +1926,7 @@ function handleBillingLeakAlertAction(event) {
   if (!(btn instanceof HTMLButtonElement)) return;
   const caseId = btn.dataset.caseId;
   if (!caseId) return;
-  if (btn.classList.contains("register-sale-btn")) {
+  if (btn.dataset.listAction === "register_sale") {
     openSaleFormForCase(caseId);
   }
 }
@@ -1928,7 +1936,7 @@ function handlePendingEstimateAction(event) {
   if (!(btn instanceof HTMLButtonElement)) return;
   const estimateId = btn.dataset.estimateId;
   if (!estimateId) return;
-  if (btn.classList.contains("edit-pending-estimate-btn")) {
+  if (btn.dataset.listAction === "edit_pending_estimate") {
     startEstimateEdit(estimateId).catch(() => {});
   }
 }
@@ -2153,6 +2161,7 @@ async function startFixedExpenseEdit(fixedExpenseId) {
 async function handleFixedExpensesListAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
+  const listAction = btn.dataset.listAction;
   const item = btn.closest("[data-id]");
   if (!item || !currentUser) return;
   const id = item.dataset.id;
@@ -2161,12 +2170,12 @@ async function handleFixedExpensesListAction(event) {
     return;
   }
 
-  if (btn.classList.contains("edit-btn")) {
+  if (listAction === "edit_fixed_expense") {
     await startFixedExpenseEdit(id);
     return;
   }
 
-  if (btn.classList.contains("toggle-btn")) {
+  if (listAction === "toggle_fixed_expense") {
     const target = state.fixedExpenses.find((entry) => entry.id === id);
     if (!target) return;
 
@@ -2192,7 +2201,7 @@ async function handleFixedExpensesListAction(event) {
     return;
   }
 
-  if (btn.classList.contains("delete-btn")) {
+  if (listAction === "delete_fixed_expense") {
     await deleteFixedExpense(id);
   }
 }
@@ -2200,6 +2209,7 @@ async function handleFixedExpensesListAction(event) {
 async function handleDailyReportsListAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement) || !currentUser) return;
+  const listAction = btn.dataset.listAction;
   const item = btn.closest("[data-id]");
   const id = item?.dataset.id;
   if (!id) {
@@ -2207,12 +2217,12 @@ async function handleDailyReportsListAction(event) {
     return;
   }
 
-  if (btn.classList.contains("edit-daily-report-btn")) {
+  if (listAction === "edit_daily_report") {
     await editDailyReport(id);
     return;
   }
 
-  if (btn.classList.contains("delete-daily-report-btn")) {
+  if (listAction === "delete_daily_report") {
     await deleteDailyReport(id);
   }
 }
@@ -3341,7 +3351,7 @@ function renderTodayTasks() {
         <td>${escapeHtml(alert.title || "-")}</td>
         <td>${escapeHtml(alert.dateLabel || "-")}</td>
         <td>${escapeHtml(alert.subInfo || "-")}</td>
-        <td><button type="button" class="secondary-btn" data-task-target="${alert.target || "case"}" data-task-id="${alert.id || ""}">編集</button></td>
+        <td><button type="button" class="secondary-btn" data-action="global_list_action" data-task-target="${alert.target || "case"}" data-task-id="${alert.id || ""}">編集</button></td>
         <td>${alert.actionButtonHtml || "-"}</td>
       `;
       todayTaskBody.appendChild(tr);
@@ -3374,7 +3384,7 @@ function renderDocumentAlerts() {
       <td>${escapeHtml(entry.caseName)}</td>
       <td>${escapeHtml(entry.documentName)}</td>
       <td>${escapeHtml(entry.subInfo)}</td>
-      <td><button type="button" class="secondary-btn" data-case-document-id="${entry.id}">編集</button></td>
+      <td><button type="button" class="secondary-btn" data-action="global_list_action" data-list-action="edit_case_document" data-case-document-id="${entry.id}">編集</button></td>
     `;
     documentAlertBody.appendChild(tr);
   });
@@ -3422,7 +3432,7 @@ function renderPendingEstimates() {
       <td>${escapeHtml(entry.estimateTitle || "未設定")}</td>
       <td>${formatDate(entry.baseDate)}</td>
       <td>${entry.elapsedDays}日</td>
-      <td><button type="button" class="secondary-btn edit-pending-estimate-btn" data-estimate-id="${entry.id}">編集</button></td>
+      <td><button type="button" class="secondary-btn edit-pending-estimate-btn" data-action="global_list_action" data-list-action="edit_pending_estimate" data-estimate-id="${entry.id}">編集</button></td>
     `;
     pendingEstimatesBody.appendChild(tr);
   });
@@ -3715,7 +3725,7 @@ function buildIntegratedAlerts() {
       dateLabel: task?.dueDate ? formatDate(task.dueDate) : "未設定",
       subInfo: dueTs < todayTs ? "期限切れ" : "本日期限",
       target: "case-task",
-      actionButtonHtml: `<button type="button" class="secondary-btn" data-task-target="case-task-complete" data-task-id="${task?.id || ""}">完了</button>`,
+      actionButtonHtml: `<button type="button" class="secondary-btn" data-action="global_list_action" data-list-action="complete_case_task" data-task-target="case-task-complete" data-task-id="${task?.id || ""}">完了</button>`,
     });
   });
 
@@ -3740,7 +3750,7 @@ function buildIntegratedAlerts() {
         dateLabel: sale?.dueDate ? formatDate(sale.dueDate) : "未設定",
         subInfo: `残額: ${formatCurrency(getRemainingAmount(sale))}`,
         target: "sale",
-        actionButtonHtml: isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale?.id || ""}">督促記録</button>` : "-",
+        actionButtonHtml: isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-action="global_list_action" data-list-action="record_reminder" data-sale-id="${sale?.id || ""}">督促記録</button>` : "-",
       });
     }
     const reminderTs = toDateOnlyTimestamp(sale?.lastReminderDate);
@@ -3759,7 +3769,7 @@ function buildIntegratedAlerts() {
         dateLabel: sale?.lastReminderDate ? `最終督促: ${formatDate(sale.lastReminderDate)}` : "最終督促日なし",
         subInfo: `残額: ${formatCurrency(getRemainingAmount(sale))}`,
         target: "sale",
-        actionButtonHtml: isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale?.id || ""}">督促記録</button>` : "-",
+        actionButtonHtml: isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-action="global_list_action" data-list-action="record_reminder" data-sale-id="${sale?.id || ""}">督促記録</button>` : "-",
       });
     }
   });
@@ -3887,7 +3897,7 @@ function buildTodayTasks() {
       dueDateLabel: formatDate(entry.dueDate),
       subInfo: entry.status,
       urgencyClass: getCaseTaskUrgencyClass(entry),
-      actionButtonHtml: `<button type="button" class="secondary-btn" data-task-target="case-task-complete" data-task-id="${entry.id}">完了</button>`,
+      actionButtonHtml: `<button type="button" class="secondary-btn" data-action="global_list_action" data-list-action="complete_case_task" data-task-target="case-task-complete" data-task-id="${entry.id}">完了</button>`,
     });
   });
   getBillingLeakCandidates().forEach((entry) => {
@@ -3967,8 +3977,8 @@ function renderDeadlineAlertCard() {
         <td>${escapeHtml(entry.label || entry.status)}</td>
         <td>${formatRemainingDays(entry.remainingDays)}</td>
         <td>${entry.alertType === "case-task"
-    ? `<button type="button" class="secondary-btn edit-case-task-btn" data-task-id="${entry.id}">編集</button>`
-    : `<button type="button" class="secondary-btn" data-case-id="${entry.id}">編集</button>`}</td>
+    ? `<button type="button" class="secondary-btn edit-case-task-btn" data-action="global_list_action" data-list-action="edit_case_task" data-task-id="${entry.id}">編集</button>`
+    : `<button type="button" class="secondary-btn" data-action="global_list_action" data-task-target="case" data-task-id="${entry.id}" data-case-id="${entry.id}">編集</button>`}</td>
       `;
       deadlineAlertBody.appendChild(tr);
     });
@@ -4063,7 +4073,7 @@ function renderNextActionAlertCard() {
         <td>${escapeHtml(entry.caseName)}</td>
         <td>${formatDate(entry.nextActionDate)}</td>
         <td>${escapeHtml(entry.nextAction || "未設定")}</td>
-        <td><button type="button" class="secondary-btn" data-case-id="${entry.id}">編集</button></td>
+        <td><button type="button" class="secondary-btn" data-action="global_list_action" data-task-target="case" data-task-id="${entry.id}" data-case-id="${entry.id}">編集</button></td>
       `;
       nextActionAlertBody.appendChild(tr);
     });
@@ -4169,9 +4179,9 @@ function renderUnpaidAlert(filter = {}) {
         <td>${escapeHtml(sale.reminderMemo || "-")}</td>
         <td>${paymentHistory}</td>
         <td>
-          <button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button>
-          <button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-sale-id="${sale.id}">入金登録</button>
-          ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : ""}
+          <button type="button" class="secondary-btn edit-sale-btn" data-action="global_list_action" data-list-action="edit_sale" data-sale-id="${sale.id}">編集</button>
+          <button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-action="global_list_action" data-list-action="record_payment" data-sale-id="${sale.id}">入金登録</button>
+          ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-action="global_list_action" data-list-action="record_reminder" data-sale-id="${sale.id}">督促記録</button>` : ""}
         </td>
       `;
       safeAddClass(tr, getSaleRowClass(sale));
@@ -4205,7 +4215,7 @@ function renderUnpaidList() {
       <td>${escapeHtml(sale.reminderMethod || "-")}</td>
       <td>${escapeHtml(sale.reminderMemo || "-")}</td>
       <td>${paymentHistory}</td>
-      <td><button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button> <button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-sale-id="${sale.id}">入金登録</button> ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : ""}</td>
+      <td><button type="button" class="secondary-btn edit-sale-btn" data-action="global_list_action" data-list-action="edit_sale" data-sale-id="${sale.id}">編集</button> <button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-action="global_list_action" data-list-action="record_payment" data-sale-id="${sale.id}">入金登録</button> ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-action="global_list_action" data-list-action="record_reminder" data-sale-id="${sale.id}">督促記録</button>` : ""}</td>
     `;
     safeAddClass(tr, getSaleRowClass(sale));
     unpaidListBody.appendChild(tr);
@@ -4539,7 +4549,7 @@ function renderBillingLeakAlert() {
       <td>${escapeHtml(entry.caseName)}</td>
       <td>${formatCurrency(entry.estimateAmount)}</td>
       <td>${escapeHtml(entry.status || "完了")}</td>
-      <td><button type="button" class="secondary-btn register-sale-btn" data-case-id="${entry.id}">売上登録</button></td>
+      <td><button type="button" class="secondary-btn register-sale-btn" data-action="global_list_action" data-list-action="register_sale" data-case-id="${entry.id}">売上登録</button></td>
     `;
     billingLeakAlertBody.appendChild(tr);
   });
@@ -4568,7 +4578,7 @@ function renderPaymentHistoryInline(saleId) {
   const payments = getSalePayments(saleId);
   if (!payments.length) return "-";
   return payments.map((entry) => (
-    `<div class="payment-history-row">${formatDate(entry.paymentDate)} / ${formatCurrency(entry.amount)} / ${escapeHtml(entry.method || "その他")} ${entry.memo ? `/ ${escapeHtml(entry.memo)}` : ""} <button type="button" class="danger-btn delete-payment-btn" data-sale-id="${saleId}" data-payment-id="${entry.id}">削除</button></div>`
+    `<div class="payment-history-row">${formatDate(entry.paymentDate)} / ${formatCurrency(entry.amount)} / ${escapeHtml(entry.method || "その他")} ${entry.memo ? `/ ${escapeHtml(entry.memo)}` : ""} <button type="button" class="danger-btn delete-payment-btn" data-action="global_list_action" data-list-action="delete_payment" data-sale-id="${saleId}" data-payment-id="${entry.id}">削除</button></div>`
   )).join("");
 }
 
@@ -4627,9 +4637,9 @@ function renderCaseTasksTable() {
       <td>${formatDate(entry.dueDate)}</td>
       <td>${escapeHtml(entry.status)}</td>
       <td>${formatDate(entry.completedAt)}</td>
-      <td><button type="button" class="secondary-btn edit-case-task-btn" data-task-id="${entry.id}">編集</button></td>
-      <td>${entry.status !== "完了" ? `<button type="button" class="secondary-btn complete-case-task-btn" data-task-id="${entry.id}">完了</button>` : "-"}</td>
-      <td><button type="button" class="danger-btn delete-case-task-btn" data-task-id="${entry.id}">削除</button></td>
+      <td><button type="button" class="secondary-btn edit-case-task-btn" data-action="global_list_action" data-list-action="edit_case_task" data-task-id="${entry.id}">編集</button></td>
+      <td>${entry.status !== "完了" ? `<button type="button" class="secondary-btn complete-case-task-btn" data-action="global_list_action" data-list-action="complete_case_task" data-task-id="${entry.id}">完了</button>` : "-"}</td>
+      <td><button type="button" class="danger-btn delete-case-task-btn" data-action="global_list_action" data-list-action="delete_case_task" data-task-id="${entry.id}">削除</button></td>
     `;
     caseTasksBody.appendChild(tr);
   });
@@ -4658,8 +4668,8 @@ function renderCaseDocuments() {
       <td>${formatDate(entry.checkedDate)}</td>
       <td>${escapeHtml(truncateText(entry.memo || "", 80) || "-")}</td>
       <td>${entry.fileUrl ? `<a href="${escapeHtml(entry.fileUrl)}" target="_blank" rel="noopener noreferrer">開く</a>` : "-"}</td>
-      <td><button type="button" class="secondary-btn edit-btn" data-case-document-id="${entry.id}">編集</button></td>
-      <td><button type="button" class="danger-btn delete-btn" data-case-document-id="${entry.id}">削除</button></td>
+      <td><button type="button" class="secondary-btn edit-btn" data-action="global_list_action" data-list-action="edit_case_document" data-case-document-id="${entry.id}">編集</button></td>
+      <td><button type="button" class="danger-btn delete-btn" data-action="global_list_action" data-list-action="delete_case_document" data-case-document-id="${entry.id}">削除</button></td>
     `;
     caseDocumentsBody.appendChild(tr);
   });
@@ -4755,7 +4765,7 @@ function renderClients() {
         <p class="meta">紹介元: ${escapeHtml(client.referralSource || "未設定")} / メモ: ${escapeHtml(truncateText(client.memo || "未設定", 60))}</p>
         <p class="meta">最終対応日: ${lastInteraction ? formatDate(lastInteraction) : "未設定"} / 次回対応日: ${nextInteraction ? formatDate(nextInteraction) : "未設定"} / 対応履歴件数: ${related.length}件</p>
       </div>
-      <div class="row-actions"><button type="button" class="secondary-btn edit-client-btn">編集</button><button type="button" class="danger-btn delete-client-btn">削除</button></div>
+      <div class="row-actions"><button type="button" class="secondary-btn edit-client-btn" data-action="global_list_action" data-list-action="edit_client">編集</button><button type="button" class="danger-btn delete-client-btn" data-action="global_list_action" data-list-action="delete_client">削除</button></div>
     `;
     clientsList.appendChild(li);
   });
@@ -4831,8 +4841,8 @@ function renderDailyReports() {
           <p class="daily-report-card-case">対応種別: ${escapeHtml(entry.interactionType || "作業")}</p>
         </div>
         <div class="daily-report-card-actions">
-          <button type="button" class="secondary-btn edit-daily-report-btn">編集</button>
-          <button type="button" class="danger-btn delete-daily-report-btn">削除</button>
+          <button type="button" class="secondary-btn edit-daily-report-btn" data-action="global_list_action" data-list-action="edit_daily_report">編集</button>
+          <button type="button" class="danger-btn delete-daily-report-btn" data-action="global_list_action" data-list-action="delete_daily_report">削除</button>
         </div>
       </header>
       <dl class="daily-report-card-meta">
@@ -5169,14 +5179,14 @@ function renderEstimates() {
         </div>
       </div>
       <div class="row-actions estimate-card-actions">
-        <button type="button" class="secondary-btn estimate-edit-btn">編集</button>
-        <button type="button" class="danger-btn estimate-delete-btn">削除</button>
-        <button type="button" class="secondary-btn create-case-btn" ${isCaseCreated ? "disabled" : ""}>${isCaseCreated ? "案件化済み" : "案件化"}</button>
-        <button type="button" class="secondary-btn estimate-estimate-print-btn">見積書出力</button>
-        <button type="button" class="secondary-btn estimate-print-btn">請求書出力</button>
-        <button type="button" class="secondary-btn estimate-estimate-xlsx-btn">見積Excel</button>
-        <button type="button" class="secondary-btn estimate-xlsx-btn">請求Excel</button>
-        <button type="button" class="secondary-btn create-invoice-btn" ${hasCreatedInvoice ? "disabled" : ""}>${hasCreatedInvoice ? "請求済み" : "請求作成"}</button>
+        <button type="button" class="secondary-btn estimate-edit-btn" data-action="global_list_action" data-list-action="edit_estimate">編集</button>
+        <button type="button" class="danger-btn estimate-delete-btn" data-action="global_list_action" data-list-action="delete_estimate">削除</button>
+        <button type="button" class="secondary-btn create-case-btn" data-action="global_list_action" data-list-action="create_case_from_estimate" ${isCaseCreated ? "disabled" : ""}>${isCaseCreated ? "案件化済み" : "案件化"}</button>
+        <button type="button" class="secondary-btn estimate-estimate-print-btn" data-action="global_list_action" data-list-action="print_estimate">見積書出力</button>
+        <button type="button" class="secondary-btn estimate-print-btn" data-action="global_list_action" data-list-action="print_invoice_from_estimate">請求書出力</button>
+        <button type="button" class="secondary-btn estimate-estimate-xlsx-btn" data-action="global_list_action" data-list-action="export_estimate_excel">見積Excel</button>
+        <button type="button" class="secondary-btn estimate-xlsx-btn" data-action="global_list_action" data-list-action="export_invoice_excel_from_estimate">請求Excel</button>
+        <button type="button" class="secondary-btn create-invoice-btn" data-action="global_list_action" data-list-action="create_invoice_from_estimate" ${hasCreatedInvoice ? "disabled" : ""}>${hasCreatedInvoice ? "請求済み" : "請求作成"}</button>
       </div>
     `;
     estimateList.appendChild(li);
@@ -5199,21 +5209,22 @@ async function handleEstimateListAction(event) {
     showAppMessage("対象データIDを取得できませんでした。", true);
     return;
   }
-  if (button.classList.contains("estimate-edit-btn")) return startEstimateEdit(estimateId);
-  if (button.classList.contains("estimate-delete-btn")) {
+  const listAction = button.dataset.listAction;
+  if (listAction === "edit_estimate") return startEstimateEdit(estimateId);
+  if (listAction === "delete_estimate") {
     await deleteEstimate(estimateId);
     return;
   }
-  if (button.classList.contains("create-case-btn")) {
+  if (listAction === "create_case_from_estimate") {
     console.log("CREATE CASE CLICKED", estimateId);
     await handleCreateCaseFromEstimate(estimateId);
     return;
   }
-  if (button.classList.contains("estimate-estimate-print-btn")) return openEstimatePrintPreview(estimateId);
-  if (button.classList.contains("estimate-print-btn")) return openInvoicePrintPreviewFromEstimate(estimateId);
-  if (button.classList.contains("estimate-estimate-xlsx-btn")) return exportEstimateDataForEstimate(estimateId);
-  if (button.classList.contains("estimate-xlsx-btn")) return exportInvoiceDataForEstimate(estimateId);
-  if (button.classList.contains("create-invoice-btn") || button.classList.contains("estimate-create-invoice-btn")) {
+  if (listAction === "print_estimate") return openEstimatePrintPreview(estimateId);
+  if (listAction === "print_invoice_from_estimate") return openInvoicePrintPreviewFromEstimate(estimateId);
+  if (listAction === "export_estimate_excel") return exportEstimateDataForEstimate(estimateId);
+  if (listAction === "export_invoice_excel_from_estimate") return exportInvoiceDataForEstimate(estimateId);
+  if (listAction === "create_invoice_from_estimate") {
     console.log("CREATE INVOICE CLICKED", estimateId);
     await handleCreateInvoiceFromEstimate(estimateId);
   }
@@ -5501,6 +5512,8 @@ function renderCases() {
       const printBtn = document.createElement("button");
       printBtn.type = "button";
       printBtn.className = "secondary-btn case-print-btn";
+      printBtn.dataset.action = "global_list_action";
+      printBtn.dataset.listAction = "print_case_invoice";
       printBtn.textContent = "請求書出力";
       rowActions.appendChild(printBtn);
     }
@@ -5508,6 +5521,8 @@ function renderCases() {
       const xlsxBtn = document.createElement("button");
       xlsxBtn.type = "button";
       xlsxBtn.className = "secondary-btn case-xlsx-btn";
+      xlsxBtn.dataset.action = "global_list_action";
+      xlsxBtn.dataset.listAction = "export_case_invoice_excel";
       xlsxBtn.textContent = "請求Excel";
       rowActions.appendChild(xlsxBtn);
     }
@@ -5662,10 +5677,10 @@ function renderSales() {
         <td>${escapeHtml(reminderMethod)}</td>
         <td>${escapeHtml(reminderMemo)}</td>
         <td>${paymentHistory}</td>
-        <td>${canRecordReminder ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : "-"}</td>
-        <td><button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-sale-id="${sale.id}">入金登録</button></td>
-        <td><button type="button" class="edit-sale-btn secondary-btn" data-sale-id="${sale.id}">編集</button></td>
-        <td><button type="button" class="danger-btn delete-btn delete-sale-btn" data-sale-id="${sale.id}">削除</button></td>
+        <td>${canRecordReminder ? `<button type="button" class="secondary-btn record-reminder-btn" data-action="global_list_action" data-list-action="record_reminder" data-sale-id="${sale.id}">督促記録</button>` : "-"}</td>
+        <td><button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-action="global_list_action" data-list-action="record_payment" data-sale-id="${sale.id}">入金登録</button></td>
+        <td><button type="button" class="edit-sale-btn secondary-btn" data-action="global_list_action" data-list-action="edit_sale" data-sale-id="${sale.id}">編集</button></td>
+        <td><button type="button" class="danger-btn delete-btn delete-sale-btn" data-action="global_list_action" data-list-action="delete_sale" data-sale-id="${sale.id}">削除</button></td>
       `;
       salesListBody.appendChild(tr);
     } catch (error) {
@@ -6509,7 +6524,7 @@ body {
 </style>
 </head>
 <body>
-  <div class="print-toolbar no-print"><button class="print-btn" onclick="window.print()">印刷 / PDF保存</button></div>
+  <div class="print-toolbar no-print"><button type="button" class="print-btn" id="print-preview-btn">印刷 / PDF保存</button></div>
   <main class="sheet">
     <h1 class="title">${title}</h1>
     <div class="title-divider" aria-hidden="true"></div>
@@ -6548,7 +6563,10 @@ body {
         <div class="note-box">${escapeHtml(isInvoice ? (documentData.note || "") : `${documentData.note || ""}\n${documentData.paymentTerms || "支払条件: 記載なし"}\n有効期限: ${documentData.validUntil || "記載なし"}`.trim())}</div>
       </section>
     </section>
-  </main>
+</main>
+<script>
+  document.getElementById("print-preview-btn")?.addEventListener("click", () => window.print());
+</script>
 </body>
 </html>`;
 }
