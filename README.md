@@ -299,9 +299,11 @@ create table if not exists work_templates (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
   name text not null,
+  standard_estimate_amount bigint,
   default_due_days int,
   required_documents text,
   default_tasks text,
+  task_list text,
   memo text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -317,4 +319,6 @@ with check (auth.uid() = user_id);
 alter table cases add column if not exists template_id uuid;
 alter table cases add column if not exists required_documents text;
 alter table cases add column if not exists task_list text;
+alter table work_templates add column if not exists standard_estimate_amount bigint;
+alter table work_templates add column if not exists task_list text;
 ```

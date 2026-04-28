@@ -1004,6 +1004,7 @@ async function handleWorkTemplateSubmit(event) {
   const payload = {
     user_id: currentUser.id,
     name,
+    standard_estimate_amount: normalizeAmount(workTemplateForm.elements.templateStandardEstimateAmount.value),
     default_due_days: parseNumberInput(workTemplateForm.elements.templateDefaultDueDays.value),
     required_documents: asTrimmedText(workTemplateForm.elements.templateRequiredDocuments.value) || null,
     default_tasks: asTrimmedText(workTemplateForm.elements.templateDefaultTasks.value) || null,
@@ -1040,10 +1041,20 @@ async function createCaseTasksFromTemplate(caseRow, templateId) {
   const taskLines = splitMultilineItems(taskSource);
   if (!taskLines.length) return;
   const dueDate = caseRow.due_date || null;
+  const { data: existingRows, error: existingError } = await sbClient
+    .from("case_tasks")
+    .select("task_title")
+    .eq("user_id", currentUser.id)
+    .eq("case_id", caseRow.id);
+  if (existingError) throw existingError;
+  const existingTaskNames = new Set((existingRows || []).map((row) => normalizeAutoCreateItemName(row.task_title)));
+  const insertingRows = [];
   for (const line of taskLines) {
     const title = asTrimmedText(line);
-    if (!title) continue;
-    const payload = {
+    const normalizedTitle = normalizeAutoCreateItemName(title);
+    if (!normalizedTitle || existingTaskNames.has(normalizedTitle)) continue;
+    existingTaskNames.add(normalizedTitle);
+    insertingRows.push({
       user_id: currentUser.id,
       case_id: caseRow.id,
       task_title: title,
@@ -1051,11 +1062,11 @@ async function createCaseTasksFromTemplate(caseRow, templateId) {
       due_date: dueDate,
       status: "未完了",
       completed_at: null,
-    };
-    const { data, error } = await sbClient.from("case_tasks").insert(payload).select().single();
-    if (error) throw error;
-    if (!data) throw new Error("案件タスクの自動作成結果を取得できませんでした。");
+    });
   }
+  if (!insertingRows.length) return;
+  const { error } = await sbClient.from("case_tasks").insert(insertingRows);
+  if (error) throw error;
 }
 
 async function createCaseDocumentsFromTemplate(caseRow, templateId) {
@@ -1064,10 +1075,20 @@ async function createCaseDocumentsFromTemplate(caseRow, templateId) {
   if (!template) return;
   const docLines = splitMultilineItems(template.requiredDocuments);
   if (!docLines.length) return;
+  const { data: existingRows, error: existingError } = await sbClient
+    .from("case_documents")
+    .select("document_name")
+    .eq("user_id", currentUser.id)
+    .eq("case_id", caseRow.id);
+  if (existingError) throw existingError;
+  const existingDocumentNames = new Set((existingRows || []).map((row) => normalizeAutoCreateItemName(row.document_name)));
+  const insertingRows = [];
   for (const line of docLines) {
     const documentName = asTrimmedText(line);
-    if (!documentName) continue;
-    const payload = {
+    const normalizedDocumentName = normalizeAutoCreateItemName(documentName);
+    if (!normalizedDocumentName || existingDocumentNames.has(normalizedDocumentName)) continue;
+    existingDocumentNames.add(normalizedDocumentName);
+    insertingRows.push({
       user_id: currentUser.id,
       case_id: caseRow.id,
       document_name: documentName,
@@ -1076,11 +1097,11 @@ async function createCaseDocumentsFromTemplate(caseRow, templateId) {
       checked_date: null,
       memo: null,
       file_url: null,
-    };
-    const { data, error } = await sbClient.from("case_documents").insert(payload).select().single();
-    if (error) throw error;
-    if (!data) throw new Error("書類の自動作成結果を取得できませんでした。");
+    });
   }
+  if (!insertingRows.length) return;
+  const { error } = await sbClient.from("case_documents").insert(insertingRows);
+  if (error) throw error;
 }
 
 async function handleSaleSubmit(event) {
@@ -1593,7 +1614,12 @@ async function deleteCaseDocument(caseDocumentId) {
 
 function handleCaseTemplateChange(event) {
   const templateId = event?.target?.value || "";
-  if (!templateId || !caseForm) return;
+  if (!caseForm) return;
+  if (!templateId) {
+    caseForm.elements.requiredDocuments.value = "";
+    caseForm.elements.taskList.value = "";
+    return;
+  }
   const found = state.workTemplates.find((entry) => entry.id === templateId);
   if (!found) return;
   const baseDate = caseForm.elements.receivedDate.value ? new Date(caseForm.elements.receivedDate.value) : new Date();
@@ -1603,6 +1629,9 @@ function handleCaseTemplateChange(event) {
     : "";
   if (!asTrimmedText(caseForm.elements.caseName.value)) {
     caseForm.elements.caseName.value = found.name;
+  }
+  if (Number.isFinite(found.standardEstimateAmount) && found.standardEstimateAmount > 0) {
+    caseForm.elements.amount.value = String(found.standardEstimateAmount);
   }
   if (dueDate) caseForm.elements.dueDate.value = dueDate;
   caseForm.elements.requiredDocuments.value = found.requiredDocuments || "";
@@ -1634,6 +1663,7 @@ function startWorkTemplateEdit(templateId) {
   if (!target || !workTemplateForm) return;
   editState.workTemplateId = target.id;
   workTemplateForm.elements.templateName.value = target.name;
+  workTemplateForm.elements.templateStandardEstimateAmount.value = target.standardEstimateAmount ?? "";
   workTemplateForm.elements.templateDefaultDueDays.value = target.defaultDueDays ?? "";
   workTemplateForm.elements.templateRequiredDocuments.value = target.requiredDocuments || "";
   workTemplateForm.elements.templateDefaultTasks.value = target.defaultTasks || "";
@@ -4810,7 +4840,7 @@ function renderWorkTemplates() {
     const metas = node.querySelectorAll(".meta");
     item.dataset.id = entry.id;
     title.textContent = entry.name;
-    if (metas[0]) metas[0].textContent = `標準期限: ${Number.isFinite(entry.defaultDueDays) ? `${entry.defaultDueDays}日後` : "未設定"} / 必要書類: ${truncateText(entry.requiredDocuments || "未設定", 80)}`;
+    if (metas[0]) metas[0].textContent = `標準見積: ${Number.isFinite(entry.standardEstimateAmount) && entry.standardEstimateAmount > 0 ? formatCurrency(entry.standardEstimateAmount) : "未設定"} / 標準期限: ${Number.isFinite(entry.defaultDueDays) ? `${entry.defaultDueDays}日後` : "未設定"} / 必要書類: ${truncateText(entry.requiredDocuments || "未設定", 80)}`;
     if (metas[1]) metas[1].textContent = `標準タスク: ${truncateText(entry.defaultTasks || "未設定", 90)} / メモ: ${truncateText(entry.memo || "未設定", 60)}`;
     workTemplatesList.appendChild(node);
   });
@@ -7820,6 +7850,10 @@ function splitMultilineItems(text) {
     .filter(Boolean);
 }
 
+function normalizeAutoCreateItemName(text) {
+  return asTrimmedText(text).toLowerCase().replace(/\s+/g, " ");
+}
+
 function convertTasksToChecklist(text) {
   const rows = splitMultilineItems(text);
   if (!rows.length) return "";
@@ -7916,12 +7950,17 @@ function mapCaseDocumentFromDb(row) {
 }
 
 function mapWorkTemplateFromDb(row) {
+  // DB拡張が未適用の場合は以下を実行してください:
+  // alter table work_templates add column if not exists standard_estimate_amount bigint;
+  // alter table work_templates add column if not exists task_list text;
   return {
     id: row.id,
     name: row.name || "",
+    standardEstimateAmount: normalizeAmount(row.standard_estimate_amount),
     defaultDueDays: Number.isFinite(Number(row.default_due_days)) ? Number(row.default_due_days) : null,
     requiredDocuments: row.required_documents || "",
-    defaultTasks: row.default_tasks || "",
+    defaultTasks: row.default_tasks || row.task_list || "",
+    taskList: row.task_list || "",
     memo: row.memo || "",
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
@@ -7984,6 +8023,7 @@ async function seedDefaultWorkTemplates() {
     {
       user_id: currentUser.id,
       name: "建設業許可",
+      standard_estimate_amount: 120000,
       default_due_days: 30,
       required_documents: "登記事項証明書\n納税証明書\n決算書\n経管資料\n専技資料",
       default_tasks: "要件確認\n必要書類案内\n書類回収\n申請書作成\n提出\n補正対応",
@@ -7992,6 +8032,7 @@ async function seedDefaultWorkTemplates() {
     {
       user_id: currentUser.id,
       name: "車庫証明",
+      standard_estimate_amount: 55000,
       default_due_days: 7,
       required_documents: "自認書または使用承諾書\n配置図\n所在図\n車検証情報",
       default_tasks: "書類確認\n現地確認\n警察署提出\n受取",
@@ -8000,6 +8041,7 @@ async function seedDefaultWorkTemplates() {
     {
       user_id: currentUser.id,
       name: "古物商許可",
+      standard_estimate_amount: 95000,
       default_due_days: 40,
       required_documents: "住民票\n身分証明書\n略歴書\n誓約書\nURL資料",
       default_tasks: "ヒアリング\n必要書類案内\n申請書作成\n警察署提出\n補正対応",

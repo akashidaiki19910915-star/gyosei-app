@@ -793,6 +793,7 @@
               <h2>業務テンプレート登録</h2>
               <form id="work-template-form" class="form">
                 <label>テンプレート名 <span class="required">必須</span><input id="template-name" name="templateName" type="text" required maxlength="120" /></label>
+                <label>標準見積金額（円）<input id="template-standard-estimate-amount" name="templateStandardEstimateAmount" type="text" inputmode="numeric" pattern="[0-9,]*" placeholder="例: 55000" /></label>
                 <label>標準期限（日数）<input id="template-default-due-days" name="templateDefaultDueDays" type="text" inputmode="numeric" pattern="[0-9,]*" placeholder="例: 30" /></label>
                 <label>必要書類<textarea id="template-required-documents" name="templateRequiredDocuments" rows="4" maxlength="4000" placeholder="登記事項証明書&#10;納税証明書"></textarea></label>
                 <label>標準タスク<textarea id="template-default-tasks" name="templateDefaultTasks" rows="5" maxlength="4000" placeholder="要件確認&#10;必要書類案内&#10;書類回収"></textarea></label>
