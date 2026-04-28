@@ -78,6 +78,39 @@ const state = {
 };
 const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
 
+const CLICK_ACTION_HANDLERS = {
+  activate_tab: (event, button) => activateTab(button?.dataset?.tab),
+  activate_subtab: (event, button) => activateSubtab(button?.dataset?.parentTab, button?.dataset?.subtab),
+  signup: handleSignup,
+  logout: handleLogout,
+  manual_reload: handleManualReload,
+  clear_all: handleClearAll,
+  clear_status_filter: () => applyCaseStatusFilter("all"),
+  clear_case_filters: clearCaseFilters,
+  clear_sales_search: clearSalesSearch,
+  clear_expenses_search: clearExpensesSearch,
+  clear_daily_report_filters: clearDailyReportFilters,
+  force_close_loading: () => {
+    forceHideLoading();
+    showAppMessage("読み込みを強制解除しました。必要なら再操作してください。", true);
+  },
+  export_cases_csv: handleExportCasesCsv,
+  export_sales_csv: handleExportSalesCsv,
+  export_payments_csv: handleExportPaymentsCsv,
+  export_expenses_csv: handleExportExpensesCsv,
+  export_fixed_expenses_csv: handleExportFixedExpensesCsv,
+  export_case_documents_csv: handleExportCaseDocumentsCsv,
+  export_all_csv: handleExportAllCsv,
+  export_client_analysis_csv: handleExportClientAnalysisCsv,
+  export_referral_analysis_csv: handleExportReferralAnalysisCsv,
+  export_excel: handleExportExcel,
+  export_analysis_excel: handleExportAnalysisExcel,
+  export_backup_json: handleExportBackupJson,
+  add_estimate_item_row: () => addEstimateItemRow(),
+  remove_estimate_item_row: handleEstimateItemsClick,
+  global_list_action: handleGlobalListAction,
+};
+
 const authView = document.getElementById("auth-view");
 const appView = document.getElementById("app-view");
 const loadingOverlay = document.getElementById("loading-overlay");
@@ -395,12 +428,12 @@ async function initialize() {
 function bindEvents() {
   if (eventsBound) return;
   bindCommaInputFields();
-  tabs.forEach((btn) => btn.addEventListener("click", () => activateTab(btn.dataset.tab)));
-  subtabButtons.forEach((btn) => btn.addEventListener("click", () => activateSubtab(btn.dataset.parentTab, btn.dataset.subtab)));
+  tabs.forEach((btn) => { btn.dataset.action = "activate_tab"; });
+  subtabButtons.forEach((btn) => { btn.dataset.action = "activate_subtab"; });
   authForm.addEventListener("submit", handleLogin);
-  signupBtn.addEventListener("click", handleSignup);
-  logoutBtn.addEventListener("click", handleLogout);
-  manualReloadBtn?.addEventListener("click", handleManualReload);
+  signupBtn.dataset.action = "signup";
+  logoutBtn.dataset.action = "logout";
+  if (manualReloadBtn) manualReloadBtn.dataset.action = "manual_reload";
 
   clientForm?.addEventListener("submit", handleClientSubmit);
   caseForm.addEventListener("submit", handleCaseSubmit);
@@ -417,53 +450,50 @@ function bindEvents() {
   estimateForm?.addEventListener("submit", handleEstimateSubmit);
   settingsForm?.addEventListener("submit", handleSettingsSubmit);
 
-  clearBtn.addEventListener("click", handleClearAll);
+  clearBtn.dataset.action = "clear_all";
   reportCaseSelect?.addEventListener("change", syncDailyReportClientFromCase);
   reportClientSelect?.addEventListener("change", syncDailyReportClientLabel);
   clientHistoryClientSelect?.addEventListener("change", renderClientHistory);
   targetMonthInput?.addEventListener("input", handleTargetMonthChange);
   targetYearInput?.addEventListener("input", handleTargetYearChange);
   aggregationRadios.forEach((radio) => radio.addEventListener("change", handleAggregationChange));
-  statusFilterClearBtn?.addEventListener("click", () => applyCaseStatusFilter("all"));
-  document.addEventListener("click", handleGlobalListAction);
+  if (statusFilterClearBtn) statusFilterClearBtn.dataset.action = "clear_status_filter";
+  document.addEventListener("click", dispatchAction);
   caseSearchInput?.addEventListener("input", handleCaseSearchInput);
   caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
   caseDeadlineFilterSelect?.addEventListener("change", handleCaseDeadlineFilterChange);
-  caseFilterClearBtn?.addEventListener("click", clearCaseFilters);
+  if (caseFilterClearBtn) caseFilterClearBtn.dataset.action = "clear_case_filters";
   salesSearchInput?.addEventListener("input", handleSalesSearchInput);
-  salesFilterClearBtn?.addEventListener("click", clearSalesSearch);
+  if (salesFilterClearBtn) salesFilterClearBtn.dataset.action = "clear_sales_search";
   expensesSearchInput?.addEventListener("input", handleExpensesSearchInput);
-  expensesFilterClearBtn?.addEventListener("click", clearExpensesSearch);
+  if (expensesFilterClearBtn) expensesFilterClearBtn.dataset.action = "clear_expenses_search";
   dailyReportSearchInput?.addEventListener("input", handleDailyReportSearchInput);
   dailyReportDateFilterSelect?.addEventListener("change", handleDailyReportDateFilterChange);
-  dailyReportFilterClearBtn?.addEventListener("click", clearDailyReportFilters);
+  if (dailyReportFilterClearBtn) dailyReportFilterClearBtn.dataset.action = "clear_daily_report_filters";
   document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("focus", handleWindowFocus);
   window.addEventListener("pageshow", handlePageShow);
-  loadingForceCloseBtn?.addEventListener("click", () => {
-    forceHideLoading();
-    showAppMessage("読み込みを強制解除しました。必要なら再操作してください。", true);
-  });
-  exportCasesCsvBtn?.addEventListener("click", handleExportCasesCsv);
-  exportSalesCsvBtn?.addEventListener("click", handleExportSalesCsv);
-  exportPaymentsCsvBtn?.addEventListener("click", handleExportPaymentsCsv);
-  exportExpensesCsvBtn?.addEventListener("click", handleExportExpensesCsv);
-  exportFixedExpensesCsvBtn?.addEventListener("click", handleExportFixedExpensesCsv);
-  exportCaseDocumentsCsvBtn?.addEventListener("click", handleExportCaseDocumentsCsv);
-  exportAllCsvBtn?.addEventListener("click", handleExportAllCsv);
-  exportClientAnalysisCsvBtn?.addEventListener("click", handleExportClientAnalysisCsv);
-  exportReferralAnalysisCsvBtn?.addEventListener("click", handleExportReferralAnalysisCsv);
+  if (loadingForceCloseBtn) loadingForceCloseBtn.dataset.action = "force_close_loading";
+  if (exportCasesCsvBtn) exportCasesCsvBtn.dataset.action = "export_cases_csv";
+  if (exportSalesCsvBtn) exportSalesCsvBtn.dataset.action = "export_sales_csv";
+  if (exportPaymentsCsvBtn) exportPaymentsCsvBtn.dataset.action = "export_payments_csv";
+  if (exportExpensesCsvBtn) exportExpensesCsvBtn.dataset.action = "export_expenses_csv";
+  if (exportFixedExpensesCsvBtn) exportFixedExpensesCsvBtn.dataset.action = "export_fixed_expenses_csv";
+  if (exportCaseDocumentsCsvBtn) exportCaseDocumentsCsvBtn.dataset.action = "export_case_documents_csv";
+  if (exportAllCsvBtn) exportAllCsvBtn.dataset.action = "export_all_csv";
+  if (exportClientAnalysisCsvBtn) exportClientAnalysisCsvBtn.dataset.action = "export_client_analysis_csv";
+  if (exportReferralAnalysisCsvBtn) exportReferralAnalysisCsvBtn.dataset.action = "export_referral_analysis_csv";
   csvImportForm?.addEventListener("submit", handleCsvImportSubmit);
-  exportExcelBtn?.addEventListener("click", handleExportExcel);
-  exportAnalysisExcelBtn?.addEventListener("click", handleExportAnalysisExcel);
+  if (exportExcelBtn) exportExcelBtn.dataset.action = "export_excel";
+  if (exportAnalysisExcelBtn) exportAnalysisExcelBtn.dataset.action = "export_analysis_excel";
   excelImportForm?.addEventListener("submit", handleExcelImportSubmit);
   console.log("BACKUP BUTTON FOUND", !!exportBackupJsonBtn);
-  exportBackupJsonBtn?.addEventListener("click", handleExportBackupJson);
+  if (exportBackupJsonBtn) exportBackupJsonBtn.dataset.action = "export_backup_json";
   backupRestoreForm?.addEventListener("submit", handleBackupRestoreSubmit);
   document.addEventListener("wheel", handleNumberInputWheel, { passive: true });
-  estimateAddItemBtn?.addEventListener("click", () => addEstimateItemRow());
+  if (estimateAddItemBtn) estimateAddItemBtn.dataset.action = "add_estimate_item_row";
   estimateItemsWrap?.addEventListener("input", handleEstimateItemsInput);
-  estimateItemsWrap?.addEventListener("click", handleEstimateItemsClick);
+  
   caseClientSelect?.addEventListener("change", syncCaseCustomerFromClient);
   caseTemplateSelect?.addEventListener("change", handleCaseTemplateChange);
   estimateClientSelect?.addEventListener("change", syncEstimateCustomerFromClient);
@@ -483,9 +513,44 @@ function bindEvents() {
     state.estimateExpiredFilter = event.target.value || "all";
     safeRender("estimates", renderEstimates);
   });
+  hydrateActionButtons();
   eventsBound = true;
   console.log("EVENTS BOUND");
   activateTab("cases");
+}
+
+function dispatchAction(event) {
+  const button = event.target.closest("button");
+  if (!(button instanceof HTMLButtonElement)) return;
+  ensureButtonDataAction(button);
+  const action = button.dataset.action;
+  if (!action) return;
+  event.preventDefault();
+  const handler = CLICK_ACTION_HANDLERS[action];
+  if (typeof handler !== "function") return;
+  Promise.resolve(handler(event, button)).catch((error) => {
+    console.error("click action failed", action, error);
+    showAppMessage(`操作に失敗しました: ${action}`, true);
+  });
+}
+
+function hydrateActionButtons(root = document) {
+  if (!root) return;
+  root.querySelectorAll("button").forEach((button) => ensureButtonDataAction(button));
+}
+
+function ensureButtonDataAction(button) {
+  if (!(button instanceof HTMLButtonElement) || button.dataset.action) return;
+  const action = inferLegacyClickAction(button);
+  if (action) button.dataset.action = action;
+}
+
+function inferLegacyClickAction(button) {
+  if (button.closest("#estimate-items") && button.classList.contains("estimate-item-remove-btn")) return "remove_estimate_item_row";
+  if (button.closest("#clients-list, #case-list, #case-tasks-body, #case-documents-body, #work-templates-list, #estimate-list, #expenses-list, #fixed-expenses-list, #daily-reports-body, #sales-list-body, #unpaid-list-body, #unpaid-alert-body, #billing-leak-alert-body, #status-summary-list, #deadline-alert-summary, #deadline-alert-body, #next-action-alert-body, #today-task-body, #document-alert-body, #pending-estimates-body, #data-integrity-list")) {
+    return "global_list_action";
+  }
+  return "";
 }
 
 function handleAggregationChange(event) {
@@ -3190,6 +3255,17 @@ async function restoreBackupData(rawData, mode) {
   return result;
 }
 
+function safeClassName(className) {
+  return String(className || "").trim().replace(/[^\w\-\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function safeAddClass(element, className) {
+  if (!element || !className) return;
+  const cleaned = safeClassName(className);
+  if (!cleaned) return;
+  element.className = safeClassName(`${element.className || ""} ${cleaned}`);
+}
+
 function safeRender(name, fn) {
   try {
     if (typeof fn === "function") fn();
@@ -3229,6 +3305,7 @@ function renderAfterDataChanged() {
   safeRender("dataIntegrity", renderDataIntegrityCheck);
   safeRender("clientAnalysis", renderClientAnalysis);
   safeRender("referralAnalysis", renderReferralAnalysis);
+  hydrateActionButtons();
   console.log("RENDER DONE");
 }
 
@@ -3256,7 +3333,7 @@ function renderTodayTasks() {
     if (!alerts.length) return;
     alerts.forEach((alert) => {
       const tr = document.createElement("tr");
-      tr.className = `task-priority-${alert.priority || "low"}`;
+      tr.className = safeClassName(`task-priority-${alert.priority || "low"}`);
       tr.innerHTML = `
         <td>${escapeHtml(alert.typeLabel || "通知")}</td>
         <td>${escapeHtml(alert.clientName || "顧客不明")}</td>
@@ -4084,7 +4161,7 @@ function renderUnpaidAlert(filter = {}) {
         <td>${formatCurrency(sale.paidAmount)}</td>
         <td>${formatCurrency(getRemainingAmount(sale))}</td>
         <td>${formatDate(sale.dueDate)}</td>
-        <td><span class="${getSaleStatusClass(sale)}">${escapeHtml(sale.paymentStatus)}</span></td>
+        <td><span class="${safeClassName(getSaleStatusClass(sale))}">${escapeHtml(sale.paymentStatus)}</span></td>
         <td>${getSaleDeadlineDaysLabel(sale)}</td>
         <td>${Number(sale.reminderCount || 0)}回</td>
         <td>${sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "-"}</td>
@@ -4097,7 +4174,7 @@ function renderUnpaidAlert(filter = {}) {
           ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : ""}
         </td>
       `;
-      tr.classList.add(getSaleRowClass(sale));
+      safeAddClass(tr, getSaleRowClass(sale));
       unpaidAlertBody.appendChild(tr);
     });
 }
@@ -4121,7 +4198,7 @@ function renderUnpaidList() {
       <td>${formatCurrency(getRemainingAmount(sale))}</td>
       <td>${formatDate(sale.dueDate)}</td>
       <td>${formatDate(sale.paidDate)}</td>
-      <td><span class="${getSaleStatusClass(sale)}">${escapeHtml(sale.paymentStatus)}</span></td>
+      <td><span class="${safeClassName(getSaleStatusClass(sale))}">${escapeHtml(sale.paymentStatus)}</span></td>
       <td>${getSaleDeadlineDaysLabel(sale)}</td>
       <td>${Number(sale.reminderCount || 0)}回</td>
       <td>${sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "-"}</td>
@@ -4130,7 +4207,7 @@ function renderUnpaidList() {
       <td>${paymentHistory}</td>
       <td><button type="button" class="secondary-btn edit-sale-btn" data-sale-id="${sale.id}">編集</button> <button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-sale-id="${sale.id}">入金登録</button> ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-sale-id="${sale.id}">督促記録</button>` : ""}</td>
     `;
-    tr.classList.add(getSaleRowClass(sale));
+    safeAddClass(tr, getSaleRowClass(sale));
     unpaidListBody.appendChild(tr);
   });
 }
@@ -4355,8 +4432,8 @@ function renderAnalyticsSection() {
       <td>${row.caseCount}件</td>
       <td>${formatCurrency(row.salesTotal)}</td>
       <td>${formatCurrency(row.expenseTotal)}</td>
-      <td class="${row.profit < 0 ? "loss-text" : ""}">${formatCurrency(row.profit)}</td>
-      <td class="${row.unpaidTotal > 0 ? "analysis-unpaid-text" : ""}">${formatCurrency(row.unpaidTotal)}${row.unpaidTotal > 0 ? " ⚠️" : ""}</td>
+      <td class="${safeClassName(row.profit < 0 ? "loss-text" : "")}">${formatCurrency(row.profit)}</td>
+      <td class="${safeClassName(row.unpaidTotal > 0 ? "analysis-unpaid-text" : "")}">${formatCurrency(row.unpaidTotal)}${row.unpaidTotal > 0 ? " ⚠️" : ""}</td>
       <td>${formatDate(row.lastContactDate)}</td>
     `;
     clientAnalysisBody.appendChild(tr);
@@ -4374,10 +4451,10 @@ function renderAnalyticsSection() {
       <td>${row.caseCount}件</td>
       <td>${formatCurrency(row.salesTotal)}</td>
       <td>${formatCurrency(row.expenseTotal)}</td>
-      <td class="${row.profit < 0 ? "loss-text" : ""}">${formatCurrency(row.profit)}</td>
-      <td class="${row.unpaidTotal > 0 ? "analysis-unpaid-text" : ""}">${formatCurrency(row.unpaidTotal)}${row.unpaidTotal > 0 ? " ⚠️" : ""}</td>
+      <td class="${safeClassName(row.profit < 0 ? "loss-text" : "")}">${formatCurrency(row.profit)}</td>
+      <td class="${safeClassName(row.unpaidTotal > 0 ? "analysis-unpaid-text" : "")}">${formatCurrency(row.unpaidTotal)}${row.unpaidTotal > 0 ? " ⚠️" : ""}</td>
       <td>${formatCurrency(row.averagePrice)}</td>
-      <td class="${marginClass}">${row.profitMargin.toFixed(1)}%</td>
+      <td class="${safeClassName(marginClass)}">${row.profitMargin.toFixed(1)}%</td>
       <td>${escapeHtml(row.comment)}</td>
     `;
     referralAnalysisBody.appendChild(tr);
@@ -4398,7 +4475,7 @@ function renderImportantClients(clientRows) {
     tr.innerHTML = `
       <td>${escapeHtml(row.clientName)}</td>
       <td>${formatCurrency(row.salesTotal)}</td>
-      <td class="${row.profit < 0 ? "loss-text" : ""}">${formatCurrency(row.profit)}</td>
+      <td class="${safeClassName(row.profit < 0 ? "loss-text" : "")}">${formatCurrency(row.profit)}</td>
       <td>${formatDate(row.lastContactDate)}</td>
     `;
     importantClientsBody.appendChild(tr);
@@ -4840,9 +4917,10 @@ function addEstimateItemRow(defaultItem = {}) {
     <input type="text" inputmode="decimal" pattern="[0-9.,]*" data-key="quantity" placeholder="数量" value="${defaultItem.quantity ?? 1}" />
     <input type="text" inputmode="numeric" pattern="[0-9,]*" data-key="unitPrice" placeholder="単価" value="${defaultItem.unitPrice ?? 0}" />
     <p class="meta item-amount">${formatCurrency(defaultItem.amount ?? 0)}</p>
-    <button type="button" class="danger-btn estimate-item-remove-btn">削除</button>
+    <button type="button" class="danger-btn estimate-item-remove-btn" data-action="remove_estimate_item_row">削除</button>
   `;
   estimateItemsWrap.appendChild(row);
+  hydrateActionButtons(row);
   bindCommaInput(row.querySelector('[data-key="unitPrice"]'));
   recalcEstimateTotals();
 }
@@ -5415,7 +5493,7 @@ function renderCases() {
     if (caseWorkMeta) {
       caseWorkMeta.textContent = `テンプレート: ${templateName} / 必要書類: ${truncateText(entry.requiredDocuments || "未設定", 50)} / 書類管理: 必要書類 ${docStats.total}件 / 回収済 ${docStats.received}件 / 未回収 ${docStats.unreceived}件 / 不備 ${docStats.defective}件 / タスク: ${truncateText(entry.taskList || "未設定", 50)} / 未完了タスク: ${incompleteTasks}件 / 作業メモ: ${truncateText(sanitizeLegacyEstimateMemo(entry.workMemo) || "未設定", 40)}`;
       caseWorkMeta.classList.remove("next-action-overdue", "next-action-within3", "next-action-within7");
-      if (nextActionInfo) caseWorkMeta.classList.add(nextActionInfo.urgencyClass);
+      if (nextActionInfo) safeAddClass(caseWorkMeta, nextActionInfo.urgencyClass);
     }
     profitMeta.textContent = `売上合計: ${formatCurrency(totals.sales)} / 経費合計: ${formatCurrency(totals.expenses)} / 利益: ${formatCurrency(totals.profit)}`;
     profitMeta.classList.toggle("loss-text", totals.profit < 0);
@@ -5466,7 +5544,7 @@ function renderCaseProfitList(filter = {}) {
     li.innerHTML = `
       <div>
         <p class="title">${escapeHtml(entry.customerName)}｜${escapeHtml(entry.caseName)}</p>
-        <p class="meta">売上合計: ${formatCurrency(totals.sales)} / 経費合計: ${formatCurrency(totals.expenses)} / 作業時間: ${formatMinutes(totals.workMinutes)} / <span class="${totals.profit < 0 ? "loss-text" : ""}">利益: ${formatCurrency(totals.profit)}</span></p>
+        <p class="meta">売上合計: ${formatCurrency(totals.sales)} / 経費合計: ${formatCurrency(totals.expenses)} / 作業時間: ${formatMinutes(totals.workMinutes)} / <span class="${safeClassName(totals.profit < 0 ? "loss-text" : "")}">利益: ${formatCurrency(totals.profit)}</span></p>
       </div>
     `;
     caseProfitList.appendChild(li);
@@ -5531,7 +5609,7 @@ function renderYearlyBreakdown(salesByMonth, expenseByMonth) {
       <td>${month}月</td>
       <td>${formatCurrency(sales)}</td>
       <td>${formatCurrency(expenses)}</td>
-      <td class="${profit < 0 ? "loss-text" : ""}">${formatCurrency(profit)}</td>
+      <td class="${safeClassName(profit < 0 ? "loss-text" : "")}">${formatCurrency(profit)}</td>
     `;
     yearlyBreakdownBody.appendChild(tr);
   }
@@ -5569,14 +5647,14 @@ function renderSales() {
       const paymentHistory = renderPaymentHistoryInline(sale.id);
       const tr = document.createElement("tr");
       tr.dataset.id = sale.id || "";
-      tr.classList.add(getSaleRowClass(safeSale));
+      safeAddClass(tr, getSaleRowClass(safeSale));
       tr.innerHTML = `
         <td>${escapeHtml(customerLabel)}</td>
         <td>${escapeHtml(caseLabel)}<br /><small>${escapeHtml(sale.invoiceNumber || "未採番")}</small></td>
         <td>${formatCurrency(invoiceAmount)}</td>
         <td>${formatCurrency(paidAmount)}</td>
         <td>${formatCurrency(remainingAmount)}</td>
-        <td><span class="${getSaleStatusClass(safeSale)}">${escapeHtml(paymentStatus)}</span></td>
+        <td><span class="${safeClassName(getSaleStatusClass(safeSale))}">${escapeHtml(paymentStatus)}</span></td>
         <td>${dueDateLabel}</td>
         <td>${paidDateLabel}</td>
         <td>${reminderCount}回</td>
