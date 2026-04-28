@@ -146,6 +146,7 @@
           <button type="button" class="tab-btn" data-tab="sales">売上</button>
           <button type="button" class="tab-btn" data-tab="expenses">経費</button>
           <button type="button" class="tab-btn" data-tab="daily-reports">日報</button>
+          <button type="button" class="tab-btn" data-tab="diagnostics">システム診断</button>
           <button type="button" class="tab-btn" data-tab="settings">設定</button>
         </nav>
 
@@ -1158,6 +1159,31 @@
               <div id="daily-reports-list-wrap" class="daily-reports-cards" hidden>
                 <div id="daily-reports-body" class="daily-reports-grid"></div>
               </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="tab-diagnostics" class="tab-panel">
+          <div class="layout two-col">
+            <section class="panel">
+              <h2>システム診断</h2>
+              <p class="meta">機能追加前のE2E動作確認用です。通常業務データは変更しません。</p>
+              <div class="csv-actions">
+                <button id="diagnostics-run-btn" type="button">診断実行</button>
+                <button id="diagnostics-create-test-data-btn" type="button" class="secondary-btn">簡易テストデータ作成</button>
+                <button id="diagnostics-delete-test-data-btn" type="button" class="danger-btn">診断テストデータ削除</button>
+              </div>
+              <p id="diagnostics-summary" class="filter-count">未実行</p>
+              <ul id="diagnostics-results" class="diagnostics-results"></ul>
+            </section>
+            <section class="panel">
+              <h2>診断ポリシー</h2>
+              <ul class="item-list compact-list">
+                <li class="item"><p class="meta">診断実行：DB変更なし（再読込・再描画・状態点検のみ）</p></li>
+                <li class="item"><p class="meta">テストデータ作成/削除：runMutation経由で実行</p></li>
+                <li class="item"><p class="meta">削除対象は「診断テスト」で始まるデータのみ</p></li>
+                <li class="item"><p class="meta">エラーは画面表示し、読み込み中の固着を防止</p></li>
+              </ul>
             </section>
           </div>
         </section>
