@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-    <script src="app.js?v=20260427-operation-logs" defer></script>
+    <script src="app.js?v=20260426-payment-control-upgrade" defer></script>
   </head>
   <body>
     <div id="loading-overlay" class="loading-overlay" hidden>
@@ -146,7 +146,6 @@
           <button type="button" class="tab-btn" data-tab="sales">売上</button>
           <button type="button" class="tab-btn" data-tab="expenses">経費</button>
           <button type="button" class="tab-btn" data-tab="daily-reports">日報</button>
-          <button type="button" class="tab-btn" data-tab="diagnostics">システム診断</button>
           <button type="button" class="tab-btn" data-tab="settings">設定</button>
         </nav>
 
@@ -1163,44 +1162,6 @@
           </div>
         </section>
 
-        <section id="tab-diagnostics" class="tab-panel">
-          <div class="subtabs" data-parent-tab="diagnostics">
-            <button type="button" class="subtab-btn diagnostics-subtab-btn active" data-parent-tab="diagnostics" data-subtab="run">診断実行</button>
-            <button type="button" class="subtab-btn diagnostics-subtab-btn" data-parent-tab="diagnostics" data-subtab="logs">診断ログ</button>
-          </div>
-
-          <div id="diagnostics-run-panel" class="layout two-col diagnostics-subtab-panel">
-            <section class="panel">
-              <h2>システム診断</h2>
-              <p class="meta">機能追加前のE2E動作確認用です。通常業務データは変更しません。</p>
-              <div class="csv-actions">
-                <button id="diagnostics-run-btn" type="button" class="run-diagnostics-btn">システム診断を実行</button>
-                <button id="diagnostics-create-test-data-btn" type="button" class="secondary-btn create-diagnostic-test-data-btn">診断テストデータ作成</button>
-                <button type="button" data-action="diagnostic.deleteTestData">
-                  診断テストデータ削除
-                </button>
-              </div>
-              <p id="diagnostics-summary" class="filter-count">未実行</p>
-              <ul id="diagnostics-results" class="diagnostics-results"></ul>
-            </section>
-            <section class="panel">
-              <h2>診断ポリシー</h2>
-              <ul class="item-list compact-list">
-                <li class="item"><p class="meta">診断実行：DB変更なし（再読込・再描画・状態点検のみ）</p></li>
-                <li class="item"><p class="meta">テストデータ作成/削除：runMutation経由で実行</p></li>
-                <li class="item"><p class="meta">削除対象は「診断テスト」を含むデータのみ</p></li>
-                <li class="item"><p class="meta">エラー時もloadingをfinallyで解除します</p></li>
-              </ul>
-            </section>
-          </div>
-
-          <section id="diagnostics-logs-panel" class="panel diagnostics-subtab-panel" hidden>
-            <h2>診断ログ</h2>
-            <p class="meta">localStorageキー: gyosei_diagnostic_logs（DB保存なし）</p>
-            <ul id="diagnostics-log-list" class="item-list compact-list"></ul>
-          </section>
-        </section>
-
         <section id="tab-settings" class="tab-panel">
           <div class="layout two-col">
             <section class="panel">
@@ -1220,46 +1181,6 @@
                 <button id="settings-submit-btn" type="submit">設定を保存</button>
               </form>
             </section>
-            <section class="panel">
-              <h2>操作ログ（最新50件）</h2>
-              <div class="search-filter-bar">
-                <label class="inline-field" for="operation-log-action-filter">
-                  操作種別
-                  <select id="operation-log-action-filter">
-                    <option value="all">すべて</option>
-                  </select>
-                </label>
-                <label class="inline-field" for="operation-log-target-filter">
-                  対象種別
-                  <select id="operation-log-target-filter">
-                    <option value="all">すべて</option>
-                  </select>
-                </label>
-                <label class="inline-field" for="operation-log-from-date">
-                  開始日
-                  <input id="operation-log-from-date" type="date" />
-                </label>
-                <label class="inline-field" for="operation-log-to-date">
-                  終了日
-                  <input id="operation-log-to-date" type="date" />
-                </label>
-              </div>
-              <div id="operation-logs-empty" class="empty">操作ログはまだありません。</div>
-              <div id="operation-logs-wrap" class="table-wrap" hidden>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>日時</th>
-                      <th>操作種別</th>
-                      <th>対象種別</th>
-                      <th>対象名</th>
-                      <th>詳細</th>
-                    </tr>
-                  </thead>
-                  <tbody id="operation-logs-body"></tbody>
-                </table>
-              </div>
-            </section>
           </div>
         </section>
       </main>
@@ -1273,7 +1194,7 @@
           <p class="meta case-work-meta"></p>
           <p class="meta profit-meta"></p>
         </div>
-        <div class="row-actions"><button type="button" class="secondary-btn" data-action="case.edit">編集</button><button type="button" class="danger-btn" data-action="case.delete">削除</button></div>
+        <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
       </li>
     </template>
     <template id="expense-item-template">
@@ -1282,7 +1203,7 @@
           <p class="title"></p>
           <p class="meta"></p>
         </div>
-        <div class="row-actions"><button type="button" class="secondary-btn" data-action="expense.edit">編集</button><button type="button" class="danger-btn" data-action="expense.delete">削除</button></div>
+        <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
       </li>
     </template>
 
@@ -1293,9 +1214,9 @@
           <p class="meta"></p>
         </div>
         <div class="row-actions">
-          <button type="button" class="secondary-btn" data-action="fixedExpense.toggle">有効/無効</button>
-          <button type="button" class="secondary-btn" data-action="fixedExpense.edit">編集</button>
-          <button type="button" class="danger-btn" data-action="fixedExpense.delete">削除</button>
+          <button type="button" class="toggle-btn secondary-btn">有効/無効</button>
+          <button type="button" class="edit-btn secondary-btn">編集</button>
+          <button type="button" class="danger-btn delete-btn">削除</button>
         </div>
       </li>
     </template>
@@ -1307,7 +1228,7 @@
           <p class="meta"></p>
           <p class="meta"></p>
         </div>
-        <div class="row-actions"><button type="button" class="secondary-btn" data-action="workTemplate.edit">編集</button><button type="button" class="danger-btn" data-action="workTemplate.delete">削除</button></div>
+        <div class="row-actions"><button type="button" class="edit-btn secondary-btn">編集</button><button type="button" class="danger-btn delete-btn">削除</button></div>
       </li>
     </template>
   </body>
