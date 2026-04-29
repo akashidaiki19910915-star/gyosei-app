@@ -2261,7 +2261,11 @@ async function handleRecordPayment(saleId) {
   }
 
   const amountInput = window.prompt("入金額を入力してください", "");
-  if (!amountInput) return;
+  if (amountInput === null) return;
+  if (!String(amountInput).trim()) {
+    showAppMessage("入金額を入力してください。", true);
+    return;
+  }
   const amount = Number(String(amountInput).replace(/,/g, "").trim());
   if (!Number.isFinite(amount) || Number.isNaN(amount)) {
     showAppMessage("入金額は数値で入力してください。", true);
@@ -2269,13 +2273,6 @@ async function handleRecordPayment(saleId) {
   }
   if (amount <= 0) {
     showAppMessage("入金額は0より大きい値を入力してください。", true);
-    return;
-  }
-  const currentPaidAmount = Number(sale.paidAmount || 0);
-  const invoiceAmount = Number(sale.invoiceAmount || 0);
-  const remainingAmount = calculateSaleRemainingAmount(invoiceAmount, currentPaidAmount);
-  if (amount > remainingAmount) {
-    showAppMessage(`入金額が残額を超えています。残額: ${formatCurrency(remainingAmount)}`, true);
     return;
   }
 
@@ -2290,6 +2287,28 @@ async function handleRecordPayment(saleId) {
   try {
     await runMutation("入金登録", async () => {
       console.log("PAYMENT START", { saleId, paymentDate, amount, method, memo });
+      const { data: saleRow, error: saleLoadError } = await sbClient
+        .from("sales")
+        .select("invoice_amount")
+        .eq("id", saleId)
+        .eq("user_id", currentUser.id)
+        .single();
+      if (saleLoadError) throw saleLoadError;
+      if (!saleRow) throw new Error("対象売上の取得に失敗しました。");
+      const invoiceAmount = Number(saleRow.invoice_amount || 0);
+
+      const { data: existingPayments, error: paymentLoadError } = await sbClient
+        .from("payments")
+        .select("amount")
+        .eq("sale_id", saleId)
+        .eq("user_id", currentUser.id);
+      if (paymentLoadError) throw paymentLoadError;
+      const currentPaid = (existingPayments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+      const currentRemaining = Math.max(invoiceAmount - currentPaid, 0);
+      if (amount > currentRemaining) {
+        throw new Error(`入金額が残額を超えています。残額: ${formatCurrency(currentRemaining)}`);
+      }
+
       const paymentPayload = {
         user_id: currentUser.id,
         sale_id: saleId,
@@ -7252,8 +7271,15 @@ function hydrateSaleWithPayments(sale) {
 
 async function syncSalePaymentSummary(saleId) {
   if (!currentUser || !saleId) return;
-  const sale = state.sales.find((entry) => entry.id === saleId);
-  const invoiceAmount = Number(sale?.invoiceAmount || 0);
+  const { data: sale, error: saleLoadError } = await sbClient
+    .from("sales")
+    .select("invoice_amount")
+    .eq("id", saleId)
+    .eq("user_id", currentUser.id)
+    .single();
+  if (saleLoadError) throw saleLoadError;
+  if (!sale) throw new Error("売上情報の取得に失敗しました。");
+  const invoiceAmount = Number(sale.invoice_amount || 0);
 
   const { data: paymentRows, error: paymentLoadError } = await sbClient
     .from("payments")
