@@ -2313,9 +2313,9 @@ async function handleRecordPayment(saleId) {
         user_id: currentUser.id,
         sale_id: saleId,
         payment_date: paymentDate,
-        amount,
-        method,
-        memo,
+        amount: amount,
+        method: method,
+        memo: memo || null,
       };
       const { data: paymentData, error: paymentError } = await sbClient.from("payments").insert(paymentPayload).select().single();
       if (paymentError) throw paymentError;
