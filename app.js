@@ -438,9 +438,7 @@ async function initialize() {
     } = await sbClient.auth.getSession();
 
     currentUser = session?.user ?? null;
-    await withLoading("初期化", async () => {
-      await applyAuthState();
-    }, { messageTarget: "auth" });
+    await applyAuthState();
 
     sbClient.auth.onAuthStateChange(async (_event, sessionState) => {
       if (isLoggingOut) return;
@@ -563,6 +561,7 @@ function bindEvents() {
 }
 
 function dispatchAction(event) {
+  forceHideLoading();
   const button = event.target.closest("button");
   if (!(button instanceof HTMLButtonElement)) return;
   ensureButtonDataAction(button);
@@ -826,7 +825,6 @@ async function handleManualReload(event) {
   if (event) event.preventDefault();
   if (!currentUser) return;
   if (manualReloadBtn) manualReloadBtn.disabled = true;
-  startLoading("最新データ再読込");
   try {
     await loadAllDataSafely();
     renderAfterDataChanged();
@@ -834,7 +832,6 @@ async function handleManualReload(event) {
   } catch (error) {
     showAppMessage(`最新データ再読込に失敗しました。${formatSupabaseError(error)}`, true);
   } finally {
-    forceHideLoading();
     if (manualReloadBtn) manualReloadBtn.disabled = false;
   }
 }
@@ -8552,18 +8549,18 @@ function startLoading(label = "処理中") {
   if (loadingOverlay) {
     loadingOverlay.hidden = false;
     loadingOverlay.style.display = "flex";
+    loadingOverlay.setAttribute("aria-busy", "true");
+    loadingOverlay.style.pointerEvents = "auto";
   }
 
   document.body.classList.add("is-loading");
+  document.body.setAttribute("aria-busy", "true");
   console.log("LOADING START", label, loadingCount);
 
-  clearTimeout(loadingTimer);
-  loadingTimer = null;
-
-  loadingTimer = setTimeout(() => {
-    console.warn("LOADING FORCE TIMEOUT", label);
-    forceHideLoading();
-  }, 8000);
+  if (loadingTimer) {
+    clearTimeout(loadingTimer);
+    loadingTimer = null;
+  }
 }
 
 function forceHideLoading() {
@@ -8577,9 +8574,15 @@ function forceHideLoading() {
   if (overlay) {
     overlay.hidden = true;
     overlay.style.display = "none";
+    overlay.style.pointerEvents = "none";
+    overlay.removeAttribute("aria-busy");
+    overlay.removeAttribute("inert");
   }
 
   document.body.classList.remove("is-loading");
+  document.body.removeAttribute("aria-busy");
+  document.body.style.pointerEvents = "";
+  setSubmitButtonsDisabled(false);
 }
 
 async function withLoading(label, fn, options = {}) {
