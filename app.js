@@ -377,6 +377,7 @@ let isLoggingOut = false;
 let eventsBound = false;
 let loadingCount = 0;
 let loadingTimer = null;
+let isApplyingAuthState = false;
 const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
 const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
 const RESTORE_DELETE_ORDER = ["payments", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "case_documents", "case_tasks", "estimates", "cases", "work_templates", "clients", "app_settings"];
@@ -443,12 +444,12 @@ async function initialize() {
 
     sbClient.auth.onAuthStateChange(async (_event, sessionState) => {
       if (isLoggingOut) return;
+      console.log("AUTH STATE CHANGED", _event);
       try {
         currentUser = sessionState?.user ?? null;
-        await applyAuthState();
+        await applyAuthState({ silent: true });
       } catch (error) {
-        console.error("認証状態の更新に失敗しました。", error);
-        showAuthMessage("認証状態の確認に失敗しました。ページを再読み込みしてください。", true);
+        console.error("認証状態変更処理に失敗しました", error);
       } finally {
         forceHideLoading();
       }
@@ -732,14 +733,22 @@ async function handlePageShow() {
   forceHideLoading();
 }
 
-async function applyAuthState() {
+async function applyAuthState(options = {}) {
+  if (isApplyingAuthState) {
+    console.warn("applyAuthState skipped: already running");
+    return;
+  }
+
+  const silent = options.silent === true;
+  isApplyingAuthState = true;
+
   try {
     if (!currentUser) {
       clearAppState();
       return;
     }
 
-    setDataMutationControlsEnabled(false);
+    if (!silent) setDataMutationControlsEnabled(false);
     state.isInitialDataReady = false;
     userLabel.textContent = currentUser.email || "ログイン中";
 
@@ -759,6 +768,7 @@ async function applyAuthState() {
     console.error("applyAuthState failed", error);
     throw error;
   } finally {
+    isApplyingAuthState = false;
     authView.hidden = true;
     appView.hidden = false;
     forceHideLoading();
@@ -8558,12 +8568,15 @@ function startLoading(label = "処理中") {
 
 function forceHideLoading() {
   loadingCount = 0;
-  clearTimeout(loadingTimer);
-  loadingTimer = null;
+  if (loadingTimer) {
+    clearTimeout(loadingTimer);
+    loadingTimer = null;
+  }
 
-  if (loadingOverlay) {
-    loadingOverlay.hidden = true;
-    loadingOverlay.style.display = "none";
+  const overlay = document.getElementById("loadingOverlay") || loadingOverlay;
+  if (overlay) {
+    overlay.hidden = true;
+    overlay.style.display = "none";
   }
 
   document.body.classList.remove("is-loading");
