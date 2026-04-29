@@ -2273,7 +2273,7 @@ async function handleRecordPayment(saleId) {
   }
   const currentPaidAmount = Number(sale.paidAmount || 0);
   const invoiceAmount = Number(sale.invoiceAmount || 0);
-  const remainingAmount = Math.max(0, invoiceAmount - currentPaidAmount);
+  const remainingAmount = calculateSaleRemainingAmount(invoiceAmount, currentPaidAmount);
   if (amount > remainingAmount) {
     showAppMessage(`入金額が残額を超えています。残額: ${formatCurrency(remainingAmount)}`, true);
     return;
@@ -5906,7 +5906,7 @@ function renderSales() {
       if (!sale || typeof sale !== "object") return;
       const invoiceAmount = Number(sale.invoiceAmount || 0);
       const paidAmount = Number(sale.paidAmount || 0);
-      const remainingAmount = Math.max(0, invoiceAmount - paidAmount);
+      const remainingAmount = calculateSaleRemainingAmount(invoiceAmount, paidAmount);
       const paymentStatus = sale.paymentStatus || calculatePaymentStatus(invoiceAmount, paidAmount);
       const linkedCase = sale.caseId ? state.cases.find((entry) => entry.id === sale.caseId) : null;
       const linkedClient = linkedCase?.clientId ? state.clients.find((entry) => entry.id === linkedCase.clientId) : null;
@@ -7231,6 +7231,10 @@ function getSalePaidAmountByPayments(saleId) {
   return getSalePayments(saleId).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
 }
 
+function calculateSaleRemainingAmount(invoiceAmount, paidAmount) {
+  return (Number(invoiceAmount) || 0) - (Number(paidAmount) || 0);
+}
+
 function hydrateSaleWithPayments(sale) {
   const payments = getSalePayments(sale.id);
   if (!payments.length) return sale;
@@ -7258,18 +7262,18 @@ async function syncSalePaymentSummary(saleId) {
     .eq("user_id", currentUser.id);
   if (paymentLoadError) throw paymentLoadError;
 
-  const paidAmount = (paymentRows || []).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+  const totalPaid = (paymentRows || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const latestPaymentDate = (paymentRows || [])
     .map((entry) => entry?.payment_date || null)
     .filter((value) => !!value)
     .sort((a, b) => toSortTimestamp(b) - toSortTimestamp(a))[0] || null;
-  const paymentStatus = calculatePaymentStatus(invoiceAmount, paidAmount);
+  const paymentStatus = calculatePaymentStatus(invoiceAmount, totalPaid);
 
   const payload = {
-    paid_amount: paidAmount,
-    paid_date: paidAmount > 0 ? latestPaymentDate : null,
+    paid_amount: totalPaid,
+    paid_date: totalPaid > 0 ? latestPaymentDate : null,
     payment_status: paymentStatus,
-    is_unpaid: paidAmount < invoiceAmount,
+    is_unpaid: totalPaid < invoiceAmount,
   };
   const { data, error } = await sbClient.from("sales").update(payload).eq("id", saleId).eq("user_id", currentUser.id).select().single();
   if (error) throw error;
