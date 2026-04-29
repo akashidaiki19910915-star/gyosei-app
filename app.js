@@ -2253,9 +2253,20 @@ async function handleRecordPayment(saleId) {
 
   const amountInput = window.prompt("入金額を入力してください", "");
   if (!amountInput) return;
-  const amount = parseNumberInput(amountInput);
-  if (!amount || amount <= 0) {
-    showAppMessage("入金額を正しく入力してください。", true);
+  const amount = Number(String(amountInput).replace(/,/g, "").trim());
+  if (!Number.isFinite(amount) || Number.isNaN(amount)) {
+    showAppMessage("入金額は数値で入力してください。", true);
+    return;
+  }
+  if (amount <= 0) {
+    showAppMessage("入金額は0より大きい値を入力してください。", true);
+    return;
+  }
+  const currentPaidAmount = Number(sale.paidAmount || 0);
+  const invoiceAmount = Number(sale.invoiceAmount || 0);
+  const remainingAmount = Math.max(0, invoiceAmount - currentPaidAmount);
+  if (amount > remainingAmount) {
+    showAppMessage(`入金額が残額を超えています。残額: ${formatCurrency(remainingAmount)}`, true);
     return;
   }
 
@@ -2281,16 +2292,8 @@ async function handleRecordPayment(saleId) {
       const { data: paymentData, error: paymentError } = await sbClient.from("payments").insert(paymentPayload).select().single();
       if (paymentError) throw paymentError;
       if (!paymentData) throw new Error("入金登録結果を取得できませんでした。");
-      const existingPayments = (state.payments || []).filter((entry) => entry.saleId === saleId);
-      const existingPaidAmount = existingPayments.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-      const newPaidAmount = existingPaidAmount + amount;
-      const invoiceAmount = Number(sale.invoiceAmount || 0);
-      const paymentStatus = calculatePaymentStatus(invoiceAmount, newPaidAmount);
-      const salePayload = { paid_amount: newPaidAmount, paid_date: paymentDate, payment_status: paymentStatus, is_unpaid: paymentStatus !== "入金済" };
-      const { data: saleData, error: saleError } = await sbClient.from("sales").update(salePayload).eq("id", saleId).eq("user_id", currentUser.id).select().single();
-      if (saleError) throw saleError;
-      if (!saleData) throw new Error("売上の入金情報を更新できませんでした。");
-      return saleData;
+      await syncSalePaymentSummary(saleId);
+      return paymentData;
     }, { successMessage: "入金を登録しました。" });
   } catch (error) {
     console.error("入金登録に失敗しました。", error);
@@ -7236,16 +7239,28 @@ function hydrateSaleWithPayments(sale) {
 
 async function syncSalePaymentSummary(saleId) {
   if (!currentUser || !saleId) return;
-  const paidAmount = getSalePaidAmountByPayments(saleId);
   const sale = state.sales.find((entry) => entry.id === saleId);
   const invoiceAmount = Number(sale?.invoiceAmount || 0);
+
+  const { data: paymentRows, error: paymentLoadError } = await sbClient
+    .from("payments")
+    .select("amount,payment_date")
+    .eq("sale_id", saleId)
+    .eq("user_id", currentUser.id);
+  if (paymentLoadError) throw paymentLoadError;
+
+  const paidAmount = (paymentRows || []).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+  const latestPaymentDate = (paymentRows || [])
+    .map((entry) => entry?.payment_date || null)
+    .filter((value) => !!value)
+    .sort((a, b) => toSortTimestamp(b) - toSortTimestamp(a))[0] || null;
   const paymentStatus = calculatePaymentStatus(invoiceAmount, paidAmount);
-  const latestPayment = getSalePayments(saleId)[0];
+
   const payload = {
     paid_amount: paidAmount,
-    paid_date: latestPayment?.paymentDate || null,
+    paid_date: paidAmount > 0 ? latestPaymentDate : null,
     payment_status: paymentStatus,
-    is_unpaid: paymentStatus !== "入金済",
+    is_unpaid: paidAmount < invoiceAmount,
   };
   const { data, error } = await sbClient.from("sales").update(payload).eq("id", saleId).eq("user_id", currentUser.id).select().single();
   if (error) throw error;
