@@ -440,17 +440,19 @@ async function initialize() {
     currentUser = session?.user ?? null;
     await applyAuthState();
 
-    sbClient.auth.onAuthStateChange(async (_event, sessionState) => {
+    sbClient.auth.onAuthStateChange((_event, sessionState) => {
       if (isLoggingOut) return;
       console.log("AUTH STATE CHANGED", _event);
-      try {
-        currentUser = sessionState?.user ?? null;
-        await applyAuthState({ silent: true });
-      } catch (error) {
-        console.error("認証状態変更処理に失敗しました", error);
-      } finally {
-        forceHideLoading();
-      }
+      currentUser = sessionState?.user ?? null;
+      setTimeout(() => {
+        applyAuthState({ silent: true })
+          .catch((error) => {
+            console.error("認証状態変更処理に失敗しました", error);
+          })
+          .finally(() => {
+            forceHideLoading();
+          });
+      }, 0);
     });
   } catch (error) {
     console.error("初期化処理に失敗しました。", error);
@@ -8557,10 +8559,6 @@ function startLoading(label = "処理中") {
   document.body.setAttribute("aria-busy", "true");
   console.log("LOADING START", label, loadingCount);
 
-  if (loadingTimer) {
-    clearTimeout(loadingTimer);
-    loadingTimer = null;
-  }
 }
 
 function forceHideLoading() {
@@ -8570,18 +8568,15 @@ function forceHideLoading() {
     loadingTimer = null;
   }
 
-  const overlay = document.getElementById("loadingOverlay") || loadingOverlay;
-  if (overlay) {
-    overlay.hidden = true;
-    overlay.style.display = "none";
-    overlay.style.pointerEvents = "none";
-    overlay.removeAttribute("aria-busy");
-    overlay.removeAttribute("inert");
+  if (loadingOverlay) {
+    loadingOverlay.hidden = true;
+    loadingOverlay.style.display = "none";
+    loadingOverlay.style.pointerEvents = "none";
   }
 
   document.body.classList.remove("is-loading");
-  document.body.removeAttribute("aria-busy");
   document.body.style.pointerEvents = "";
+  document.body.removeAttribute("aria-busy");
   setSubmitButtonsDisabled(false);
 }
 
