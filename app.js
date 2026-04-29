@@ -2317,11 +2317,19 @@ async function handleRecordPayment(saleId) {
         method: method,
         memo: memo || null,
       };
-      const { data: paymentData, error: paymentError } = await sbClient.from("payments").insert(paymentPayload).select().single();
-      if (paymentError) throw paymentError;
-      if (!paymentData) throw new Error("入金登録結果を取得できませんでした。");
+      console.log("PAYMENT INSERT PAYLOAD", paymentPayload);
+
+      const { error: paymentError } = await sbClient
+        .from("payments")
+        .insert(paymentPayload);
+
+      if (paymentError) {
+        console.error("PAYMENT INSERT ERROR", paymentError);
+        throw paymentError;
+      }
+
       await syncSalePaymentSummary(saleId);
-      return paymentData;
+      return null;
     }, { successMessage: "入金を登録しました。" });
   } catch (error) {
     console.error("入金登録に失敗しました。", error);
