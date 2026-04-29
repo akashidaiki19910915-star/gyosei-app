@@ -2287,11 +2287,20 @@ async function handleRecordPayment(saleId) {
   try {
     await runMutation("入金登録", async () => {
       console.log("PAYMENT START", { saleId, paymentDate, amount, method, memo });
+      const {
+        data: { user },
+        error: userError,
+      } = await sbClient.auth.getUser();
+      if (userError || !user) {
+        throw userError || new Error("ログインユーザーを確認できません。");
+      }
+      const authUserId = user.id;
+      console.log("PAYMENT AUTH USER", authUserId);
       const { data: saleRow, error: saleLoadError } = await sbClient
         .from("sales")
         .select("invoice_amount")
         .eq("id", saleId)
-        .eq("user_id", currentUser.id)
+        .eq("user_id", authUserId)
         .single();
       if (saleLoadError) throw saleLoadError;
       if (!saleRow) throw new Error("対象売上の取得に失敗しました。");
@@ -2301,7 +2310,7 @@ async function handleRecordPayment(saleId) {
         .from("payments")
         .select("amount")
         .eq("sale_id", saleId)
-        .eq("user_id", currentUser.id);
+        .eq("user_id", authUserId);
       if (paymentLoadError) throw paymentLoadError;
       const currentPaid = (existingPayments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
       const currentRemaining = Math.max(invoiceAmount - currentPaid, 0);
@@ -2310,7 +2319,7 @@ async function handleRecordPayment(saleId) {
       }
 
       const paymentPayload = {
-        user_id: currentUser.id,
+        user_id: authUserId,
         sale_id: saleId,
         payment_date: paymentDate,
         amount: amount,
@@ -7279,11 +7288,19 @@ function hydrateSaleWithPayments(sale) {
 
 async function syncSalePaymentSummary(saleId) {
   if (!currentUser || !saleId) return;
+  const {
+    data: { user },
+    error: userError,
+  } = await sbClient.auth.getUser();
+  if (userError || !user) {
+    throw userError || new Error("ログインユーザーを確認できません。");
+  }
+  const authUserId = user.id;
   const { data: sale, error: saleLoadError } = await sbClient
     .from("sales")
     .select("invoice_amount")
     .eq("id", saleId)
-    .eq("user_id", currentUser.id)
+    .eq("user_id", authUserId)
     .single();
   if (saleLoadError) throw saleLoadError;
   if (!sale) throw new Error("売上情報の取得に失敗しました。");
@@ -7293,7 +7310,7 @@ async function syncSalePaymentSummary(saleId) {
     .from("payments")
     .select("amount,payment_date")
     .eq("sale_id", saleId)
-    .eq("user_id", currentUser.id);
+    .eq("user_id", authUserId);
   if (paymentLoadError) throw paymentLoadError;
 
   const totalPaid = (paymentRows || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
@@ -7309,7 +7326,7 @@ async function syncSalePaymentSummary(saleId) {
     payment_status: paymentStatus,
     is_unpaid: totalPaid < invoiceAmount,
   };
-  const { data, error } = await sbClient.from("sales").update(payload).eq("id", saleId).eq("user_id", currentUser.id).select().single();
+  const { data, error } = await sbClient.from("sales").update(payload).eq("id", saleId).eq("user_id", authUserId).select().single();
   if (error) throw error;
   if (!data) throw new Error("売上の入金ステータス更新結果を取得できませんでした。");
 }
