@@ -327,4 +327,6 @@ alter table work_templates add column if not exists task_list text;
 - RLS有効化後の入金登録対応
 - 入金累積処理修正
 - 領収書/累計領収書出力対応
+- 保存要件チェック追加
+- 変更履歴ログ追加
 - バックアップJSON/Excel出力確認済み
