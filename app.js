@@ -377,6 +377,9 @@ const dailyReportSubmitBtn = document.getElementById("daily-report-submit-btn");
 const dailyReportsBody = document.getElementById("daily-reports-body");
 const dailyReportsEmpty = document.getElementById("daily-reports-empty");
 const dailyReportsListWrap = document.getElementById("daily-reports-list-wrap");
+const dailyReportAlertBody = document.getElementById("daily-report-alert-body");
+const dailyReportAlertEmpty = document.getElementById("daily-report-alert-empty");
+const dailyReportAlertListWrap = document.getElementById("daily-report-alert-list-wrap");
 const dailyReportSummaryList = document.getElementById("daily-report-summary-list");
 const dailyReportSearchInput = document.getElementById("daily-report-search-input");
 const dailyReportDateFilterSelect = document.getElementById("daily-report-date-filter");
@@ -4221,6 +4224,7 @@ function renderDashboard() {
   renderUnpaidList();
   renderAnalyticsSection();
   renderPendingEstimates();
+  renderDailyReportAlerts();
   renderDataIntegrityCheck();
 }
 
@@ -4709,20 +4713,44 @@ function renderNextActionAlertCard() {
         <td>${escapeHtml(entry.caseName)}</td>
         <td>${formatDate(entry.nextActionDate)}</td>
         <td>${escapeHtml(entry.nextAction || "未設定")}</td>
-        <td><button type="button" class="secondary-btn" data-action="edit_case" data-list-action="edit_case" data-task-target="case" data-task-id="${entry.id}" data-case-id="${entry.id}">編集</button></td>
+        <td>${entry.sourceType === "daily-report"
+        ? `<button type="button" class="secondary-btn" data-action="edit_daily_report" data-list-action="edit_daily_report" data-daily-report-id="${entry.id}">編集</button>`
+        : `<button type="button" class="secondary-btn" data-action="edit_case" data-list-action="edit_case" data-task-target="case" data-task-id="${entry.id}" data-case-id="${entry.id}">編集</button>`}</td>
       `;
       nextActionAlertBody.appendChild(tr);
     });
 }
 
 function getNextActionAlertTargets() {
-  return state.cases
+  const caseTargets = state.cases
     .map((entry) => {
       const info = getNextActionInfo(entry);
       if (!info) return null;
-      return { ...entry, ...info };
+      return { ...entry, ...info, sourceType: "case" };
     })
     .filter((entry) => entry && entry.remainingDays <= 0 && getStatusCategory(entry.status) !== "完了");
+
+  const dailyReportTargets = state.dailyReports
+    .map((entry) => {
+      const info = getNextActionInfo(entry);
+      if (!info) return null;
+      const hasContext = String(entry?.nextAction || "").trim()
+        || String(entry?.workContent || "").trim()
+        || String(entry?.memo || "").trim();
+      if (!hasContext || info.remainingDays >= 0) return null;
+      const linkedCase = state.cases.find((caseEntry) => caseEntry.id === entry.caseId);
+      return {
+        ...entry,
+        ...info,
+        sourceType: "daily-report",
+        customerName: linkedCase?.customerName || "日報",
+        caseName: linkedCase?.caseName || "日報",
+        status: "対応期限超過",
+      };
+    })
+    .filter(Boolean);
+
+  return [...caseTargets, ...dailyReportTargets];
 }
 
 function getNextActionInfo(entry) {
@@ -4733,6 +4761,29 @@ function getNextActionInfo(entry) {
   const remainingDays = Math.floor((nextActionTimestamp - todayTimestamp) / 86400000);
   const urgencyClass = remainingDays <= 0 ? "next-action-overdue" : remainingDays <= 3 ? "next-action-within3" : remainingDays <= 7 ? "next-action-within7" : "";
   return { remainingDays, urgencyClass };
+}
+
+
+function renderDailyReportAlerts() {
+  if (!dailyReportAlertBody || !dailyReportAlertEmpty || !dailyReportAlertListWrap) return;
+  const targets = getNextActionAlertTargets();
+  dailyReportAlertBody.innerHTML = "";
+  dailyReportAlertEmpty.hidden = targets.length > 0;
+  dailyReportAlertListWrap.hidden = targets.length === 0;
+  targets
+    .slice()
+    .sort((a, b) => (a.remainingDays || 0) - (b.remainingDays || 0))
+    .forEach((entry) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>次回対応</td>
+        <td>${escapeHtml(entry.sourceType === "daily-report" ? (entry.caseName || "日報") : `${entry.customerName || "顧客不明"} / ${entry.caseName || "案件なし"}`)}</td>
+        <td>${formatDate(entry.nextActionDate)}</td>
+        <td>${escapeHtml(entry.sourceType === "daily-report" ? "対応期限超過" : "次回対応期限超過")}</td>
+        <td>${escapeHtml(entry.nextAction || "-")}</td>
+      `;
+      dailyReportAlertBody.appendChild(tr);
+    });
 }
 
 function truncateText(value, maxLength = 80) {
