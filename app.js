@@ -131,6 +131,7 @@ const CLICK_ACTION_HANDLERS = {
   delete_sale: handleSalesListAction,
   record_payment: handleSalesListAction,
   delete_payment: handleSalesListAction,
+  print_receipt: handleSalesListAction,
   record_reminder: handleSalesListAction,
   edit_expense: handleExpensesListAction,
   delete_expense: handleExpensesListAction,
@@ -2006,6 +2007,15 @@ async function handleSalesListAction(event) {
     const paymentId = btn.dataset.paymentId;
     if (!paymentId) return;
     await deletePayment(paymentId);
+    return;
+  }
+  if (listAction === "print_receipt") {
+    const paymentId = btn.dataset.paymentId;
+    if (!paymentId) {
+      showAppMessage("入金データIDを取得できませんでした。", true);
+      return;
+    }
+    openReceiptPrintPreview(id, paymentId);
   }
 
 }
@@ -4920,7 +4930,7 @@ function renderPaymentHistoryInline(saleId) {
   const payments = getSalePayments(saleId);
   if (!payments.length) return "-";
   return payments.map((entry) => (
-    `<div class="payment-history-row">${formatDate(entry.paymentDate)} / ${formatCurrency(entry.amount)} / ${escapeHtml(entry.method || "その他")} ${entry.memo ? `/ ${escapeHtml(entry.memo)}` : ""} <button type="button" class="danger-btn delete-payment-btn" data-action="delete_payment" data-list-action="delete_payment" data-sale-id="${saleId}" data-payment-id="${entry.id}">削除</button></div>`
+    `<div class="payment-history-row">${formatDate(entry.paymentDate)} / ${formatCurrency(entry.amount)} / ${escapeHtml(entry.method || "その他")} ${entry.memo ? `/ ${escapeHtml(entry.memo)}` : ""} <button type="button" class="danger-btn delete-payment-btn" data-action="delete_payment" data-list-action="delete_payment" data-sale-id="${saleId}" data-payment-id="${entry.id}">削除</button> <button type="button" class="secondary-btn" data-action="print_receipt" data-list-action="print_receipt" data-sale-id="${saleId}" data-payment-id="${entry.id}">領収書</button></div>`
   )).join("");
 }
 
@@ -6413,6 +6423,58 @@ function openInvoicePrintPreviewFromCase(caseId) {
   });
 }
 
+
+function openReceiptPrintPreview(saleId, paymentId) {
+  const sale = state.sales.find((entry) => entry.id === saleId);
+  const payment = state.payments.find((entry) => entry.id === paymentId && entry.saleId === saleId);
+  if (!sale || !payment) {
+    showAppMessage("出力対象データが見つかりません", true);
+    return;
+  }
+  safeFileExport("領収書出力", () => {
+    const documentData = buildReceiptDocumentData(sale, payment);
+    openBusinessDocumentPrintWindow(documentData, { type: "receipt" });
+  });
+}
+
+function buildReceiptDocumentData(sale, payment) {
+  const appSettings = getAppSettings();
+  const taxRate = getCurrentTaxRate() || 0.1;
+  const total = Math.max(Number(payment.amount || 0), 0);
+  const subtotal = Math.floor(total / (1 + taxRate));
+  const tax = total - subtotal;
+  const paymentDate = payment.paymentDate || toDateString(new Date());
+  const dateToken = String(paymentDate || "").replace(/-/g, "").slice(0, 6) || toDateString(new Date()).replace(/-/g, "").slice(0, 6);
+  const paymentIdText = String(payment.id || "").replace(/[^a-zA-Z0-9]/g, "").slice(-6).toUpperCase() || "000001";
+  return {
+    customerName: resolveCustomerNameBySale(sale),
+    subject: resolveCaseName(sale.caseId) || "案件名未設定",
+    receiptDate: toDateString(new Date()),
+    receiptNumber: `R-${dateToken}-${paymentIdText}`,
+    paymentMethod: payment.method || "その他",
+    paymentDate,
+    referenceInvoiceNumber: sale.invoiceNumber || "未採番",
+    companyName: appSettings.officeName,
+    companyZip: appSettings.postalCode,
+    companyAddress: appSettings.address,
+    companyPhone: appSettings.tel,
+    companyEmail: appSettings.email,
+    registrationNumber: appSettings.invoiceRegistrationNumber,
+    details: [{ itemName: `行政書士業務報酬として / ${resolveCaseName(sale.caseId) || "案件名未設定"}`, quantity: 1, unitPrice: total, amount: total }],
+    subtotal,
+    tax,
+    total,
+    taxRate,
+    note: payment.memo || "",
+  };
+}
+
+function resolveCustomerNameBySale(sale) {
+  const linkedCase = sale?.caseId ? state.cases.find((entry) => entry.id === sale.caseId) : null;
+  const linkedClient = linkedCase?.clientId ? state.clients.find((entry) => entry.id === linkedCase.clientId) : null;
+  return linkedClient?.name || linkedCase?.customerName || "顧客名未設定";
+}
+
 function openBusinessDocumentPrintWindow(documentData, options = { type: "invoice" }) {
   let html = "";
   try {
@@ -6508,14 +6570,15 @@ function exportEstimateDataForEstimate(estimateId) {
 
 function createBusinessDocumentSheet(documentData, options = { type: "invoice" }) {
   const isInvoice = options.type === "invoice";
-  const title = isInvoice ? "請求書" : "見積書";
+  const isReceipt = options.type === "receipt";
+  const title = isReceipt ? "領収書" : (isInvoice ? "請求書" : "見積書");
   const amountLabel = isInvoice ? "ご請求金額（税込）" : "お見積金額（税込）";
   const sentence = isInvoice ? "下記の通りご請求申し上げます。" : "下記の通りお見積り申し上げます。";
   const leftLabel = isInvoice ? "請求先" : "宛先";
   const dateLabel = isInvoice ? "発行日" : "見積日";
-  const numberLabel = isInvoice ? "請求書番号" : "見積番号";
-  const numberValue = isInvoice ? documentData.invoiceNumber : documentData.estimateNumber;
-  const dateValue = isInvoice ? documentData.invoiceDate : documentData.estimateDate;
+  const numberLabel = isReceipt ? "領収書番号" : (isInvoice ? "請求書番号" : "見積番号");
+  const numberValue = isReceipt ? documentData.receiptNumber : (isInvoice ? documentData.invoiceNumber : documentData.estimateNumber);
+  const dateValue = isReceipt ? documentData.receiptDate : (isInvoice ? documentData.invoiceDate : documentData.estimateDate);
   const hasCompanyZip = Boolean(asTrimmedText(documentData.companyZip || ""));
   const hasCompanyAddress = Boolean(asTrimmedText(documentData.companyAddress || ""));
   const hasCompanyPhone = Boolean(asTrimmedText(documentData.companyPhone || ""));
@@ -6626,21 +6689,22 @@ function createBusinessDocumentSheet(documentData, options = { type: "invoice" }
 
 function buildBusinessDocumentHtml(documentData, options = { type: "invoice" }) {
   const isInvoice = options.type === "invoice";
-  const title = isInvoice ? "請求書" : "見積書";
-  const description = isInvoice ? "下記のとおりご請求申し上げます。" : "下記のとおり、お見積もり申し上げます。";
-  const emphasizedLabel = isInvoice ? "ご請求金額（税込）" : "お見積金額（税込）";
-  const numberLabel = isInvoice ? "請求書番号" : "見積番号";
-  const numberValue = isInvoice ? documentData.invoiceNumber : documentData.estimateNumber;
+  const isReceipt = options.type === "receipt";
+  const title = isReceipt ? "領収書" : (isInvoice ? "請求書" : "見積書");
+  const description = isReceipt ? "下記のとおり領収いたしました。" : (isInvoice ? "下記のとおりご請求申し上げます。" : "下記のとおり、お見積もり申し上げます。");
+  const emphasizedLabel = isReceipt ? "領収金額（税込）" : (isInvoice ? "ご請求金額（税込）" : "お見積金額（税込）");
+  const numberLabel = isReceipt ? "領収書番号" : (isInvoice ? "請求書番号" : "見積番号");
+  const numberValue = isReceipt ? documentData.receiptNumber : (isInvoice ? documentData.invoiceNumber : documentData.estimateNumber);
   const dateLabel = isInvoice ? "日付" : "日付";
-  const dateValue = isInvoice ? documentData.invoiceDate : documentData.estimateDate;
+  const dateValue = isReceipt ? documentData.receiptDate : (isInvoice ? documentData.invoiceDate : documentData.estimateDate);
   const hasCompanyZip = Boolean(asTrimmedText(documentData.companyZip || ""));
   const hasCompanyAddress = Boolean(asTrimmedText(documentData.companyAddress || ""));
   const hasCompanyPhone = Boolean(asTrimmedText(documentData.companyPhone || ""));
   const hasRegistrationNumber = Boolean(asTrimmedText(documentData.registrationNumber || ""));
   const hasTransferInfo = Boolean(asTrimmedText(documentData.transferInfo || ""));
-  const extraLabel = isInvoice ? "登録番号" : "有効期限";
-  const extraValue = isInvoice ? documentData.registrationNumber : documentData.validUntil;
-  const extraRowHtml = !isInvoice || hasRegistrationNumber
+  const extraLabel = isReceipt ? "対象請求番号" : (isInvoice ? "登録番号" : "有効期限");
+  const extraValue = isReceipt ? documentData.referenceInvoiceNumber : (isInvoice ? documentData.registrationNumber : documentData.validUntil);
+  const extraRowHtml = isReceipt || !isInvoice || hasRegistrationNumber
     ? `<div class="kv-row"><strong>${extraLabel}</strong><span>${escapeHtml(extraValue || "-")}</span></div>`
     : "";
   const officeLines = [
@@ -6652,6 +6716,9 @@ function buildBusinessDocumentHtml(documentData, options = { type: "invoice" }) 
   ].filter(Boolean).join("<br />");
   const transferSectionHtml = hasTransferInfo
     ? `<section class="info-section transfer-section"><h3>振込先</h3><div class="note-box">${escapeHtml(documentData.transferInfo || "")}</div></section>`
+    : "";
+  const receiptMetaHtml = isReceipt
+    ? `<section class="info-section"><h3>領収情報</h3><div class="note-box">但し書き: ${escapeHtml(`行政書士業務報酬として / ${documentData.subject || "案件名未設定"}`)}\n支払方法: ${escapeHtml(documentData.paymentMethod || "その他")}\n入金日: ${escapeHtml(formatDate(documentData.paymentDate))}\n案件名: ${escapeHtml(documentData.subject || "案件名未設定")}</div></section>`
     : "";
   const tableHeader = isInvoice
     ? "<tr><th>品名</th><th>単価</th><th>数量</th><th>金額</th></tr>"
@@ -6900,6 +6967,7 @@ body {
     </table>
     <section class="document-footer">
       ${isInvoice ? transferSectionHtml : ""}
+      ${receiptMetaHtml}
       <section class="info-section">
         <h3>${isInvoice ? "備考" : "備考"}</h3>
         <div class="note-box">${escapeHtml(isInvoice ? (documentData.note || "") : `${documentData.note || ""}\n${documentData.paymentTerms || "支払条件: 記載なし"}\n有効期限: ${documentData.validUntil || "記載なし"}`.trim())}</div>
