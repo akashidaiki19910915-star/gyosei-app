@@ -3725,22 +3725,33 @@ function renderAfterDataChanged() {
   console.log("RENDER DONE");
 }
 
+function formatShortId(value) {
+  const text = `${value || ""}`.trim();
+  if (!text) return "-";
+  if (text.length <= 16) return text;
+  return `${text.slice(0, 8)}...${text.slice(-6)}`;
+}
+
 function renderChangeLogs() {
   if (!changeLogsBody || !changeLogsEmpty || !changeLogsWrap) return;
   const logs = Array.isArray(state.changeLogs) ? state.changeLogs : [];
+  const actionLabelMap = { create: "登録", update: "更新", delete: "削除" };
+  const tableLabelMap = { sales: "売上", payments: "入金", expenses: "経費" };
   changeLogsBody.innerHTML = "";
   changeLogsEmpty.hidden = logs.length > 0;
   changeLogsWrap.hidden = logs.length === 0;
   logs.forEach((log) => {
     let detail = {};
     try { detail = log?.detail ? JSON.parse(log.detail) : {}; } catch (_) { detail = {}; }
+    const actionType = `${log?.action_type || ""}`.toLowerCase();
+    const targetType = `${log?.target_type || ""}`.toLowerCase();
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(formatDateTimeValue(log?.created_at || log?.createdAt || ""))}</td>
-      <td>${escapeHtml(log?.user_id || "-")}</td>
-      <td>${escapeHtml(log?.action_type || "-")}</td>
-      <td>${escapeHtml(log?.target_type || "-")}</td>
-      <td>${escapeHtml(log?.target_id || "-")}</td>
+      <td>${escapeHtml(formatShortId(log?.user_id))}</td>
+      <td>${escapeHtml(actionLabelMap[actionType] || (log?.action_type || "-"))}</td>
+      <td>${escapeHtml(tableLabelMap[targetType] || (log?.target_type || "-"))}</td>
+      <td>${escapeHtml(formatShortId(log?.target_id))}</td>
       <td><pre>${escapeHtml(JSON.stringify(detail?.before ?? null, null, 2))}</pre></td>
       <td><pre>${escapeHtml(JSON.stringify(detail?.after ?? null, null, 2))}</pre></td>
     `;
