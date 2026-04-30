@@ -132,6 +132,10 @@ const CLICK_ACTION_HANDLERS = {
   record_payment: handleSalesListAction,
   delete_payment: handleSalesListAction,
   print_receipt: handleSalesListAction,
+  print_cumulative_receipt: (event, button) => {
+    const saleId = button.dataset.saleId;
+    return openCumulativeReceiptPrintPreview(saleId);
+  },
   record_reminder: handleSalesListAction,
   edit_expense: handleExpensesListAction,
   delete_expense: handleExpensesListAction,
@@ -6446,6 +6450,14 @@ function openReceiptPrintPreview(saleId, paymentId, options = {}) {
     const documentData = buildReceiptDocumentData(sale, payment);
     openBusinessDocumentPrintWindow(documentData, { type: "receipt" });
   });
+}
+
+function openCumulativeReceiptPrintPreview(saleId) {
+  if (!saleId) {
+    showAppMessage("出力対象データIDを取得できませんでした。", true);
+    return;
+  }
+  return openReceiptPrintPreview(saleId, null, { cumulative: true });
 }
 
 function buildReceiptPaymentFromSale(sale, options = {}) {
