@@ -175,6 +175,29 @@
               </table>
             </div>
           </section>
+          <section id="pending-alert-card" class="pending-alert-card case-alert-block" aria-live="polite">
+            <div class="pending-alert-header">
+              <h3>未処理アラート</h3>
+              <p id="pending-alert-summary" class="pending-alert-summary">対象 0件</p>
+            </div>
+            <div id="pending-alert-counts" class="pending-alert-counts"></div>
+            <div id="pending-alert-empty" class="empty">未処理アラートはありません。</div>
+            <div id="pending-alert-list-wrap" class="table-wrap" hidden>
+              <table class="pending-alert-table">
+                <thead>
+                  <tr>
+                    <th>分類</th>
+                    <th>対象名</th>
+                    <th>期限/日付</th>
+                    <th>金額</th>
+                    <th>状態</th>
+                    <th>次にやること</th>
+                  </tr>
+                </thead>
+                <tbody id="pending-alert-body"></tbody>
+              </table>
+            </div>
+          </section>
           <section id="document-alert-card" class="deadline-alert-card case-alert-block" aria-live="polite">
             <div class="deadline-alert-header">
               <h3>書類アラート</h3>
