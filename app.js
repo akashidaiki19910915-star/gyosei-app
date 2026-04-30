@@ -126,6 +126,10 @@ const CLICK_ACTION_HANDLERS = {
   create_invoice_from_estimate: handleEstimateListAction,
   print_estimate: handleEstimateListAction,
   print_invoice_from_estimate: handleEstimateListAction,
+  print_delivery_note: handleEstimateListAction,
+  print_purchase_order: handleEstimateListAction,
+  print_order_confirmation: handleEstimateListAction,
+  print_inspection_report: handleEstimateListAction,
   export_estimate_excel: handleEstimateListAction,
   export_invoice_excel_from_estimate: handleEstimateListAction,
   edit_sale: handleSalesListAction,
@@ -1788,6 +1792,10 @@ async function handleCaseListAction(event) {
     exportInvoiceDataForCase(id);
     return;
   }
+  if (listAction === "print_case_delivery_note") return openPeripheralDocumentPrintPreviewFromCase(id, "delivery_note");
+  if (listAction === "print_case_purchase_order") return openPeripheralDocumentPrintPreviewFromCase(id, "purchase_order");
+  if (listAction === "print_case_order_confirmation") return openPeripheralDocumentPrintPreviewFromCase(id, "order_confirmation");
+  if (listAction === "print_case_inspection_report") return openPeripheralDocumentPrintPreviewFromCase(id, "inspection_report");
 
   if (listAction === "delete_case") {
     await deleteCase(id);
@@ -5689,6 +5697,10 @@ function renderEstimates() {
         <button type="button" class="secondary-btn create-case-btn" data-action="create_case_from_estimate" data-list-action="create_case_from_estimate" ${isCaseCreated ? "disabled" : ""}>${isCaseCreated ? "案件化済み" : "案件化"}</button>
         <button type="button" class="secondary-btn estimate-estimate-print-btn" data-action="print_estimate" data-list-action="print_estimate">見積書出力</button>
         <button type="button" class="secondary-btn estimate-print-btn" data-action="print_invoice_from_estimate" data-list-action="print_invoice_from_estimate">請求書出力</button>
+        <button type="button" class="secondary-btn estimate-delivery-note-btn" data-action="print_delivery_note" data-list-action="print_delivery_note">納品書</button>
+        <button type="button" class="secondary-btn estimate-purchase-order-btn" data-action="print_purchase_order" data-list-action="print_purchase_order">注文書</button>
+        <button type="button" class="secondary-btn estimate-order-confirmation-btn" data-action="print_order_confirmation" data-list-action="print_order_confirmation">注文請書</button>
+        <button type="button" class="secondary-btn estimate-inspection-report-btn" data-action="print_inspection_report" data-list-action="print_inspection_report">検収書</button>
         <button type="button" class="secondary-btn estimate-estimate-xlsx-btn" data-action="export_estimate_excel" data-list-action="export_estimate_excel">見積Excel</button>
         <button type="button" class="secondary-btn estimate-xlsx-btn" data-action="export_invoice_excel_from_estimate" data-list-action="export_invoice_excel_from_estimate">請求Excel</button>
         <button type="button" class="secondary-btn create-invoice-btn" data-action="create_invoice_from_estimate" data-list-action="create_invoice_from_estimate" ${hasCreatedInvoice ? "disabled" : ""}>${hasCreatedInvoice ? "請求済み" : "請求作成"}</button>
@@ -5727,6 +5739,10 @@ async function handleEstimateListAction(event) {
   }
   if (listAction === "print_estimate") return openEstimatePrintPreview(estimateId);
   if (listAction === "print_invoice_from_estimate") return openInvoicePrintPreviewFromEstimate(estimateId);
+  if (listAction === "print_delivery_note") return openPeripheralDocumentPrintPreviewFromEstimate(estimateId, "delivery_note");
+  if (listAction === "print_purchase_order") return openPeripheralDocumentPrintPreviewFromEstimate(estimateId, "purchase_order");
+  if (listAction === "print_order_confirmation") return openPeripheralDocumentPrintPreviewFromEstimate(estimateId, "order_confirmation");
+  if (listAction === "print_inspection_report") return openPeripheralDocumentPrintPreviewFromEstimate(estimateId, "inspection_report");
   if (listAction === "export_estimate_excel") return exportEstimateDataForEstimate(estimateId);
   if (listAction === "export_invoice_excel_from_estimate") return exportInvoiceDataForEstimate(estimateId);
   if (listAction === "create_invoice_from_estimate") {
@@ -6031,6 +6047,22 @@ function renderCases() {
       xlsxBtn.textContent = "請求Excel";
       rowActions.appendChild(xlsxBtn);
     }
+    const caseDocumentButtons = [
+      { selector: ".case-delivery-note-btn", action: "print_case_delivery_note", label: "納品書" },
+      { selector: ".case-purchase-order-btn", action: "print_case_purchase_order", label: "注文書" },
+      { selector: ".case-order-confirmation-btn", action: "print_case_order_confirmation", label: "注文請書" },
+      { selector: ".case-inspection-report-btn", action: "print_case_inspection_report", label: "検収書" },
+    ];
+    caseDocumentButtons.forEach((config) => {
+      if (!rowActions || rowActions.querySelector(config.selector)) return;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `secondary-btn ${config.selector.slice(1)}`;
+      btn.dataset.action = config.action;
+      btn.dataset.listAction = config.action;
+      btn.textContent = config.label;
+      rowActions.appendChild(btn);
+    });
     caseList.appendChild(node);
   });
 
@@ -6662,6 +6694,87 @@ function resolveCustomerNameBySale(sale) {
   return linkedClient?.name || linkedCase?.customerName || "顧客名未設定";
 }
 
+
+function buildPeripheralDocumentFromEstimate(estimate, documentType) {
+  const appSettings = getAppSettings();
+  const taxRate = getCurrentTaxRate();
+  const subtotal = Number(estimate.subtotal ?? Math.floor(Number(estimate.total ?? 0) / (1 + taxRate)) ?? 0);
+  const tax = Number(estimate.tax ?? Math.floor(subtotal * taxRate));
+  const total = Number(estimate.total ?? (subtotal + tax));
+  const linkedSale = estimate.caseId ? state.sales.find((sale) => sale.caseId === estimate.caseId) : null;
+  return {
+    documentType,
+    customerName: estimate.customerName || "顧客名未設定",
+    subject: estimate.estimateTitle || "案件名未設定",
+    issueDate: toDateString(new Date()),
+    documentNumber: linkedSale?.invoiceNumber || estimate.estimateNumber || "未採番",
+    companyName: appSettings.officeName,
+    companyZip: appSettings.postalCode,
+    companyAddress: appSettings.address,
+    companyPhone: appSettings.tel,
+    companyEmail: appSettings.email,
+    registrationNumber: appSettings.invoiceRegistrationNumber,
+    subtotal,
+    tax,
+    total,
+    taxRate,
+    note: estimate.memo || "",
+    details: [{ itemName: estimate.estimateTitle || "業務一式", quantity: 1, unitPrice: subtotal, amount: subtotal }],
+  };
+}
+
+function buildPeripheralDocumentFromCase(foundCase, documentType) {
+  const appSettings = getAppSettings();
+  const taxRate = getCurrentTaxRate();
+  const subtotal = Number(foundCase.estimateAmount ?? 0);
+  const tax = Math.floor(subtotal * taxRate);
+  const total = subtotal + tax;
+  const linkedSale = state.sales.find((sale) => sale.caseId === foundCase.id);
+  return {
+    documentType,
+    customerName: foundCase.customerName || "顧客名未設定",
+    subject: foundCase.caseName || "案件名未設定",
+    issueDate: toDateString(new Date()),
+    documentNumber: linkedSale?.invoiceNumber || "未採番",
+    companyName: appSettings.officeName,
+    companyZip: appSettings.postalCode,
+    companyAddress: appSettings.address,
+    companyPhone: appSettings.tel,
+    companyEmail: appSettings.email,
+    registrationNumber: appSettings.invoiceRegistrationNumber,
+    subtotal,
+    tax,
+    total,
+    taxRate,
+    note: sanitizeLegacyEstimateMemo(foundCase.workMemo) || "",
+    details: [{ itemName: foundCase.caseName || "業務一式", quantity: 1, unitPrice: subtotal, amount: subtotal }],
+  };
+}
+
+function openPeripheralDocumentPrintPreviewFromEstimate(estimateId, documentType) {
+  const estimate = state.estimates.find((entry) => entry.id === estimateId);
+  if (!estimate) {
+    showAppMessage("出力対象データが見つかりません", true);
+    return;
+  }
+  safeFileExport("帳票出力", () => {
+    const documentData = buildPeripheralDocumentFromEstimate(estimate, documentType);
+    openBusinessDocumentPrintWindow(documentData, { type: "peripheral" });
+  });
+}
+
+function openPeripheralDocumentPrintPreviewFromCase(caseId, documentType) {
+  const foundCase = state.cases.find((entry) => entry.id === caseId);
+  if (!foundCase) {
+    showAppMessage("出力対象データが見つかりません", true);
+    return;
+  }
+  safeFileExport("帳票出力", () => {
+    const documentData = buildPeripheralDocumentFromCase(foundCase, documentType);
+    openBusinessDocumentPrintWindow(documentData, { type: "peripheral" });
+  });
+}
+
 function openBusinessDocumentPrintWindow(documentData, options = { type: "invoice" }) {
   let html = "";
   try {
@@ -6877,21 +6990,29 @@ function createBusinessDocumentSheet(documentData, options = { type: "invoice" }
 function buildBusinessDocumentHtml(documentData, options = { type: "invoice" }) {
   const isInvoice = options.type === "invoice";
   const isReceipt = options.type === "receipt";
-  const title = isReceipt ? "領収書" : (isInvoice ? "請求書" : "見積書");
-  const description = isReceipt ? "下記のとおり領収いたしました。" : (isInvoice ? "下記のとおりご請求申し上げます。" : "下記のとおり、お見積もり申し上げます。");
-  const emphasizedLabel = isReceipt ? "領収金額（税込）" : (isInvoice ? "ご請求金額（税込）" : "お見積金額（税込）");
-  const numberLabel = isReceipt ? "領収書番号" : (isInvoice ? "請求書番号" : "見積番号");
-  const numberValue = isReceipt ? documentData.receiptNumber : (isInvoice ? documentData.invoiceNumber : documentData.estimateNumber);
+  const peripheralMap = {
+    delivery_note: { title: "納品書", description: "下記のとおり納品いたしました。" },
+    purchase_order: { title: "注文書", description: "下記のとおり注文いたします。" },
+    order_confirmation: { title: "注文請書", description: "下記のとおりご注文を承りました。" },
+    inspection_report: { title: "検収書", description: "下記のとおり検収いたしました。" },
+  };
+  const peripheralConfig = peripheralMap[documentData.documentType] || { title: "帳票", description: "下記のとおり発行いたしました。" };
+  const isPeripheral = options.type === "peripheral";
+  const title = isPeripheral ? peripheralConfig.title : (isReceipt ? "領収書" : (isInvoice ? "請求書" : "見積書"));
+  const description = isPeripheral ? peripheralConfig.description : (isReceipt ? "下記のとおり領収いたしました。" : (isInvoice ? "下記のとおりご請求申し上げます。" : "下記のとおり、お見積もり申し上げます。"));
+  const emphasizedLabel = isPeripheral ? "金額（税込）" : (isReceipt ? "領収金額（税込）" : (isInvoice ? "ご請求金額（税込）" : "お見積金額（税込）"));
+  const numberLabel = isPeripheral ? "書類番号" : (isReceipt ? "領収書番号" : (isInvoice ? "請求書番号" : "見積番号"));
+  const numberValue = isPeripheral ? documentData.documentNumber : (isReceipt ? documentData.receiptNumber : (isInvoice ? documentData.invoiceNumber : documentData.estimateNumber));
   const dateLabel = isInvoice ? "日付" : "日付";
-  const dateValue = isReceipt ? documentData.receiptDate : (isInvoice ? documentData.invoiceDate : documentData.estimateDate);
+  const dateValue = isPeripheral ? documentData.issueDate : (isReceipt ? documentData.receiptDate : (isInvoice ? documentData.invoiceDate : documentData.estimateDate));
   const hasCompanyZip = Boolean(asTrimmedText(documentData.companyZip || ""));
   const hasCompanyAddress = Boolean(asTrimmedText(documentData.companyAddress || ""));
   const hasCompanyPhone = Boolean(asTrimmedText(documentData.companyPhone || ""));
   const hasRegistrationNumber = Boolean(asTrimmedText(documentData.registrationNumber || ""));
   const hasTransferInfo = Boolean(asTrimmedText(documentData.transferInfo || ""));
-  const extraLabel = isReceipt ? "対象請求番号" : (isInvoice ? "登録番号" : "有効期限");
-  const extraValue = isReceipt ? documentData.referenceInvoiceNumber : (isInvoice ? documentData.registrationNumber : documentData.validUntil);
-  const extraRowHtml = isReceipt || !isInvoice || hasRegistrationNumber
+  const extraLabel = isPeripheral ? "登録番号" : (isReceipt ? "対象請求番号" : (isInvoice ? "登録番号" : "有効期限"));
+  const extraValue = isPeripheral ? documentData.registrationNumber : (isReceipt ? documentData.referenceInvoiceNumber : (isInvoice ? documentData.registrationNumber : documentData.validUntil));
+  const extraRowHtml = isPeripheral || isReceipt || !isInvoice || hasRegistrationNumber
     ? `<div class="kv-row"><strong>${extraLabel}</strong><span>${escapeHtml(extraValue || "-")}</span></div>`
     : "";
   const officeLines = [
