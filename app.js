@@ -130,10 +130,22 @@ const CLICK_ACTION_HANDLERS = {
   print_purchase_order: handleEstimateListAction,
   print_order_confirmation: handleEstimateListAction,
   print_acceptance_certificate: handleEstimateListAction,
-  print_case_delivery_note: handleCaseListAction,
-  print_case_purchase_order: handleCaseListAction,
-  print_case_order_confirmation: handleCaseListAction,
-  print_case_acceptance_certificate: handleCaseListAction,
+  print_case_delivery_note: (event, button) => {
+    const caseId = button.dataset.caseId;
+    return openCaseBusinessDocumentPrintPreview(caseId, "delivery_note");
+  },
+  print_case_purchase_order: (event, button) => {
+    const caseId = button.dataset.caseId;
+    return openCaseBusinessDocumentPrintPreview(caseId, "purchase_order");
+  },
+  print_case_order_confirmation: (event, button) => {
+    const caseId = button.dataset.caseId;
+    return openCaseBusinessDocumentPrintPreview(caseId, "order_confirmation");
+  },
+  print_case_acceptance_certificate: (event, button) => {
+    const caseId = button.dataset.caseId;
+    return openCaseBusinessDocumentPrintPreview(caseId, "acceptance_certificate");
+  },
   export_estimate_excel: handleEstimateListAction,
   export_invoice_excel_from_estimate: handleEstimateListAction,
   edit_sale: handleSalesListAction,
@@ -1796,10 +1808,10 @@ async function handleCaseListAction(event) {
     exportInvoiceDataForCase(id);
     return;
   }
-  if (listAction === "print_case_delivery_note") return openPeripheralDocumentPrintPreviewFromCase(id, "delivery_note");
-  if (listAction === "print_case_purchase_order") return openPeripheralDocumentPrintPreviewFromCase(id, "purchase_order");
-  if (listAction === "print_case_order_confirmation") return openPeripheralDocumentPrintPreviewFromCase(id, "order_confirmation");
-  if (listAction === "print_case_acceptance_certificate") return openPeripheralDocumentPrintPreviewFromCase(id, "inspection_report");
+  if (listAction === "print_case_delivery_note") return openCaseBusinessDocumentPrintPreview(id, "delivery_note");
+  if (listAction === "print_case_purchase_order") return openCaseBusinessDocumentPrintPreview(id, "purchase_order");
+  if (listAction === "print_case_order_confirmation") return openCaseBusinessDocumentPrintPreview(id, "order_confirmation");
+  if (listAction === "print_case_acceptance_certificate") return openCaseBusinessDocumentPrintPreview(id, "acceptance_certificate");
 
   if (listAction === "delete_case") {
     await deleteCase(id);
@@ -6064,6 +6076,7 @@ function renderCases() {
       btn.className = `secondary-btn ${config.selector.slice(1)}`;
       btn.dataset.action = config.action;
       btn.dataset.listAction = config.action;
+      btn.dataset.caseId = entry.id;
       btn.textContent = config.label;
       rowActions.appendChild(btn);
     });
@@ -6777,6 +6790,10 @@ function openPeripheralDocumentPrintPreviewFromCase(caseId, documentType) {
     const documentData = buildPeripheralDocumentFromCase(foundCase, documentType);
     openBusinessDocumentPrintWindow(documentData, { type: "peripheral" });
   });
+}
+
+function openCaseBusinessDocumentPrintPreview(caseId, documentType) {
+  return openPeripheralDocumentPrintPreviewFromCase(caseId, documentType);
 }
 
 function openBusinessDocumentPrintWindow(documentData, options = { type: "invoice" }) {
