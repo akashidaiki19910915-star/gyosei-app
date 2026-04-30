@@ -129,7 +129,11 @@ const CLICK_ACTION_HANDLERS = {
   print_delivery_note: handleEstimateListAction,
   print_purchase_order: handleEstimateListAction,
   print_order_confirmation: handleEstimateListAction,
-  print_inspection_report: handleEstimateListAction,
+  print_acceptance_certificate: handleEstimateListAction,
+  print_case_delivery_note: handleCaseListAction,
+  print_case_purchase_order: handleCaseListAction,
+  print_case_order_confirmation: handleCaseListAction,
+  print_case_acceptance_certificate: handleCaseListAction,
   export_estimate_excel: handleEstimateListAction,
   export_invoice_excel_from_estimate: handleEstimateListAction,
   edit_sale: handleSalesListAction,
@@ -1795,7 +1799,7 @@ async function handleCaseListAction(event) {
   if (listAction === "print_case_delivery_note") return openPeripheralDocumentPrintPreviewFromCase(id, "delivery_note");
   if (listAction === "print_case_purchase_order") return openPeripheralDocumentPrintPreviewFromCase(id, "purchase_order");
   if (listAction === "print_case_order_confirmation") return openPeripheralDocumentPrintPreviewFromCase(id, "order_confirmation");
-  if (listAction === "print_case_inspection_report") return openPeripheralDocumentPrintPreviewFromCase(id, "inspection_report");
+  if (listAction === "print_case_acceptance_certificate") return openPeripheralDocumentPrintPreviewFromCase(id, "inspection_report");
 
   if (listAction === "delete_case") {
     await deleteCase(id);
@@ -5700,7 +5704,7 @@ function renderEstimates() {
         <button type="button" class="secondary-btn estimate-delivery-note-btn" data-action="print_delivery_note" data-list-action="print_delivery_note">納品書</button>
         <button type="button" class="secondary-btn estimate-purchase-order-btn" data-action="print_purchase_order" data-list-action="print_purchase_order">注文書</button>
         <button type="button" class="secondary-btn estimate-order-confirmation-btn" data-action="print_order_confirmation" data-list-action="print_order_confirmation">注文請書</button>
-        <button type="button" class="secondary-btn estimate-inspection-report-btn" data-action="print_inspection_report" data-list-action="print_inspection_report">検収書</button>
+        <button type="button" class="secondary-btn estimate-inspection-report-btn" data-action="print_acceptance_certificate" data-list-action="print_acceptance_certificate">検収書</button>
         <button type="button" class="secondary-btn estimate-estimate-xlsx-btn" data-action="export_estimate_excel" data-list-action="export_estimate_excel">見積Excel</button>
         <button type="button" class="secondary-btn estimate-xlsx-btn" data-action="export_invoice_excel_from_estimate" data-list-action="export_invoice_excel_from_estimate">請求Excel</button>
         <button type="button" class="secondary-btn create-invoice-btn" data-action="create_invoice_from_estimate" data-list-action="create_invoice_from_estimate" ${hasCreatedInvoice ? "disabled" : ""}>${hasCreatedInvoice ? "請求済み" : "請求作成"}</button>
@@ -5742,7 +5746,7 @@ async function handleEstimateListAction(event) {
   if (listAction === "print_delivery_note") return openPeripheralDocumentPrintPreviewFromEstimate(estimateId, "delivery_note");
   if (listAction === "print_purchase_order") return openPeripheralDocumentPrintPreviewFromEstimate(estimateId, "purchase_order");
   if (listAction === "print_order_confirmation") return openPeripheralDocumentPrintPreviewFromEstimate(estimateId, "order_confirmation");
-  if (listAction === "print_inspection_report") return openPeripheralDocumentPrintPreviewFromEstimate(estimateId, "inspection_report");
+  if (listAction === "print_acceptance_certificate") return openPeripheralDocumentPrintPreviewFromEstimate(estimateId, "inspection_report");
   if (listAction === "export_estimate_excel") return exportEstimateDataForEstimate(estimateId);
   if (listAction === "export_invoice_excel_from_estimate") return exportInvoiceDataForEstimate(estimateId);
   if (listAction === "create_invoice_from_estimate") {
@@ -6051,7 +6055,7 @@ function renderCases() {
       { selector: ".case-delivery-note-btn", action: "print_case_delivery_note", label: "納品書" },
       { selector: ".case-purchase-order-btn", action: "print_case_purchase_order", label: "注文書" },
       { selector: ".case-order-confirmation-btn", action: "print_case_order_confirmation", label: "注文請書" },
-      { selector: ".case-inspection-report-btn", action: "print_case_inspection_report", label: "検収書" },
+      { selector: ".case-inspection-report-btn", action: "print_case_acceptance_certificate", label: "検収書" },
     ];
     caseDocumentButtons.forEach((config) => {
       if (!rowActions || rowActions.querySelector(config.selector)) return;
