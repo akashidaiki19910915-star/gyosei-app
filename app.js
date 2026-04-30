@@ -3855,8 +3855,65 @@ function getDataIntegrityChecks() {
     { key: "payment_due_overdue_unpaid", label: "支払期限切れ未入金", severity: "critical", items: (Array.isArray(state.sales) ? state.sales : []).filter((entry) => isSaleOverdue(entry) && Number(getRemainingAmount(entry)) > 0).map((entry) => `${entry?.invoiceNumber || "請求番号未設定"} / 期限:${entry?.dueDate || "-"} / 残額:${formatCurrency(getRemainingAmount(entry))}`) },
     { key: "clients_without_history", label: "対応履歴のない顧客", severity: "info", items: getClientsWithoutHistoryItems(caseMap) },
     { key: "backup_old_or_missing", label: "最終バックアップ日が未設定または7日超過", severity: "info", items: getBackupStalenessItems() },
+    { key: "preservation_requirements", label: "保存要件チェック", severity: "warning", items: getPreservationRequirementItems(caseMap) },
   ];
   return checks;
+}
+
+function getPreservationRequirementItems(caseMap) {
+  const sales = Array.isArray(state.sales) ? state.sales : [];
+  const payments = Array.isArray(state.payments) ? state.payments : [];
+  const expenses = Array.isArray(state.expenses) ? state.expenses : [];
+  const appSettings = getAppSettings();
+  const hasInvoiceRegistration = Boolean(asTrimmedText(appSettings?.invoiceRegistrationNumber || ""));
+  const paymentSaleIds = new Set(payments.map((entry) => entry?.saleId).filter(Boolean));
+
+  const formatMissingList = (entries, fallbackLabel) => entries.slice(0, 5).join("、") + (entries.length > 5 ? ` ほか${entries.length - 5}件` : "") || fallbackLabel;
+  const statusLabel = (level, message) => `${level}｜${message}`;
+  const result = [];
+
+  const noInvoiceNumber = sales.filter((entry) => !asTrimmedText(entry?.invoiceNumber)).map((entry) => `売上ID:${entry?.id || "-"}`);
+  result.push(statusLabel(noInvoiceNumber.length ? "不足" : "OK", noInvoiceNumber.length ? `請求書: invoice_number 未設定（${formatMissingList(noInvoiceNumber, "対象なし")}）` : "請求書: invoice_number"));
+
+  const noCustomerName = sales.filter((entry) => !asTrimmedText(entry?.customerName)).map((entry) => `売上ID:${entry?.id || "-"}`);
+  result.push(statusLabel(noCustomerName.length ? "不足" : "OK", noCustomerName.length ? `請求書: customer_name 未設定（${formatMissingList(noCustomerName, "対象なし")}）` : "請求書: customer_name"));
+
+  const noInvoiceAmount = sales.filter((entry) => Number(entry?.invoiceAmount || 0) <= 0).map((entry) => `売上ID:${entry?.id || "-"}`);
+  result.push(statusLabel(noInvoiceAmount.length ? "不足" : "OK", noInvoiceAmount.length ? `請求書: invoice_amount 未設定/0（${formatMissingList(noInvoiceAmount, "対象なし")}）` : "請求書: invoice_amount"));
+
+  const noInvoiceOutput = sales.filter((entry) => !entry?.caseId && !asTrimmedText(entry?.invoiceUrl)).map((entry) => `売上ID:${entry?.id || "-"}`);
+  result.push(statusLabel(noInvoiceOutput.length ? "要確認" : "OK", noInvoiceOutput.length ? `請求書: invoice_url または請求書出力元案件が不足（${formatMissingList(noInvoiceOutput, "対象なし")}）` : "請求書: 出力手段"));
+  result.push(statusLabel(hasInvoiceRegistration ? "OK" : "不足", hasInvoiceRegistration ? "請求書: インボイス登録番号" : "請求書: インボイス登録番号が未設定"));
+
+  const paidSales = sales.filter((entry) => Number(entry?.paidAmount || 0) > 0);
+  const paidSalesWithoutReceipt = paidSales.filter((entry) => !entry?.id && !entry?.caseId).map((entry) => `売上ID:${entry?.id || "-"}`);
+  result.push(statusLabel(paidSalesWithoutReceipt.length ? "要確認" : "OK", paidSalesWithoutReceipt.length ? `領収書: paid_amount>0 の出力手段不足（${formatMissingList(paidSalesWithoutReceipt, "対象なし")}）` : "領収書: paid_amount>0 の出力手段"));
+
+  const paymentHistoryMissing = paidSales.filter((entry) => paymentSaleIds.has(entry?.id) && !entry?.id).map((entry) => `売上ID:${entry?.id || "-"}`);
+  result.push(statusLabel(paymentHistoryMissing.length ? "不足" : "OK", paymentHistoryMissing.length ? `領収書: payment履歴ありで個別領収書不可（${formatMissingList(paymentHistoryMissing, "対象なし")}）` : "領収書: payment履歴あり個別領収書"));
+
+  const cumulativeMissing = paidSales.filter((entry) => !paymentSaleIds.has(entry?.id) && !entry?.id).map((entry) => `売上ID:${entry?.id || "-"}`);
+  result.push(statusLabel(cumulativeMissing.length ? "不足" : "OK", cumulativeMissing.length ? `領収書: payment履歴なしで累計領収書不可（${formatMissingList(cumulativeMissing, "対象なし")}）` : "領収書: payment履歴なし累計領収書"));
+
+  const expenseNoAmount = expenses.filter((entry) => Number(entry?.amount || 0) <= 0).map((entry) => `経費ID:${entry?.id || "-"}`);
+  result.push(statusLabel(expenseNoAmount.length ? "不足" : "OK", expenseNoAmount.length ? `経費証憑: amount 未設定/0（${formatMissingList(expenseNoAmount, "対象なし")}）` : "経費証憑: amount"));
+
+  const expenseNoContent = expenses.filter((entry) => !asTrimmedText(entry?.content)).map((entry) => `経費ID:${entry?.id || "-"}`);
+  result.push(statusLabel(expenseNoContent.length ? "不足" : "OK", expenseNoContent.length ? `経費証憑: content 未設定（${formatMissingList(expenseNoContent, "対象なし")}）` : "経費証憑: content"));
+
+  const expenseNoDate = expenses.filter((entry) => !entry?.date && !entry?.expenseDate).map((entry) => `経費ID:${entry?.id || "-"}`);
+  result.push(statusLabel(expenseNoDate.length ? "不足" : "OK", expenseNoDate.length ? `経費証憑: date/expense_date 未設定（${formatMissingList(expenseNoDate, "対象なし")}）` : "経費証憑: date/expense_date"));
+
+  const expenseNoReceiptUrl = expenses.filter((entry) => !asTrimmedText(entry?.receiptUrl)).map((entry) => `経費ID:${entry?.id || "-"}`);
+  result.push(statusLabel(expenseNoReceiptUrl.length ? "要確認" : "OK", expenseNoReceiptUrl.length ? `経費証憑: receipt_url 空欄（${formatMissingList(expenseNoReceiptUrl, "対象なし")}）` : "経費証憑: receipt_url"));
+
+  const salesSearchReady = sales.every((entry) => entry?.invoiceAmount != null && Boolean(asTrimmedText(entry?.customerName)) && Boolean(entry?.dueDate || entry?.paidDate || (entry?.caseId && caseMap.get(entry.caseId)?.receivedDate)));
+  result.push(statusLabel(salesSearchReady ? "OK" : "要確認", salesSearchReady ? "検索性: 売上（日付・金額・顧客名）" : "検索性: 売上の検索キー不足データあり"));
+
+  const expenseSearchReady = expenses.every((entry) => entry?.amount != null && Boolean(entry?.date || entry?.expenseDate) && Boolean(asTrimmedText(entry?.payee) || asTrimmedText(entry?.content)));
+  result.push(statusLabel(expenseSearchReady ? "OK" : "要確認", expenseSearchReady ? "検索性: 経費（日付・金額・支払先/内容）" : "検索性: 経費の検索キー不足データあり"));
+
+  return result;
 }
 
 function getNearDueUncollectedDocumentItems(caseMap, clientMap, todayTs) {
