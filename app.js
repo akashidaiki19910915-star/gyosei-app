@@ -1126,8 +1126,6 @@ async function loadAllDataSafely() {
     }
   }
 
-  state.sales = state.sales.map((sale) => hydrateSaleWithPayments(sale));
-
   console.log("LOAD COUNTS", {
     clients: state.clients.length,
     cases: state.cases.length,
@@ -7310,72 +7308,8 @@ function getSalePayments(saleId) {
     .sort((a, b) => toSortTimestamp(b.paymentDate) - toSortTimestamp(a.paymentDate));
 }
 
-function getSalePaidAmountByPayments(saleId) {
-  return getSalePayments(saleId).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
-}
-
 function calculateSaleRemainingAmount(invoiceAmount, paidAmount) {
   return (Number(invoiceAmount) || 0) - (Number(paidAmount) || 0);
-}
-
-function hydrateSaleWithPayments(sale) {
-  const payments = getSalePayments(sale.id);
-  if (!payments.length) return sale;
-  const paidAmount = payments.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
-  const paymentStatus = calculatePaymentStatus(sale.invoiceAmount, paidAmount);
-  const latestPayment = payments[0];
-  return {
-    ...sale,
-    paidAmount,
-    paidDate: latestPayment?.paymentDate || null,
-    paymentStatus,
-    isUnpaid: paymentStatus !== "入金済",
-  };
-}
-
-async function syncSalePaymentSummary(saleId) {
-  if (!currentUser || !saleId) return;
-  const {
-    data: { user },
-    error: userError,
-  } = await sbClient.auth.getUser();
-  if (userError || !user) {
-    throw userError || new Error("ログインユーザーを確認できません。");
-  }
-  const authUserId = user.id;
-  const { data: sale, error: saleLoadError } = await sbClient
-    .from("sales")
-    .select("invoice_amount")
-    .eq("id", saleId)
-    .eq("user_id", authUserId)
-    .single();
-  if (saleLoadError) throw saleLoadError;
-  if (!sale) throw new Error("売上情報の取得に失敗しました。");
-  const invoiceAmount = Number(sale.invoice_amount || 0);
-
-  const { data: paymentRows, error: paymentLoadError } = await sbClient
-    .from("payments")
-    .select("amount,payment_date")
-    .eq("sale_id", saleId)
-    .eq("user_id", authUserId);
-  if (paymentLoadError) throw paymentLoadError;
-
-  const totalPaid = (paymentRows || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-  const latestPaymentDate = (paymentRows || [])
-    .map((entry) => entry?.payment_date || null)
-    .filter((value) => !!value)
-    .sort((a, b) => toSortTimestamp(b) - toSortTimestamp(a))[0] || null;
-  const paymentStatus = calculatePaymentStatus(invoiceAmount, totalPaid);
-
-  const payload = {
-    paid_amount: totalPaid,
-    paid_date: totalPaid > 0 ? latestPaymentDate : null,
-    payment_status: paymentStatus,
-    is_unpaid: totalPaid < invoiceAmount,
-  };
-  const { data, error } = await sbClient.from("sales").update(payload).eq("id", saleId).eq("user_id", authUserId).select().single();
-  if (error) throw error;
-  if (!data) throw new Error("売上の入金ステータス更新結果を取得できませんでした。");
 }
 
 function getSalePaymentStatus(invoiceAmount, paidAmount) {
