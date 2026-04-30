@@ -1182,6 +1182,27 @@
                 <button id="settings-submit-btn" type="submit">設定を保存</button>
               </form>
             </section>
+            <section class="panel">
+              <h2>変更履歴</h2>
+              <p class="meta">売上・入金・経費の登録/編集/削除ログを表示します。</p>
+              <div id="change-logs-empty" class="empty">変更履歴はまだありません。</div>
+              <div id="change-logs-wrap" class="table-wrap" hidden>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>日時</th>
+                      <th>user_id</th>
+                      <th>action</th>
+                      <th>table</th>
+                      <th>record_id</th>
+                      <th>before</th>
+                      <th>after</th>
+                    </tr>
+                  </thead>
+                  <tbody id="change-logs-body"></tbody>
+                </table>
+              </div>
+            </section>
           </div>
         </section>
       </main>
