@@ -4298,6 +4298,42 @@ function renderPendingAlerts() {
     const remaining = getRemainingAmount(entry);
     const dueTs = toDateOnlyTimestamp(entry?.dueDate);
     const name = `${entry?.customerName || "顧客不明"} / ${entry?.caseName || "案件なし"}`;
+    const invoiceRegistrationStatus = getInvoiceRegistrationStatus(entry);
+    const invoiceDeliveryStatus = getInvoiceDeliveryStatus(entry);
+    const paymentStatus = entry?.paymentStatus || calculatePaymentStatus(entry?.invoiceAmount || 0, entry?.paidAmount || 0);
+    if (invoiceRegistrationStatus === "未作成") {
+      addAlert("未請求の売上", {
+        targetName: name,
+        dateLabel: entry?.dueDate || "-",
+        amountLabel: formatCurrency(entry?.invoiceAmount || 0),
+        status: invoiceRegistrationStatus,
+        nextAction: "請求情報を登録",
+        rowId: entry?.id,
+        rowType: "sale-uninvoiced",
+      });
+    }
+    if (invoiceDeliveryStatus === "未送付") {
+      addAlert("未送付の売上", {
+        targetName: name,
+        dateLabel: entry?.dueDate || "-",
+        amountLabel: formatCurrency(entry?.invoiceAmount || 0),
+        status: invoiceDeliveryStatus,
+        nextAction: "請求書URLを登録",
+        rowId: entry?.id,
+        rowType: "sale-undelivered",
+      });
+    }
+    if (paymentStatus === "未入金") {
+      addAlert("未入金の売上", {
+        targetName: name,
+        dateLabel: entry?.dueDate || "-",
+        amountLabel: formatCurrency(remaining),
+        status: paymentStatus,
+        nextAction: "入金登録または督促",
+        rowId: entry?.id,
+        rowType: "sale-unpaid-only",
+      });
+    }
     if (["未入金", "一部入金"].includes(entry?.paymentStatus) && remaining > 0) {
       addAlert("未入金・一部入金の売上", {
         targetName: name,
@@ -6448,6 +6484,8 @@ function renderSales() {
       const paidAmount = Number(sale.paidAmount || 0);
       const remainingAmount = calculateSaleRemainingAmount(invoiceAmount, paidAmount);
       const paymentStatus = sale.paymentStatus || calculatePaymentStatus(invoiceAmount, paidAmount);
+      const invoiceRegistrationStatus = getInvoiceRegistrationStatus(sale);
+      const invoiceDeliveryStatus = getInvoiceDeliveryStatus(sale);
       const linkedCase = sale.caseId ? state.cases.find((entry) => entry.id === sale.caseId) : null;
       const linkedClient = linkedCase?.clientId ? state.clients.find((entry) => entry.id === linkedCase.clientId) : null;
       const customerLabel = linkedClient?.name || linkedCase?.customerName || "顧客不明";
@@ -6467,6 +6505,9 @@ function renderSales() {
       tr.innerHTML = `
         <td>${escapeHtml(customerLabel)}</td>
         <td>${escapeHtml(caseLabel)}<br /><small>${escapeHtml(sale.invoiceNumber || "未採番")}</small></td>
+        <td>${escapeHtml(invoiceRegistrationStatus)}</td>
+        <td>${escapeHtml(invoiceDeliveryStatus)}</td>
+        <td>${escapeHtml(paymentStatus)}</td>
         <td>${formatCurrency(invoiceAmount)}</td>
         <td>${formatCurrency(paidAmount)}</td>
         <td>${formatCurrency(remainingAmount)}</td>
@@ -7944,6 +7985,14 @@ function calculatePaymentStatus(invoiceAmount, paidAmount) {
   if (!normalizedPaid || normalizedPaid <= 0) return "未入金";
   if (normalizedPaid < normalizedInvoice) return "一部入金";
   return "入金済";
+}
+
+function getInvoiceRegistrationStatus(sale) {
+  return asTrimmedText(sale?.invoiceNumber) || asTrimmedText(sale?.invoiceUrl) ? "作成済" : "未作成";
+}
+
+function getInvoiceDeliveryStatus(sale) {
+  return asTrimmedText(sale?.invoiceUrl) ? "送付済" : "未送付";
 }
 
 function normalizePaymentMethod(value) {
