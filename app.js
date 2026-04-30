@@ -2010,11 +2010,7 @@ async function handleSalesListAction(event) {
     return;
   }
   if (listAction === "print_receipt") {
-    const paymentId = btn.dataset.paymentId;
-    if (!paymentId) {
-      showAppMessage("入金データIDを取得できませんでした。", true);
-      return;
-    }
+    const paymentId = btn.dataset.paymentId || null;
     openReceiptPrintPreview(id, paymentId);
   }
 
@@ -4529,7 +4525,7 @@ function renderUnpaidAlert(filter = {}) {
         <td>${sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "-"}</td>
         <td>${escapeHtml(sale.reminderMethod || "-")}</td>
         <td>${escapeHtml(sale.reminderMemo || "-")}</td>
-        <td>${paymentHistory}</td>
+        <td>${paymentHistory}${renderSaleFallbackReceiptButton(sale)}</td>
         <td>
           <button type="button" class="secondary-btn edit-sale-btn" data-action="edit_sale" data-list-action="edit_sale" data-sale-id="${sale.id}">編集</button>
           <button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-action="record_payment" data-list-action="record_payment" data-sale-id="${sale.id}">入金登録</button>
@@ -4566,7 +4562,7 @@ function renderUnpaidList() {
       <td>${sale.lastReminderDate ? formatDate(sale.lastReminderDate) : "-"}</td>
       <td>${escapeHtml(sale.reminderMethod || "-")}</td>
       <td>${escapeHtml(sale.reminderMemo || "-")}</td>
-      <td>${paymentHistory}</td>
+      <td>${paymentHistory}${renderSaleFallbackReceiptButton(sale)}</td>
       <td><button type="button" class="secondary-btn edit-sale-btn" data-action="edit_sale" data-list-action="edit_sale" data-sale-id="${sale.id}">編集</button> <button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-action="record_payment" data-list-action="record_payment" data-sale-id="${sale.id}">入金登録</button> ${isReminderRecordableSale(sale) ? `<button type="button" class="secondary-btn record-reminder-btn" data-action="record_reminder" data-list-action="record_reminder" data-sale-id="${sale.id}">督促記録</button>` : ""}</td>
     `;
     safeAddClass(tr, getSaleRowClass(sale));
@@ -4932,6 +4928,12 @@ function renderPaymentHistoryInline(saleId) {
   return payments.map((entry) => (
     `<div class="payment-history-row">${formatDate(entry.paymentDate)} / ${formatCurrency(entry.amount)} / ${escapeHtml(entry.method || "その他")} ${entry.memo ? `/ ${escapeHtml(entry.memo)}` : ""} <button type="button" class="danger-btn delete-payment-btn" data-action="delete_payment" data-list-action="delete_payment" data-sale-id="${saleId}" data-payment-id="${entry.id}">削除</button> <button type="button" class="secondary-btn" data-action="print_receipt" data-list-action="print_receipt" data-sale-id="${saleId}" data-payment-id="${entry.id}">領収書</button></div>`
   )).join("");
+}
+
+function renderSaleFallbackReceiptButton(sale) {
+  if (Number(sale?.paidAmount || 0) <= 0) return "";
+  if (getSalePayments(sale.id).length > 0) return "";
+  return ' <button type="button" class="secondary-btn" data-action="print_receipt" data-list-action="print_receipt" data-sale-id="' + escapeHtml(sale.id) + '">領収書</button>';
 }
 
 function renderCaseOptions() {
@@ -6028,7 +6030,7 @@ function renderSales() {
         <td>${lastReminderDateLabel}</td>
         <td>${escapeHtml(reminderMethod)}</td>
         <td>${escapeHtml(reminderMemo)}</td>
-        <td>${paymentHistory}</td>
+        <td>${paymentHistory}${renderSaleFallbackReceiptButton(sale)}</td>
         <td>${canRecordReminder ? `<button type="button" class="secondary-btn record-reminder-btn" data-action="record_reminder" data-list-action="record_reminder" data-sale-id="${sale.id}">督促記録</button>` : "-"}</td>
         <td><button type="button" class="secondary-btn register-payment-btn record-payment-btn" data-action="record_payment" data-list-action="record_payment" data-sale-id="${sale.id}">入金登録</button></td>
         <td><button type="button" class="edit-sale-btn secondary-btn" data-action="edit_sale" data-list-action="edit_sale" data-sale-id="${sale.id}">編集</button></td>
@@ -6426,8 +6428,14 @@ function openInvoicePrintPreviewFromCase(caseId) {
 
 function openReceiptPrintPreview(saleId, paymentId) {
   const sale = state.sales.find((entry) => entry.id === saleId);
-  const payment = state.payments.find((entry) => entry.id === paymentId && entry.saleId === saleId);
-  if (!sale || !payment) {
+  if (!sale) {
+    showAppMessage("出力対象データが見つかりません", true);
+    return;
+  }
+  const payment = paymentId
+    ? state.payments.find((entry) => entry.id === paymentId && entry.saleId === saleId)
+    : buildReceiptPaymentFromSale(sale);
+  if (!payment) {
     showAppMessage("出力対象データが見つかりません", true);
     return;
   }
@@ -6435,6 +6443,22 @@ function openReceiptPrintPreview(saleId, paymentId) {
     const documentData = buildReceiptDocumentData(sale, payment);
     openBusinessDocumentPrintWindow(documentData, { type: "receipt" });
   });
+}
+
+function buildReceiptPaymentFromSale(sale) {
+  const amount = Math.max(Number(sale?.paidAmount || 0), 0);
+  if (amount <= 0) return null;
+  const paymentDate = sale?.paidDate || sale?.receivedDate || toDateString(new Date());
+  const fallbackId = String(sale?.id || "").replace(/[^a-zA-Z0-9]/g, "").slice(-6).toUpperCase() || "000001";
+  const receiptNumberSource = sale?.invoiceNumber ? `R-${sale.invoiceNumber}` : `R-${fallbackId}`;
+  return {
+    id: `sale-${sale.id || fallbackId}`,
+    amount,
+    paymentDate,
+    method: sale?.paymentMethod || "未設定",
+    memo: "",
+    receiptNumber: receiptNumberSource,
+  };
 }
 
 function buildReceiptDocumentData(sale, payment) {
@@ -6446,11 +6470,12 @@ function buildReceiptDocumentData(sale, payment) {
   const paymentDate = payment.paymentDate || toDateString(new Date());
   const dateToken = String(paymentDate || "").replace(/-/g, "").slice(0, 6) || toDateString(new Date()).replace(/-/g, "").slice(0, 6);
   const paymentIdText = String(payment.id || "").replace(/[^a-zA-Z0-9]/g, "").slice(-6).toUpperCase() || "000001";
+  const receiptNumber = payment.receiptNumber || `R-${dateToken}-${paymentIdText}`;
   return {
     customerName: resolveCustomerNameBySale(sale),
     subject: resolveCaseName(sale.caseId) || "案件名未設定",
     receiptDate: toDateString(new Date()),
-    receiptNumber: `R-${dateToken}-${paymentIdText}`,
+    receiptNumber,
     paymentMethod: payment.method || "その他",
     paymentDate,
     referenceInvoiceNumber: sale.invoiceNumber || "未採番",
