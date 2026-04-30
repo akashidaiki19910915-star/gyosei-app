@@ -278,6 +278,12 @@ const nextActionAlertSummary = document.getElementById("next-action-alert-summar
 const nextActionAlertBody = document.getElementById("next-action-alert-body");
 const nextActionAlertEmpty = document.getElementById("next-action-alert-empty");
 const nextActionAlertListWrap = document.getElementById("next-action-alert-list-wrap");
+const pendingAlertCard = document.getElementById("pending-alert-card");
+const pendingAlertSummary = document.getElementById("pending-alert-summary");
+const pendingAlertCounts = document.getElementById("pending-alert-counts");
+const pendingAlertBody = document.getElementById("pending-alert-body");
+const pendingAlertEmpty = document.getElementById("pending-alert-empty");
+const pendingAlertListWrap = document.getElementById("pending-alert-list-wrap");
 const todayTaskCard = document.getElementById("today-task-card");
 const todayTaskSummary = document.getElementById("today-task-summary");
 const todayTaskBody = document.getElementById("today-task-body");
@@ -4193,6 +4199,7 @@ function renderDashboard() {
     summaryGrid.appendChild(div);
   });
   renderTodayTaskCard();
+  renderPendingAlerts();
   renderDocumentAlerts();
   renderNextActionAlertCard();
   renderDeadlineAlertCard();
@@ -4215,6 +4222,112 @@ function renderDashboard() {
   renderAnalyticsSection();
   renderPendingEstimates();
   renderDataIntegrityCheck();
+}
+
+function renderPendingAlerts() {
+  if (!pendingAlertCard || !pendingAlertSummary || !pendingAlertCounts || !pendingAlertBody || !pendingAlertEmpty || !pendingAlertListWrap) return;
+  const todayTimestamp = getTodayTimestamp();
+  const alerts = [];
+  const countMap = new Map();
+  const addAlert = (category, entry) => {
+    alerts.push({ category, ...entry });
+    countMap.set(category, (countMap.get(category) || 0) + 1);
+  };
+  const addCaseAlert = (category, entry, action) => addAlert(category, {
+    targetName: `${entry.customerName || "顧客不明"} / ${entry.caseName || "案件なし"}`,
+    dateLabel: entry.dueDate || entry.nextActionDate || "-",
+    amountLabel: "-",
+    status: entry.status || "-",
+    nextAction: action,
+  });
+
+  state.cases.forEach((entry) => {
+    const dueTs = toDateOnlyTimestamp(entry?.dueDate);
+    if (entry?.dueDate && Number.isFinite(dueTs) && dueTs < todayTimestamp && getStatusCategory(entry.status) !== "完了") {
+      addCaseAlert("期限日を過ぎた案件", entry, "案件の期限・進捗を更新");
+    }
+    const nextTs = toDateOnlyTimestamp(entry?.nextActionDate);
+    if (entry?.nextActionDate && Number.isFinite(nextTs) && nextTs < todayTimestamp && getStatusCategory(entry.status) !== "完了") {
+      addCaseAlert("次回対応日を過ぎた案件", entry, entry.nextAction || "次回対応を実施");
+    }
+  });
+  state.caseTasks.forEach((entry) => {
+    if (entry?.status === "完了") return;
+    const linkedCase = state.cases.find((row) => row.id === entry.caseId);
+    addAlert("未完了タスク", {
+      targetName: `${linkedCase?.customerName || "顧客不明"} / ${(entry.taskTitle || "タスク未設定")}`,
+      dateLabel: entry?.dueDate || "-",
+      amountLabel: "-",
+      status: entry?.status || "未着手",
+      nextAction: "タスクを完了または更新",
+    });
+  });
+  state.caseDocuments.forEach((entry) => {
+    if (entry?.status !== "未回収") return;
+    const linkedCase = state.cases.find((row) => row.id === entry.caseId);
+    addAlert("未回収書類", {
+      targetName: `${linkedCase?.customerName || "顧客不明"} / ${entry?.documentName || "書類名未設定"}`,
+      dateLabel: entry?.dueDate || "-",
+      amountLabel: "-",
+      status: entry?.status || "-",
+      nextAction: "回収状況を更新",
+    });
+  });
+  getBillingLeakCandidates().forEach((entry) => {
+    addCaseAlert("未請求の案件", entry, "売上を登録");
+  });
+  state.sales.forEach((entry) => {
+    const remaining = getRemainingAmount(entry);
+    const dueTs = toDateOnlyTimestamp(entry?.dueDate);
+    const name = `${entry?.customerName || "顧客不明"} / ${entry?.caseName || "案件なし"}`;
+    if (["未入金", "一部入金"].includes(entry?.paymentStatus) && remaining > 0) {
+      addAlert("未入金・一部入金の売上", {
+        targetName: name,
+        dateLabel: entry?.dueDate || "-",
+        amountLabel: formatCurrency(remaining),
+        status: entry?.paymentStatus || "-",
+        nextAction: "入金登録または督促",
+      });
+    }
+    if (entry?.dueDate && Number.isFinite(dueTs) && dueTs < todayTimestamp && remaining > 0) {
+      addAlert("支払期限を過ぎた売上", {
+        targetName: name,
+        dateLabel: entry?.dueDate,
+        amountLabel: formatCurrency(remaining),
+        status: entry?.paymentStatus || "-",
+        nextAction: "期限超過分を督促",
+      });
+    }
+  });
+  state.expenses.forEach((entry) => {
+    if (String(entry?.receiptUrl || "").trim()) return;
+    addAlert("receipt_url が空の経費", {
+      targetName: `${entry?.category || "分類未設定"} / ${entry?.description || "内容未設定"}`,
+      dateLabel: entry?.date || "-",
+      amountLabel: formatCurrency(entry?.amount || 0),
+      status: "領収書未登録",
+      nextAction: "領収書URLを登録",
+    });
+  });
+
+  pendingAlertCard.classList.toggle("has-alert", alerts.length > 0);
+  pendingAlertSummary.textContent = `対象 ${alerts.length}件`;
+  pendingAlertCounts.innerHTML = Array.from(countMap.entries()).map(([category, count]) => `<span class="pending-alert-chip">${escapeHtml(category)}: ${count}件</span>`).join("");
+  pendingAlertBody.innerHTML = "";
+  pendingAlertEmpty.hidden = alerts.length > 0;
+  pendingAlertListWrap.hidden = alerts.length === 0;
+  alerts.forEach((entry) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(entry.category)}</td>
+      <td>${escapeHtml(entry.targetName)}</td>
+      <td>${escapeHtml(entry.dateLabel ? formatDate(entry.dateLabel) : "-")}</td>
+      <td>${escapeHtml(entry.amountLabel || "-")}</td>
+      <td>${escapeHtml(entry.status || "-")}</td>
+      <td>${escapeHtml(entry.nextAction || "-")}</td>
+    `;
+    pendingAlertBody.appendChild(tr);
+  });
 }
 
 function renderTodayTaskCard() {
