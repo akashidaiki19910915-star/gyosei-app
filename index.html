@@ -180,12 +180,22 @@
               <h3>未処理アラート</h3>
               <p id="pending-alert-summary" class="pending-alert-summary">対象 0件</p>
             </div>
+            <div id="pending-alert-bulk-actions" class="pending-alert-bulk-actions">
+              <button type="button" class="secondary-btn" data-action="pending_alert_bulk_clear_next_action_date">次回対応日を空にする</button>
+              <button type="button" class="secondary-btn" data-action="pending_alert_bulk_complete_cases">案件を対応済みにする</button>
+              <button type="button" class="secondary-btn" data-action="pending_alert_bulk_complete_tasks">タスクを完了にする</button>
+              <button type="button" class="secondary-btn" data-action="pending_alert_bulk_complete_documents">書類を回収済みにする</button>
+              <button type="button" class="secondary-btn" data-action="pending_alert_bulk_mark_invoiced_cases">請求済み扱いにする（invoice_url有）</button>
+              <button type="button" class="secondary-btn" data-action="pending_alert_open_sales">売上一覧を開く（未入金/一部入金確認）</button>
+              <button type="button" class="secondary-btn" data-action="pending_alert_open_expenses">経費一覧を開く（証憑URL未登録確認）</button>
+            </div>
             <div id="pending-alert-counts" class="pending-alert-counts"></div>
             <div id="pending-alert-empty" class="empty">未処理アラートはありません。</div>
             <div id="pending-alert-list-wrap" class="table-wrap" hidden>
               <table class="pending-alert-table">
                 <thead>
                   <tr>
+                    <th>選択</th>
                     <th>分類</th>
                     <th>対象名</th>
                     <th>期限/日付</th>
