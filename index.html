@@ -1102,6 +1102,7 @@
             <button type="button" class="subtab-btn active" data-parent-tab="daily-reports" data-subtab="entry">日報登録</button>
             <button type="button" class="subtab-btn" data-parent-tab="daily-reports" data-subtab="list">日報一覧</button>
             <button type="button" class="subtab-btn" data-parent-tab="daily-reports" data-subtab="summary">日報集計</button>
+            <button type="button" class="subtab-btn" data-parent-tab="daily-reports" data-subtab="alerts">アラート</button>
           </nav>
           <div class="layout two-col">
             <section class="panel subtab-panel" data-parent-tab="daily-reports" data-subtab="entry">
@@ -1158,6 +1159,26 @@
             <section class="panel subtab-panel" data-parent-tab="daily-reports" data-subtab="summary" hidden>
               <h2>日報集計</h2>
               <ul id="daily-report-summary-list" class="item-list compact-list"></ul>
+            </section>
+
+
+            <section class="panel subtab-panel" data-parent-tab="daily-reports" data-subtab="alerts" hidden>
+              <h2>未処理アラート一覧</h2>
+              <div id="daily-report-alert-empty" class="empty">未処理アラートはありません。</div>
+              <div id="daily-report-alert-list-wrap" class="table-wrap" hidden>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>分類</th>
+                      <th>対象名</th>
+                      <th>期限/日付</th>
+                      <th>状態</th>
+                      <th>次にやること</th>
+                    </tr>
+                  </thead>
+                  <tbody id="daily-report-alert-body"></tbody>
+                </table>
+              </div>
             </section>
 
             <section class="panel report-list-panel subtab-panel" data-parent-tab="daily-reports" data-subtab="list" hidden>
