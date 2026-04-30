@@ -2298,7 +2298,7 @@ async function handleRecordPayment(saleId) {
       console.log("PAYMENT AUTH USER", authUserId);
       const { data: saleRow, error: saleLoadError } = await sbClient
         .from("sales")
-        .select("invoice_amount")
+        .select("id,user_id,invoice_amount,paid_amount,paid_date,payment_status")
         .eq("id", saleId)
         .eq("user_id", authUserId)
         .single();
@@ -2306,16 +2306,18 @@ async function handleRecordPayment(saleId) {
       if (!saleRow) throw new Error("対象売上の取得に失敗しました。");
       const invoiceAmount = Number(saleRow.invoice_amount || 0);
 
-      const { data: existingPayments, error: paymentLoadError } = await sbClient
+      const { data: paymentRowsBefore, error: paymentLoadError } = await sbClient
         .from("payments")
         .select("amount")
         .eq("sale_id", saleId)
         .eq("user_id", authUserId);
       if (paymentLoadError) throw paymentLoadError;
-      const currentPaid = (existingPayments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-      const currentRemaining = Math.max(invoiceAmount - currentPaid, 0);
-      if (amount > currentRemaining) {
-        throw new Error(`入金額が残額を超えています。残額: ${formatCurrency(currentRemaining)}`);
+      const historyPaidBefore = (paymentRowsBefore || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+      const manualPaidBefore = Number(saleRow.paid_amount || 0);
+      const paidBaseBefore = Math.max(manualPaidBefore, historyPaidBefore);
+      const newPaidAmount = paidBaseBefore + amount;
+      if (newPaidAmount > invoiceAmount) {
+        throw new Error("入金額が請求額を超えています。");
       }
 
       const paymentPayload = {
@@ -2337,7 +2339,19 @@ async function handleRecordPayment(saleId) {
         throw paymentError;
       }
 
-      await syncSalePaymentSummary(saleId);
+      const paymentStatus = calculatePaymentStatus(invoiceAmount, newPaidAmount);
+      const saleUpdatePayload = {
+        paid_amount: newPaidAmount,
+        paid_date: paymentDate,
+        payment_status: paymentStatus,
+        is_unpaid: newPaidAmount < invoiceAmount,
+      };
+      const { error: saleUpdateError } = await sbClient
+        .from("sales")
+        .update(saleUpdatePayload)
+        .eq("id", saleId)
+        .eq("user_id", authUserId);
+      if (saleUpdateError) throw saleUpdateError;
       return null;
     }, { successMessage: "入金を登録しました。" });
   } catch (error) {
@@ -2357,10 +2371,43 @@ async function deletePayment(paymentId) {
   if (!window.confirm("この入金履歴を削除しますか？")) return;
 
   await runMutation("入金削除", async () => {
+    const {
+      data: { user },
+      error: userError,
+    } = await sbClient.auth.getUser();
+    if (userError || !user) {
+      throw userError || new Error("ログインユーザーを確認できません。");
+    }
+    const authUserId = user.id;
+    const { data: saleRow, error: saleLoadError } = await sbClient
+      .from("sales")
+      .select("id,user_id,invoice_amount,paid_amount")
+      .eq("id", target.saleId)
+      .eq("user_id", authUserId)
+      .single();
+    if (saleLoadError) throw saleLoadError;
+    if (!saleRow) throw new Error("対象売上の取得に失敗しました。");
+
     const { data, error } = await sbClient.from("payments").delete().eq("id", paymentId).eq("user_id", currentUser.id).select().single();
     if (error) throw error;
     if (!data) throw new Error("入金削除結果を取得できませんでした。");
-    await syncSalePaymentSummary(target.saleId);
+    const deletedAmount = Number(data.amount || 0);
+    const invoiceAmount = Number(saleRow.invoice_amount || 0);
+    const currentSalePaid = Number(saleRow.paid_amount || 0);
+    const newPaidAmount = Math.max(0, currentSalePaid - deletedAmount);
+    const paymentStatus = calculatePaymentStatus(invoiceAmount, newPaidAmount);
+    const saleUpdatePayload = {
+      paid_amount: newPaidAmount,
+      paid_date: newPaidAmount > 0 ? (target.paymentDate || null) : null,
+      payment_status: paymentStatus,
+      is_unpaid: newPaidAmount < invoiceAmount,
+    };
+    const { error: saleUpdateError } = await sbClient
+      .from("sales")
+      .update(saleUpdatePayload)
+      .eq("id", target.saleId)
+      .eq("user_id", authUserId);
+    if (saleUpdateError) throw saleUpdateError;
     return data;
   }, { successMessage: "入金履歴を削除しました。" });
 }
