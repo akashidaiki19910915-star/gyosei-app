@@ -74,6 +74,7 @@ const state = {
   alerts: [],
   selectedIntegrityCheckKey: "",
   appSettings: { ...DEFAULT_APP_SETTINGS },
+  changeLogs: [],
   isInitialDataReady: false,
 };
 const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
@@ -180,6 +181,9 @@ const excelImportForm = document.getElementById("excel-import-form");
 const exportBackupJsonBtn = document.getElementById("export-backup-json-btn");
 const backupRestoreForm = document.getElementById("backup-restore-form");
 const manualReloadBtn = document.getElementById("manual-reload-btn");
+const changeLogsEmpty = document.getElementById("change-logs-empty");
+const changeLogsWrap = document.getElementById("change-logs-wrap");
+const changeLogsBody = document.getElementById("change-logs-body");
 
 const tabs = Array.from(document.querySelectorAll(".tab-btn"));
 const subtabButtons = Array.from(document.querySelectorAll(".subtab-btn"));
@@ -1099,6 +1103,38 @@ async function loadAppSettings() {
   }
 }
 
+async function loadChangeLogs() {
+  if (!currentUser || isLoggingOut) {
+    state.changeLogs = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("operation_logs").select("*").eq("user_id", currentUser.id).order("created_at", { ascending: false }).limit(200);
+    if (error) {
+      console.error("LOAD changeLogs ERROR", error);
+      state.changeLogs = [];
+      return;
+    }
+    state.changeLogs = Array.isArray(data) ? data : [];
+  } catch (error) {
+    console.error("LOAD changeLogs ERROR", error);
+    state.changeLogs = [];
+  }
+}
+
+async function appendChangeLog({ action, table, recordId, before, after }) {
+  if (!currentUser) return;
+  const payload = {
+    user_id: currentUser.id,
+    action_type: action,
+    target_type: table,
+    target_id: recordId || null,
+    detail: JSON.stringify({ before: before || null, after: after || null }),
+  };
+  const { error } = await sbClient.from("operation_logs").insert(payload);
+  if (error) throw error;
+}
+
 async function loadAllDataSafely() {
   if (!currentUser || isLoggingOut) return;
 
@@ -1116,6 +1152,7 @@ async function loadAllDataSafely() {
     ["fixedExpenses", loadFixedExpenses],
     ["dailyReports", loadDailyReports],
     ["appSettings", loadAppSettings],
+    ["changeLogs", loadChangeLogs],
   ];
 
   for (const [name, loader] of loaders) {
@@ -1456,6 +1493,8 @@ async function handleSaleSubmit(event) {
           .single();
         if (error) throw error;
         if (!data) throw new Error("売上更新結果を取得できませんでした。");
+        const beforeSale = state.sales.find((entry) => entry.id === editState.saleId) || null;
+        await appendChangeLog({ action: "update", table: "sales", recordId: data.id, before: beforeSale, after: mapSaleFromDb(data) });
         console.log("SALE UPDATE SUCCESS", data);
         return data;
       }
@@ -1468,6 +1507,7 @@ async function handleSaleSubmit(event) {
       const { data, error } = await sbClient.from("sales").insert(insertPayload).select().single();
       if (error) throw error;
       if (!data) throw new Error("売上登録結果を取得できませんでした。");
+      await appendChangeLog({ action: "create", table: "sales", recordId: data.id, before: null, after: mapSaleFromDb(data) });
       console.log("SALE INSERT SUCCESS", data);
       return data;
     }, {
@@ -1530,6 +1570,7 @@ async function handleExpenseSubmit(event) {
           throw error;
         }
         if (!data) throw new Error("更新結果を取得できませんでした。");
+        await appendChangeLog({ action: "update", table: "expenses", recordId: data.id, before: currentExpense || null, after: mapExpenseFromDb(data) });
         console.log("DB DONE", taskName, editState.expenseId);
         return data;
       }
@@ -1540,6 +1581,7 @@ async function handleExpenseSubmit(event) {
         throw error;
       }
       if (!data) throw new Error("登録結果を取得できませんでした。");
+      await appendChangeLog({ action: "create", table: "expenses", recordId: data.id, before: null, after: mapExpenseFromDb(data) });
       console.log("DB DONE", taskName, data.id || "new");
       return data;
     }, {
@@ -2342,13 +2384,18 @@ async function handleRecordPayment(saleId) {
       };
       console.log("PAYMENT INSERT PAYLOAD", paymentPayload);
 
-      const { error: paymentError } = await sbClient
+      const { data: insertedPayment, error: paymentError } = await sbClient
         .from("payments")
-        .insert(paymentPayload);
+        .insert(paymentPayload)
+        .select()
+        .single();
 
       if (paymentError) {
         console.error("PAYMENT INSERT ERROR", paymentError);
         throw paymentError;
+      }
+      if (insertedPayment) {
+        await appendChangeLog({ action: "create", table: "payments", recordId: insertedPayment.id, before: null, after: mapPaymentFromDb(insertedPayment) });
       }
 
       const paymentStatus = calculatePaymentStatus(invoiceAmount, newPaidAmount);
@@ -2403,6 +2450,7 @@ async function deletePayment(paymentId) {
     const { data, error } = await sbClient.from("payments").delete().eq("id", paymentId).eq("user_id", currentUser.id).select().single();
     if (error) throw error;
     if (!data) throw new Error("入金削除結果を取得できませんでした。");
+    await appendChangeLog({ action: "delete", table: "payments", recordId: data.id, before: mapPaymentFromDb(data), after: null });
     const deletedAmount = Number(data.amount || 0);
     const invoiceAmount = Number(saleRow.invoice_amount || 0);
     const currentSalePaid = Number(saleRow.paid_amount || 0);
@@ -2783,12 +2831,16 @@ async function deleteSale(id) {
 }
 
 async function deleteExpense(id) {
+  const targetExpense = state.expenses.find((entry) => entry.id === id) || null;
   await deleteRecord({
     table: "expenses",
     id,
     actionName: "経費削除",
     confirmMessage: "この経費を削除しますか？",
     afterSuccess: () => {
+      appendChangeLog({ action: "delete", table: "expenses", recordId: id, before: targetExpense, after: null }).catch((error) => {
+        console.error("change log failed", error);
+      });
       if (editState.expenseId === id) {
         editState.expenseId = null;
         resetExpenseForm();
@@ -3658,6 +3710,7 @@ function renderAfterDataChanged() {
   safeRender("fixedExpenses", renderFixedExpenses);
   safeRender("dailyReports", renderDailyReports);
   safeRender("settingsForm", renderSettingsForm);
+  safeRender("changeLogs", renderChangeLogs);
   safeRender("todayTasks", renderTodayTasks);
   safeRender("dashboard", renderDashboard);
   safeRender("unpaidAlerts", renderUnpaidAlerts);
@@ -3670,6 +3723,29 @@ function renderAfterDataChanged() {
   safeRender("referralAnalysis", renderReferralAnalysis);
   hydrateActionButtons();
   console.log("RENDER DONE");
+}
+
+function renderChangeLogs() {
+  if (!changeLogsBody || !changeLogsEmpty || !changeLogsWrap) return;
+  const logs = Array.isArray(state.changeLogs) ? state.changeLogs : [];
+  changeLogsBody.innerHTML = "";
+  changeLogsEmpty.hidden = logs.length > 0;
+  changeLogsWrap.hidden = logs.length === 0;
+  logs.forEach((log) => {
+    let detail = {};
+    try { detail = log?.detail ? JSON.parse(log.detail) : {}; } catch (_) { detail = {}; }
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(formatDateTimeValue(log?.created_at || log?.createdAt || ""))}</td>
+      <td>${escapeHtml(log?.user_id || "-")}</td>
+      <td>${escapeHtml(log?.action_type || "-")}</td>
+      <td>${escapeHtml(log?.target_type || "-")}</td>
+      <td>${escapeHtml(log?.target_id || "-")}</td>
+      <td><pre>${escapeHtml(JSON.stringify(detail?.before ?? null, null, 2))}</pre></td>
+      <td><pre>${escapeHtml(JSON.stringify(detail?.after ?? null, null, 2))}</pre></td>
+    `;
+    changeLogsBody.appendChild(tr);
+  });
 }
 
 function renderPayments() {
@@ -7294,6 +7370,13 @@ function formatDate(dateText) {
   const date = new Date(dateText);
   if (Number.isNaN(date.getTime())) return "未設定";
   return new Intl.DateTimeFormat("ja-JP").format(date);
+}
+
+function formatDateTimeValue(value) {
+  if (!value) return "未設定";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "未設定";
+  return new Intl.DateTimeFormat("ja-JP", { dateStyle: "short", timeStyle: "medium" }).format(date);
 }
 
 function toDateString(dateSource) {
