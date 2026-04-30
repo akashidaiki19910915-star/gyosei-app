@@ -76,6 +76,7 @@ const state = {
   appSettings: { ...DEFAULT_APP_SETTINGS },
   changeLogs: [],
   isInitialDataReady: false,
+  pendingAlertSelections: {},
 };
 const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
 
@@ -173,6 +174,13 @@ const CLICK_ACTION_HANDLERS = {
   edit_case_document: handleCaseDocumentsListAction,
   delete_case_document: handleCaseDocumentsListAction,
   select_integrity_check: handleDataIntegrityAction,
+  pending_alert_bulk_clear_next_action_date: () => handlePendingAlertBulkAction("clear_next_action_date"),
+  pending_alert_bulk_complete_cases: () => handlePendingAlertBulkAction("complete_cases"),
+  pending_alert_bulk_complete_tasks: () => handlePendingAlertBulkAction("complete_tasks"),
+  pending_alert_bulk_complete_documents: () => handlePendingAlertBulkAction("complete_documents"),
+  pending_alert_bulk_mark_invoiced_cases: () => handlePendingAlertBulkAction("mark_invoiced_cases"),
+  pending_alert_open_sales: () => handlePendingAlertBulkAction("open_sales"),
+  pending_alert_open_expenses: () => handlePendingAlertBulkAction("open_expenses"),
 };
 
 const authView = document.getElementById("auth-view");
@@ -4243,6 +4251,8 @@ function renderPendingAlerts() {
     amountLabel: "-",
     status: entry.status || "-",
     nextAction: action,
+    rowId: entry?.id,
+    rowType: "case",
   });
 
   state.cases.forEach((entry) => {
@@ -4264,6 +4274,8 @@ function renderPendingAlerts() {
       amountLabel: "-",
       status: entry?.status || "未着手",
       nextAction: "タスクを完了または更新",
+      rowId: entry?.id,
+      rowType: "case-task",
     });
   });
   state.caseDocuments.forEach((entry) => {
@@ -4275,6 +4287,8 @@ function renderPendingAlerts() {
       amountLabel: "-",
       status: entry?.status || "-",
       nextAction: "回収状況を更新",
+      rowId: entry?.id,
+      rowType: "case-document",
     });
   });
   getBillingLeakCandidates().forEach((entry) => {
@@ -4291,6 +4305,8 @@ function renderPendingAlerts() {
         amountLabel: formatCurrency(remaining),
         status: entry?.paymentStatus || "-",
         nextAction: "入金登録または督促",
+        rowId: entry?.id,
+        rowType: "sale-unpaid",
       });
     }
     if (entry?.dueDate && Number.isFinite(dueTs) && dueTs < todayTimestamp && remaining > 0) {
@@ -4311,8 +4327,11 @@ function renderPendingAlerts() {
       amountLabel: formatCurrency(entry?.amount || 0),
       status: "領収書未登録",
       nextAction: "領収書URLを登録",
+      rowId: entry?.id,
+      rowType: "expense-no-receipt",
     });
   });
+  state.pendingAlertSelections = {};
 
   pendingAlertCard.classList.toggle("has-alert", alerts.length > 0);
   pendingAlertSummary.textContent = `対象 ${alerts.length}件`;
@@ -4323,6 +4342,7 @@ function renderPendingAlerts() {
   alerts.forEach((entry) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
+      <td><input type="checkbox" class="pending-alert-checkbox" data-pending-alert-id="${escapeHtml(`${entry.category}:${entry.rowType || "case"}:${entry.rowId || entry.targetName}`)}"></td>
       <td>${escapeHtml(entry.category)}</td>
       <td>${escapeHtml(entry.targetName)}</td>
       <td>${escapeHtml(entry.dateLabel ? formatDate(entry.dateLabel) : "-")}</td>
@@ -4330,8 +4350,71 @@ function renderPendingAlerts() {
       <td>${escapeHtml(entry.status || "-")}</td>
       <td>${escapeHtml(entry.nextAction || "-")}</td>
     `;
+    const checkbox = tr.querySelector(".pending-alert-checkbox");
+    if (checkbox) {
+      const key = checkbox.dataset.pendingAlertId;
+      if (key) {
+        checkbox.dataset.rowType = entry.rowType || "";
+        checkbox.dataset.rowId = entry.rowId || "";
+        checkbox.dataset.category = entry.category || "";
+        checkbox.addEventListener("change", () => {
+          state.pendingAlertSelections[key] = checkbox.checked ? {
+            rowType: checkbox.dataset.rowType || "",
+            rowId: checkbox.dataset.rowId || "",
+            category: checkbox.dataset.category || "",
+          } : null;
+          if (!checkbox.checked) delete state.pendingAlertSelections[key];
+        });
+      }
+    }
     pendingAlertBody.appendChild(tr);
   });
+}
+
+async function handlePendingAlertBulkAction(action) {
+  const selected = Object.values(state.pendingAlertSelections || {}).filter(Boolean);
+  if (action === "open_sales") {
+    subtabState.sales = "list";
+    activateTab("sales");
+    showAppMessage("売上一覧へ移動しました。未入金/一部入金の確認を行ってください。", false);
+    return;
+  }
+  if (action === "open_expenses") {
+    subtabState.expenses = "list";
+    activateTab("expenses");
+    showAppMessage("経費一覧へ移動しました。証憑URL未登録の確認を行ってください。", false);
+    return;
+  }
+  if (!currentUser || !selected.length) {
+    showAppMessage("一括更新対象を選択してください。", true);
+    return;
+  }
+  try {
+    if (action === "clear_next_action_date" || action === "complete_cases" || action === "mark_invoiced_cases") {
+      const caseIds = [...new Set(selected.filter((entry) => entry.category === "次回対応日を過ぎた案件" || entry.category === "未請求の案件").map((entry) => entry.rowId).filter(Boolean))];
+      if (!caseIds.length) return showAppMessage("対象分類の案件が選択されていません。", true);
+      const payload = action === "clear_next_action_date" ? { next_action_date: null } : action === "complete_cases" ? { status: "完了" } : null;
+      if (action === "mark_invoiced_cases") {
+        const targets = state.cases.filter((entry) => caseIds.includes(entry.id) && asTrimmedText(entry.invoiceUrl));
+        if (!targets.length) return showAppMessage("invoice_url がある未請求案件が選択されていません。", true);
+        await Promise.all(targets.map((entry) => sbClient.from("cases").update({ status: "完了" }).eq("id", entry.id).eq("user_id", currentUser.id)));
+      } else {
+        await sbClient.from("cases").update(payload).in("id", caseIds).eq("user_id", currentUser.id);
+      }
+    } else if (action === "complete_tasks") {
+      const ids = [...new Set(selected.filter((entry) => entry.rowType === "case-task").map((entry) => entry.rowId).filter(Boolean))];
+      if (!ids.length) return showAppMessage("未完了タスクが選択されていません。", true);
+      await sbClient.from("case_tasks").update({ status: "完了", completed_at: toDateString(new Date()) }).in("id", ids).eq("user_id", currentUser.id);
+    } else if (action === "complete_documents") {
+      const ids = [...new Set(selected.filter((entry) => entry.rowType === "case-document").map((entry) => entry.rowId).filter(Boolean))];
+      if (!ids.length) return showAppMessage("未回収書類が選択されていません。", true);
+      await sbClient.from("case_documents").update({ status: "回収済" }).in("id", ids).eq("user_id", currentUser.id);
+    }
+    await loadAllData();
+    showAppMessage("一括処理を実行しました。", false);
+  } catch (error) {
+    showAppMessage(`一括処理に失敗しました。${formatSupabaseError(error)}`, true);
+  }
 }
 
 function renderTodayTaskCard() {
