@@ -777,8 +777,12 @@ function renderPermitGeneratedResult(payload) {
   const docs = Array.isArray(payload.docs) ? payload.docs : [];
   const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
   permitSummary.textContent = summary;
-  permitDocumentsList.innerHTML = docs.map((doc) => `<li>${escapeHtml(doc)}</li>`).join("");
-  permitTasksList.innerHTML = tasks.map((task) => `<li>${escapeHtml(task)}</li>`).join("");
+  permitDocumentsList.innerHTML = docs.length
+    ? docs.map((doc) => `<li>${escapeHtml(doc)}</li>`).join("")
+    : "<li>保存済み書類がありません。</li>";
+  permitTasksList.innerHTML = tasks.length
+    ? tasks.map((task) => `<li>${escapeHtml(task)}</li>`).join("")
+    : "<li>保存済みタスクがありません。</li>";
   permitResult.hidden = false;
 }
 
@@ -786,14 +790,21 @@ function handleViewSavedPermitHearing(event, button) {
   const hearingId = button?.dataset?.permitHearingId;
   if (!hearingId) return;
   const hearing = (Array.isArray(state.permitHearings) ? state.permitHearings : []).find((entry) => String(entry.id) === String(hearingId));
-  if (!hearing) return;
-  const linkedCase = state.cases.find((entry) => entry.id === (hearing.case_id ?? hearing.caseId));
-  const docs = Array.isArray(hearing.generated_documents) ? hearing.generated_documents : [];
-  const tasks = Array.isArray(hearing.generated_tasks) ? hearing.generated_tasks : [];
+  if (!hearing) return showAppMessage("対象のヒアリング履歴が見つかりません。", true);
+  const hearingCaseId = hearing.case_id ?? hearing.caseId;
+  const linkedCase = state.cases.find((entry) => String(entry.id) === String(hearingCaseId));
+  const docs = Array.isArray(hearing.generated_documents)
+    ? hearing.generated_documents
+    : (Array.isArray(hearing.generatedDocuments) ? hearing.generatedDocuments : []);
+  const tasks = Array.isArray(hearing.generated_tasks)
+    ? hearing.generated_tasks
+    : (Array.isArray(hearing.generatedTasks) ? hearing.generatedTasks : []);
   const summary = `${hearing.permit_category || "許認可未設定"} / 申請者: ${hearing.applicant_name || "（未入力）"} / 所在地: ${hearing.office_address || "（未入力）"} / 人員: ${Number(hearing.officer_count || 0)}名 / 有資格者: ${Number(hearing.qualified_person_count || 0)}名 / 電子申請: ${hearing.online_application ? "希望する" : "希望しない"} / 優先度: ${hearing.urgency || "通常"}`;
   renderPermitGeneratedResult({ summary, docs, tasks });
+  permitResult?.scrollIntoView({ behavior: "smooth", block: "start" });
+  showAppMessage("保存済みヒアリングを表示しました。", false);
   lastPermitGenerated = {
-    case_id: hearing.case_id ?? hearing.caseId ?? "",
+    case_id: hearingCaseId ?? "",
     customer_name: linkedCase?.customerName ?? linkedCase?.customer_name ?? "",
     case_name: linkedCase?.caseName ?? linkedCase?.case_name ?? "",
     docs: [...docs],
