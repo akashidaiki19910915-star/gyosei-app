@@ -1158,3 +1158,7 @@ input[type="number"] {
   .daily-report-card-actions { width: 100%; justify-content: flex-start; }
   .daily-report-card-actions button { flex: 1 1 auto; }
 }
+
+.permit-result { margin-top: 16px; }
+.compact-list li { margin: 4px 0; }
+

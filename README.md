@@ -330,3 +330,42 @@ alter table work_templates add column if not exists task_list text;
 - 保存要件チェック追加
 - 変更履歴ログ追加
 - バックアップJSON/Excel出力確認済み
+
+## 許認可ヒアリング機能の追加SQL
+
+```sql
+create table if not exists permit_hearings (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  case_id uuid,
+  client_id uuid,
+  permit_category text not null,
+  application_type text not null,
+  jurisdiction_prefecture text,
+  jurisdiction_city text,
+  applicant_type text,
+  applicant_name text,
+  office_address text,
+  officer_count int default 0,
+  qualified_person_count int default 0,
+  online_application boolean default false,
+  urgency text,
+  answers jsonb default '{}'::jsonb,
+  generated_documents jsonb default '[]'::jsonb,
+  generated_tasks jsonb default '[]'::jsonb,
+  source_urls jsonb default '[]'::jsonb,
+  source_checked_at date,
+  memo text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table permit_hearings enable row level security;
+
+drop policy if exists "permit_hearings_own" on permit_hearings;
+
+create policy "permit_hearings_own" on permit_hearings
+for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+```
