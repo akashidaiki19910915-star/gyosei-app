@@ -768,6 +768,7 @@ async function handlePermitHearingSubmit(event) {
   });
   if (error) return showAppMessage(`許認可ヒアリング保存エラー: ${formatSupabaseError(error)}`, true);
   await loadPermitHearings();
+  renderPermitHearings();
 }
 
 function renderPermitGeneratedResult(payload) {
