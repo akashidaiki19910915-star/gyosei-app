@@ -1019,11 +1019,11 @@ dl { display:grid; grid-template-columns: 180px 1fr; gap: 4px 10px; margin: 0; }
 <h2>確認が必要な項目</h2><ul>${warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul>
 <h2>必要書類一覧</h2><ul>${docs.map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul>
 <h2>想定タスク一覧</h2><ul>${tasks.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul><script>window.print();</script></body></html>`;
-  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const printWindow = window.open(url, "_blank");
   if (!printWindow) return showAppMessage("印刷プレビューを開けませんでした。ポップアップ設定をご確認ください。", true);
-  printWindow.document.open();
-  printWindow.document.write(html);
-  printWindow.document.close();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 function handleViewSavedPermitHearing(event, button) {
