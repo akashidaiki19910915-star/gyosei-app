@@ -109,6 +109,7 @@ const CLICK_ACTION_HANDLERS = {
   export_all_csv: handleExportAllCsv,
   export_client_analysis_csv: handleExportClientAnalysisCsv,
   export_referral_analysis_csv: handleExportReferralAnalysisCsv,
+  export_permit_hearing_csv: handleExportPermitHearingCsv,
   export_excel: handleExportExcel,
   export_analysis_excel: handleExportAnalysisExcel,
   export_backup_json: handleExportBackupJson,
@@ -371,6 +372,7 @@ const permitTasksList = document.getElementById("permit-tasks-list");
 const permitAddDocumentBtn = document.getElementById("permit-add-document-btn");
 const permitAddTaskBtn = document.getElementById("permit-add-task-btn");
 const permitPrintPreviewBtn = document.getElementById("permit-print-preview-btn");
+const permitExportCsvBtn = document.getElementById("permit-export-csv-btn");
 const permitApplyDocumentsBtn = document.getElementById("permit-apply-documents-btn");
 const permitApplyTasksBtn = document.getElementById("permit-apply-tasks-btn");
 const permitOverwriteHearingBtn = document.getElementById("permit-overwrite-hearing-btn");
@@ -565,6 +567,7 @@ function bindEvents() {
   permitAddDocumentBtn?.addEventListener("click", () => addPermitGeneratedItem("docs"));
   permitAddTaskBtn?.addEventListener("click", () => addPermitGeneratedItem("tasks"));
   permitPrintPreviewBtn?.addEventListener("click", openPermitPrintPreview);
+  if (permitExportCsvBtn) permitExportCsvBtn.dataset.action = "export_permit_hearing_csv";
   if (permitApplyDocumentsBtn) permitApplyDocumentsBtn.dataset.action = "apply_permit_documents";
   if (permitApplyTasksBtn) permitApplyTasksBtn.dataset.action = "apply_permit_tasks";
   if (permitOverwriteHearingBtn) permitOverwriteHearingBtn.addEventListener("click", handleOverwritePermitHearing);
@@ -3543,6 +3546,50 @@ async function deleteAllData() {
     console.error("削除に失敗しました。", error);
     showAppMessage(`削除に失敗しました。${error.message || ""}`, true);
   }
+}
+
+
+function handleExportPermitHearingCsv() {
+  safeFileExport("許認可ヒアリングCSV", () => {
+    if (!lastPermitGenerated) throw new Error("出力対象のヒアリング結果がありません。");
+    const createdDate = String(lastPermitGenerated.created_at || "").slice(0, 10) || new Date().toISOString().slice(0, 10);
+    const filenameDate = new Date().toISOString().slice(0, 10);
+    const warnings = Array.isArray(lastPermitGenerated.warnings) && lastPermitGenerated.warnings.length
+      ? lastPermitGenerated.warnings.join(" / ")
+      : "確認が必要な項目はありません。";
+    const docs = Array.isArray(lastPermitGenerated.docs) && lastPermitGenerated.docs.length
+      ? lastPermitGenerated.docs.join(" / ")
+      : "";
+    const tasks = Array.isArray(lastPermitGenerated.tasks) && lastPermitGenerated.tasks.length
+      ? lastPermitGenerated.tasks.join(" / ")
+      : "";
+    const row = {
+      created_date: createdDate,
+      case_name: lastPermitGenerated.case_name || "",
+      applicant_name: lastPermitGenerated.applicant_name || "",
+      permit_category: lastPermitGenerated.permit_category || "",
+      applicant_type: lastPermitGenerated.applicant_type || "",
+      application_type: lastPermitGenerated.application_type || "",
+      jurisdiction_prefecture: lastPermitGenerated.jurisdiction_prefecture || "",
+      jurisdiction_city: lastPermitGenerated.jurisdiction_city || "",
+      office_address: lastPermitGenerated.office_address || "",
+      officer_count: Number(lastPermitGenerated.officer_count || 0),
+      qualified_person_count: Number(lastPermitGenerated.qualified_person_count || 0),
+      online_application: lastPermitGenerated.online_application ? "希望する" : "希望しない",
+      urgency: lastPermitGenerated.urgency || "",
+      memo: lastPermitGenerated.memo || "",
+      warnings,
+      required_documents: docs,
+      expected_tasks: tasks,
+    };
+    const headers = [
+      "created_date", "case_name", "applicant_name", "permit_category", "applicant_type",
+      "application_type", "jurisdiction_prefecture", "jurisdiction_city", "office_address",
+      "officer_count", "qualified_person_count", "online_application", "urgency", "memo",
+      "warnings", "required_documents", "expected_tasks",
+    ];
+    downloadCsvFile(`permit-hearing-${filenameDate}.csv`, headers, [row]);
+  });
 }
 
 function handleExportCasesCsv() {
