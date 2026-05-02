@@ -822,6 +822,10 @@
               <h2>許認可ヒアリング</h2>
               <form id="permit-hearing-form" class="form">
                 <label>
+                  案件選択
+                  <select id="permit-case-id" name="permitCaseId"></select>
+                </label>
+                <label>
                   v1対象業務
                   <select id="permit-scenario" name="permitScenario" required>
                     <option value="construction_corp">大阪府 建設業許可 知事許可 新規 法人</option>
@@ -857,6 +861,10 @@
                 <ul id="permit-documents-list" class="item-list compact-list"></ul>
                 <h4>想定タスク</h4>
                 <ul id="permit-tasks-list" class="item-list compact-list"></ul>
+                <div class="csv-actions">
+                  <button id="permit-apply-documents-btn" type="button">案件書類に反映</button>
+                  <button id="permit-apply-tasks-btn" type="button">案件タスクに反映</button>
+                </div>
               </div>
             </section>
           </div>

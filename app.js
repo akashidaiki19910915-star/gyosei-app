@@ -57,6 +57,7 @@ const state = {
   dailyReports: [],
   caseTasks: [],
   caseDocuments: [],
+  permitHearings: [],
   selectedAggregation: "month",
   selectedMonth: toMonthKey(new Date()),
   selectedYear: new Date().getFullYear(),
@@ -108,6 +109,8 @@ const CLICK_ACTION_HANDLERS = {
   export_excel: handleExportExcel,
   export_analysis_excel: handleExportAnalysisExcel,
   export_backup_json: handleExportBackupJson,
+  apply_permit_documents: applyPermitDocumentsToCase,
+  apply_permit_tasks: applyPermitTasksToCase,
   add_estimate_item_row: () => addEstimateItemRow(),
   remove_estimate_item_row: handleEstimateItemsClick,
   status_summary_filter: handleStatusSummaryClick,
@@ -352,10 +355,14 @@ const caseDocumentsBody = document.getElementById("case-documents-body");
 const caseDocumentsEmpty = document.getElementById("case-documents-empty");
 const caseDocumentsListWrap = document.getElementById("case-documents-list-wrap");
 const permitHearingForm = document.getElementById("permit-hearing-form");
+const permitCaseSelect = document.getElementById("permit-case-id");
 const permitResult = document.getElementById("permit-hearing-result");
 const permitSummary = document.getElementById("permit-summary");
 const permitDocumentsList = document.getElementById("permit-documents-list");
 const permitTasksList = document.getElementById("permit-tasks-list");
+const permitApplyDocumentsBtn = document.getElementById("permit-apply-documents-btn");
+const permitApplyTasksBtn = document.getElementById("permit-apply-tasks-btn");
+let lastPermitGenerated = null;
 
 const saleForm = document.getElementById("sale-form");
 const saleCaseSelect = document.getElementById("sale-case-id");
@@ -429,9 +436,9 @@ let eventsBound = false;
 let loadingCount = 0;
 let loadingTimer = null;
 let isApplyingAuthState = false;
-const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
-const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
-const RESTORE_DELETE_ORDER = ["payments", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "case_documents", "case_tasks", "estimates", "cases", "work_templates", "clients", "app_settings"];
+const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "permit_hearings", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
+const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "permit_hearings", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
+const RESTORE_DELETE_ORDER = ["payments", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "permit_hearings", "case_documents", "case_tasks", "estimates", "cases", "work_templates", "clients", "app_settings"];
 const CASE_MUTATION_COLUMNS = [
   "user_id",
   "client_id",
@@ -530,6 +537,8 @@ function bindEvents() {
   caseTaskForm?.addEventListener("submit", handleCaseTaskSubmit);
   caseDocumentForm?.addEventListener("submit", handleCaseDocumentSubmit);
   permitHearingForm?.addEventListener("submit", handlePermitHearingSubmit);
+  if (permitApplyDocumentsBtn) permitApplyDocumentsBtn.dataset.action = "apply_permit_documents";
+  if (permitApplyTasksBtn) permitApplyTasksBtn.dataset.action = "apply_permit_tasks";
   workTemplateForm?.addEventListener("submit", handleWorkTemplateSubmit);
   console.log("SALE FORM FOUND", !!saleForm);
   console.log("EXPENSE FORM FOUND", !!expenseForm);
@@ -708,9 +717,15 @@ const PERMIT_SCENARIO_MASTER = {
   kobutsu_solo: { label: "大阪府警 古物商許可 新規 個人", docs: ["本人住民票", "身分証明書", "URL使用権限疎明資料（該当時）", "営業所の賃貸借契約書", "略歴書"], tasks: ["欠格要件確認", "営業所情報確認", "必要書類回収", "申請書作成", "警察署へ提出"] },
 };
 
-function handlePermitHearingSubmit(event) {
+async function handlePermitHearingSubmit(event) {
   event.preventDefault();
   const formData = new FormData(event.currentTarget);
+  const caseId = String(formData.get("permitCaseId") || "");
+  const linkedCase = state.cases.find((entry) => entry.id === caseId);
+  if (!currentUser || !caseId || !linkedCase) {
+    showAppMessage("案件選択は必須です。", true);
+    return;
+  }
   const scenarioKey = String(formData.get("permitScenario") || "construction_corp");
   const scenario = PERMIT_SCENARIO_MASTER[scenarioKey] || PERMIT_SCENARIO_MASTER.construction_corp;
   const applicantName = String(formData.get("permitApplicantName") || "").trim() || "（未入力）";
@@ -723,6 +738,50 @@ function handlePermitHearingSubmit(event) {
   permitDocumentsList.innerHTML = scenario.docs.map((doc) => `<li>${escapeHtml(doc)}</li>`).join("");
   permitTasksList.innerHTML = scenario.tasks.map((task) => `<li>${escapeHtml(task)}</li>`).join("");
   permitResult.hidden = false;
+  lastPermitGenerated = { caseId, customerName: linkedCase.customerName, caseName: linkedCase.caseName, docs: [...scenario.docs], tasks: [...scenario.tasks] };
+  const { error } = await sbClient.from("permit_hearings").insert({
+    user_id: currentUser.id,
+    case_id: caseId,
+    client_id: linkedCase.clientId || null,
+    permit_category: scenario.label,
+    application_type: "新規",
+    jurisdiction_prefecture: "大阪府",
+    applicant_type: scenarioKey.endsWith("_corp") ? "法人" : "個人",
+    applicant_name: applicantName === "（未入力）" ? null : applicantName,
+    office_address: officeAddress === "（未入力）" ? null : officeAddress,
+    officer_count: officerCount,
+    qualified_person_count: qualifiedCount,
+    online_application: online === "希望する",
+    urgency,
+    answers: { permitScenario: scenarioKey, permitApplicantName: applicantName, permitOfficeAddress: officeAddress },
+    generated_documents: scenario.docs,
+    generated_tasks: scenario.tasks,
+    source_urls: [],
+  });
+  if (error) return showAppMessage(`許認可ヒアリング保存エラー: ${formatSupabaseError(error)}`, true);
+  await loadPermitHearings();
+}
+
+async function applyPermitDocumentsToCase() {
+  if (!currentUser || !lastPermitGenerated?.caseId) return;
+  const existing = new Set(state.caseDocuments.filter((d) => d.caseId === lastPermitGenerated.caseId).map((d) => String(d.documentName || "").trim()));
+  const payload = lastPermitGenerated.docs.filter((name) => !existing.has(name)).map((name) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.caseId, customer_name: lastPermitGenerated.customerName, case_name: lastPermitGenerated.caseName, document_name: name, status: "未回収" }));
+  if (!payload.length) return showAppMessage("同一案件に同名書類があるため追加対象はありません。", false);
+  const { error } = await sbClient.from("case_documents").insert(payload);
+  if (error) return showAppMessage(`書類反映エラー: ${formatSupabaseError(error)}`, true);
+  await loadCaseDocuments();
+  safeRender("cases", renderCaseDocuments);
+}
+
+async function applyPermitTasksToCase() {
+  if (!currentUser || !lastPermitGenerated?.caseId) return;
+  const existing = new Set(state.caseTasks.filter((t) => t.caseId === lastPermitGenerated.caseId).map((t) => String(t.title || "").trim()));
+  const payload = lastPermitGenerated.tasks.filter((title) => !existing.has(title)).map((title) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.caseId, customer_name: lastPermitGenerated.customerName, case_name: lastPermitGenerated.caseName, title, status: "未完了" }));
+  if (!payload.length) return showAppMessage("同一案件に同名タスクがあるため追加対象はありません。", false);
+  const { error } = await sbClient.from("case_tasks").insert(payload);
+  if (error) return showAppMessage(`タスク反映エラー: ${formatSupabaseError(error)}`, true);
+  await loadCaseTasks();
+  safeRender("cases", renderCaseTasks);
 }
 
 function handleDeadlineAlertClick(event) {
@@ -1019,6 +1078,25 @@ async function loadCaseDocuments() {
   }
 }
 
+async function loadPermitHearings() {
+  if (!currentUser || isLoggingOut) {
+    state.permitHearings = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("permit_hearings").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD permitHearings ERROR", error);
+      state.permitHearings = [];
+      return;
+    }
+    state.permitHearings = data || [];
+  } catch (error) {
+    console.error("LOAD permitHearings ERROR", error);
+    state.permitHearings = [];
+  }
+}
+
 async function loadEstimates() {
   if (!currentUser || isLoggingOut) {
     state.estimates = [];
@@ -1213,6 +1291,7 @@ async function loadAllDataSafely() {
     ["cases", loadCases],
     ["caseTasks", loadCaseTasks],
     ["caseDocuments", loadCaseDocuments],
+    ["permitHearings", loadPermitHearings],
     ["estimates", loadEstimates],
     ["estimateItems", loadEstimateItems],
     ["sales", loadSales],
@@ -3599,6 +3678,7 @@ function handleExportBackupJson(event) {
       expenses: backup.data.expenses.length,
       daily_reports: backup.data.daily_reports.length,
       case_documents: backup.data.case_documents.length,
+      permit_hearings: backup.data.permit_hearings.length,
       payments: backup.data.payments.length,
       case_tasks: backup.data.case_tasks.length,
       app_settings: backup.data.app_settings.length,
@@ -3668,6 +3748,7 @@ function buildBackupJson() {
       work_templates: Array.isArray(state.workTemplates) ? state.workTemplates : [],
       case_tasks: Array.isArray(state.caseTasks) ? state.caseTasks : [],
       case_documents: Array.isArray(state.caseDocuments) ? state.caseDocuments : [],
+      permit_hearings: Array.isArray(state.permitHearings) ? state.permitHearings : [],
       app_settings: state.appSettings?.id ? [{
         id: state.appSettings.id,
         user_id: currentUser?.id || state.appSettings.userId || null,
@@ -5447,6 +5528,11 @@ function renderCaseOptions() {
     const currentValue = caseDocumentCaseSelect.value;
     caseDocumentCaseSelect.innerHTML = `<option value="">案件なし</option>${options}`;
     if (currentValue) caseDocumentCaseSelect.value = currentValue;
+  }
+  if (permitCaseSelect) {
+    const currentValue = permitCaseSelect.value;
+    permitCaseSelect.innerHTML = `<option value="">案件を選択してください</option>${options}`;
+    if (currentValue) permitCaseSelect.value = currentValue;
   }
 }
 
