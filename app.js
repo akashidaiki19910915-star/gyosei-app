@@ -770,7 +770,7 @@ async function applyPermitDocumentsToCase() {
   const existing = new Set(state.caseDocuments
     .filter((d) => (d.case_id ?? d.caseId) === lastPermitGenerated.case_id)
     .map((d) => String((d.document_name ?? d.documentName) || "").trim()));
-  const payload = lastPermitGenerated.docs.filter((name) => !existing.has(name)).map((name) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.case_id, document_name: name, status: "未回収" }));
+  const payload = lastPermitGenerated.docs.filter((name) => !existing.has(name)).map((name) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.case_id, customer_name: lastPermitGenerated.customer_name, case_name: lastPermitGenerated.case_name, document_name: name, status: "未回収" }));
   if (!payload.length) return showAppMessage("同一案件に同名書類があるため追加対象はありません。", false);
   const { error } = await sbClient.from("case_documents").insert(payload);
   if (error) return showAppMessage(`書類反映エラー: ${formatSupabaseError(error)}`, true);
@@ -784,7 +784,7 @@ async function applyPermitTasksToCase() {
     .filter((t) => (t.case_id ?? t.caseId) === lastPermitGenerated.case_id)
     .map((t) => String((t.task_title ?? t.taskTitle) || "").trim()));
   // case_tasks の実カラム名は task_title（既存の登録・表示・CSV・取込処理と同一）
-  const payload = lastPermitGenerated.tasks.filter((title) => !existing.has(title)).map((title) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.case_id, task_title: title, status: "未着手" }));
+  const payload = lastPermitGenerated.tasks.filter((title) => !existing.has(title)).map((title) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.case_id, customer_name: lastPermitGenerated.customer_name, case_name: lastPermitGenerated.case_name, task_title: title, status: "未着手" }));
   if (!payload.length) return showAppMessage("同一案件に同名タスクがあるため追加対象はありません。", false);
   const { error } = await sbClient.from("case_tasks").insert(payload);
   if (error) return showAppMessage(`タスク反映エラー: ${formatSupabaseError(error)}`, true);
