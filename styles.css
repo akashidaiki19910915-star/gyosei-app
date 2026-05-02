@@ -1160,5 +1160,13 @@ input[type="number"] {
 }
 
 .permit-result { margin-top: 16px; }
+.permit-edit-actions { margin: 8px 0; }
+.permit-edit-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.permit-edit-row input[type="text"] {
+  flex: 1;
+}
 .compact-list li { margin: 4px 0; }
-
