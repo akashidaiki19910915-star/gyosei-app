@@ -331,6 +331,14 @@ alter table work_templates add column if not exists task_list text;
 - 変更履歴ログ追加
 - バックアップJSON/Excel出力確認済み
 
+## 検証コマンド記録
+- `node --check app.js`（構文チェック）
+- `node --check app.js` 実行結果: 成功（PR #143 追補対応）
+
+### Testing
+- node --check app.js を実行し、成功しました。
+- ブラウザでの手動確認は未実施です。
+
 ## 許認可ヒアリング機能の追加SQL
 
 ```sql
