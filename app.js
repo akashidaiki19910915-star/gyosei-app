@@ -365,10 +365,12 @@ const permitAddDocumentBtn = document.getElementById("permit-add-document-btn");
 const permitAddTaskBtn = document.getElementById("permit-add-task-btn");
 const permitApplyDocumentsBtn = document.getElementById("permit-apply-documents-btn");
 const permitApplyTasksBtn = document.getElementById("permit-apply-tasks-btn");
+const permitOverwriteHearingBtn = document.getElementById("permit-overwrite-hearing-btn");
 const permitHearingsBody = document.getElementById("permit-hearings-body");
 const permitHearingsEmpty = document.getElementById("permit-hearings-empty");
 const permitHearingsListWrap = document.getElementById("permit-hearings-list-wrap");
 let lastPermitGenerated = null;
+let selectedPermitHearingId = null;
 
 const saleForm = document.getElementById("sale-form");
 const saleCaseSelect = document.getElementById("sale-case-id");
@@ -551,6 +553,7 @@ function bindEvents() {
   permitAddTaskBtn?.addEventListener("click", () => addPermitGeneratedItem("tasks"));
   if (permitApplyDocumentsBtn) permitApplyDocumentsBtn.dataset.action = "apply_permit_documents";
   if (permitApplyTasksBtn) permitApplyTasksBtn.dataset.action = "apply_permit_tasks";
+  if (permitOverwriteHearingBtn) permitOverwriteHearingBtn.addEventListener("click", handleOverwritePermitHearing);
   workTemplateForm?.addEventListener("submit", handleWorkTemplateSubmit);
   console.log("SALE FORM FOUND", !!saleForm);
   console.log("EXPENSE FORM FOUND", !!expenseForm);
@@ -755,6 +758,8 @@ async function handlePermitHearingSubmit(event) {
   const linkedCaseName = linkedCase.case_name ?? linkedCase.caseName ?? "";
   const linkedClientId = linkedCase.client_id ?? linkedCase.clientId ?? null;
   lastPermitGenerated = { case_id: caseId, customer_name: linkedCustomerName, case_name: linkedCaseName, docs: [...scenario.docs], tasks: [...scenario.tasks] };
+  selectedPermitHearingId = null;
+  setPermitOverwriteButtonState(false);
   const { error } = await sbClient.from("permit_hearings").insert({
     user_id: currentUser.id,
     case_id: caseId,
@@ -777,6 +782,11 @@ async function handlePermitHearingSubmit(event) {
   if (error) return showAppMessage(`許認可ヒアリング保存エラー: ${formatSupabaseError(error)}`, true);
   await loadPermitHearings();
   renderPermitHearings();
+}
+
+function setPermitOverwriteButtonState(enabled) {
+  if (!permitOverwriteHearingBtn) return;
+  permitOverwriteHearingBtn.disabled = !enabled;
 }
 
 function renderPermitGeneratedResult(payload) {
@@ -859,8 +869,36 @@ function handleViewSavedPermitHearing(event, button) {
     docs: [...docs],
     tasks: [...tasks],
   };
+  selectedPermitHearingId = hearing.id;
+  setPermitOverwriteButtonState(true);
 }
 
+
+async function handleOverwritePermitHearing() {
+  if (!currentUser || !selectedPermitHearingId) return;
+  if (!lastPermitGenerated) return showAppMessage("上書き対象データがありません。", true);
+  syncPermitGeneratedFromInputs();
+  const docs = Array.isArray(lastPermitGenerated.docs) ? lastPermitGenerated.docs : [];
+  const tasks = Array.isArray(lastPermitGenerated.tasks) ? lastPermitGenerated.tasks : [];
+  const selectedHearing = (Array.isArray(state.permitHearings) ? state.permitHearings : [])
+    .find((entry) => String(entry.id) === String(selectedPermitHearingId));
+  const payload = {
+    generated_documents: docs,
+    generated_tasks: tasks,
+  };
+  if (selectedHearing && Object.prototype.hasOwnProperty.call(selectedHearing, "updated_at")) {
+    payload.updated_at = new Date().toISOString();
+  }
+  const { error } = await sbClient
+    .from("permit_hearings")
+    .update(payload)
+    .eq("id", selectedPermitHearingId)
+    .eq("user_id", currentUser.id);
+  if (error) return showAppMessage(`ヒアリング履歴更新エラー: ${formatSupabaseError(error)}`, true);
+  await loadPermitHearings();
+  renderPermitHearings();
+  showAppMessage("ヒアリング履歴を更新しました。", false);
+}
 async function applyPermitDocumentsToCase() {
   if (!currentUser || !lastPermitGenerated?.case_id) return;
   syncPermitGeneratedFromInputs();
