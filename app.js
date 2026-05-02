@@ -363,6 +363,7 @@ const caseDocumentsEmpty = document.getElementById("case-documents-empty");
 const caseDocumentsListWrap = document.getElementById("case-documents-list-wrap");
 const permitHearingForm = document.getElementById("permit-hearing-form");
 const permitCaseSelect = document.getElementById("permit-case-id");
+const permitScenarioSelect = document.getElementById("permit-scenario");
 const permitResult = document.getElementById("permit-hearing-result");
 const permitSummary = document.getElementById("permit-summary");
 const permitWarningWrap = document.getElementById("permit-warning-wrap");
@@ -1112,6 +1113,7 @@ function handleViewSavedPermitHearing(event, button) {
 
 function restorePermitHearingFormValues(hearing) {
   if (!permitHearingForm || !hearing) return;
+  renderPermitScenarioOptions();
   const answers = hearing.answers && typeof hearing.answers === "object" ? hearing.answers : {};
   const setValue = (name, value) => {
     const field = permitHearingForm.elements.namedItem(name);
@@ -6033,7 +6035,26 @@ function renderSaleCumulativeReceiptButton(sale) {
   return ' <button type="button" class="secondary-btn" data-action="print_cumulative_receipt" data-list-action="print_cumulative_receipt" data-sale-id="' + escapeHtml(sale.id) + '">累計領収書</button>';
 }
 
+function renderPermitScenarioOptions() {
+  if (!permitScenarioSelect) return;
+  const scenarioEntries = Object.entries(PERMIT_SCENARIO_MASTER || {});
+  const currentValue = permitScenarioSelect.value;
+  permitScenarioSelect.innerHTML = "";
+  scenarioEntries.forEach(([key, scenario]) => {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = String(scenario?.label || key);
+    permitScenarioSelect.append(option);
+  });
+  if (currentValue && PERMIT_SCENARIO_MASTER[currentValue]) {
+    permitScenarioSelect.value = currentValue;
+  } else if (scenarioEntries.length > 0) {
+    permitScenarioSelect.value = scenarioEntries[0][0];
+  }
+}
+
 function renderCaseOptions() {
+  renderPermitScenarioOptions();
   if (!saleCaseSelect || !expenseCaseSelect || !reportCaseSelect) return;
   const options = state.cases
     .slice()
