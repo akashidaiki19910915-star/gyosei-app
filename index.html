@@ -875,6 +875,28 @@
               </div>
               <div class="permit-history-wrap">
                 <h3>保存済みヒアリング履歴</h3>
+                <div class="search-filter-bar">
+                  <label class="inline-field" for="permit-hearing-search-input">
+                    検索
+                    <input id="permit-hearing-search-input" type="search" placeholder="案件名・申請者名・許認可種別・優先度で検索" />
+                  </label>
+                  <label class="inline-field" for="permit-hearing-category-filter">
+                    許認可種別
+                    <select id="permit-hearing-category-filter">
+                      <option value="all">すべて</option>
+                    </select>
+                  </label>
+                  <label class="inline-field" for="permit-hearing-urgency-filter">
+                    優先度
+                    <select id="permit-hearing-urgency-filter">
+                      <option value="all">すべて</option>
+                      <option value="通常">通常</option>
+                      <option value="急ぎ">急ぎ</option>
+                    </select>
+                  </label>
+                  <button id="permit-hearing-filter-clear-btn" type="button" class="secondary-btn">条件クリア</button>
+                </div>
+                <p id="permit-hearing-filter-count" class="filter-count">表示中 0件 / 全0件</p>
                 <div id="permit-hearings-empty" class="empty">保存済みヒアリング履歴はまだありません。</div>
                 <div id="permit-hearings-list-wrap" class="table-wrap" hidden>
                   <table>

@@ -68,6 +68,9 @@ const state = {
   expensesSearchQuery: "",
   dailyReportSearchQuery: "",
   dailyReportDateFilter: "all",
+  permitHearingSearchQuery: "",
+  permitHearingCategoryFilter: "all",
+  permitHearingUrgencyFilter: "all",
   estimateCustomerQuery: "",
   estimateTitleQuery: "",
   estimateStatusFilter: "all",
@@ -113,6 +116,7 @@ const CLICK_ACTION_HANDLERS = {
   apply_permit_tasks: applyPermitTasksToCase,
   view_saved_permit_hearing: handleViewSavedPermitHearing,
   delete_saved_permit_hearing: handleDeleteSavedPermitHearing,
+  clear_permit_hearing_filters: clearPermitHearingFilters,
   add_estimate_item_row: () => addEstimateItemRow(),
   remove_estimate_item_row: handleEstimateItemsClick,
   status_summary_filter: handleStatusSummaryClick,
@@ -370,6 +374,11 @@ const permitOverwriteHearingBtn = document.getElementById("permit-overwrite-hear
 const permitHearingsBody = document.getElementById("permit-hearings-body");
 const permitHearingsEmpty = document.getElementById("permit-hearings-empty");
 const permitHearingsListWrap = document.getElementById("permit-hearings-list-wrap");
+const permitHearingSearchInput = document.getElementById("permit-hearing-search-input");
+const permitHearingCategoryFilter = document.getElementById("permit-hearing-category-filter");
+const permitHearingUrgencyFilter = document.getElementById("permit-hearing-urgency-filter");
+const permitHearingFilterClearBtn = document.getElementById("permit-hearing-filter-clear-btn");
+const permitHearingFilterCount = document.getElementById("permit-hearing-filter-count");
 let lastPermitGenerated = null;
 let selectedPermitHearingId = null;
 
@@ -586,6 +595,10 @@ function bindEvents() {
   dailyReportSearchInput?.addEventListener("input", handleDailyReportSearchInput);
   dailyReportDateFilterSelect?.addEventListener("change", handleDailyReportDateFilterChange);
   if (dailyReportFilterClearBtn) dailyReportFilterClearBtn.dataset.action = "clear_daily_report_filters";
+  permitHearingSearchInput?.addEventListener("input", handlePermitHearingSearchInput);
+  permitHearingCategoryFilter?.addEventListener("change", handlePermitHearingCategoryFilterChange);
+  permitHearingUrgencyFilter?.addEventListener("change", handlePermitHearingUrgencyFilterChange);
+  if (permitHearingFilterClearBtn) permitHearingFilterClearBtn.dataset.action = "clear_permit_hearing_filters";
   window.addEventListener("pageshow", forceHideLoading);
   window.addEventListener("focus", forceHideLoading);
   document.addEventListener("visibilitychange", () => {
@@ -1036,6 +1049,31 @@ function handleDailyReportSearchInput(event) {
 
 function handleDailyReportDateFilterChange(event) {
   applyDailyReportDateFilter(event?.target?.value || "all");
+}
+
+function handlePermitHearingSearchInput(event) {
+  state.permitHearingSearchQuery = String(event?.target?.value ?? "").trim().toLowerCase();
+  safeRender("permitHearings", renderPermitHearings);
+}
+
+function handlePermitHearingCategoryFilterChange(event) {
+  state.permitHearingCategoryFilter = String(event?.target?.value || "all");
+  safeRender("permitHearings", renderPermitHearings);
+}
+
+function handlePermitHearingUrgencyFilterChange(event) {
+  state.permitHearingUrgencyFilter = String(event?.target?.value || "all");
+  safeRender("permitHearings", renderPermitHearings);
+}
+
+function clearPermitHearingFilters() {
+  state.permitHearingSearchQuery = "";
+  state.permitHearingCategoryFilter = "all";
+  state.permitHearingUrgencyFilter = "all";
+  if (permitHearingSearchInput) permitHearingSearchInput.value = "";
+  if (permitHearingCategoryFilter) permitHearingCategoryFilter.value = "all";
+  if (permitHearingUrgencyFilter) permitHearingUrgencyFilter.value = "all";
+  safeRender("permitHearings", renderPermitHearings);
 }
 
 function applyDailyReportDateFilter(nextFilter) {
@@ -5802,12 +5840,42 @@ function renderCaseDocuments() {
 
 function renderPermitHearings() {
   if (!permitHearingsBody || !permitHearingsEmpty || !permitHearingsListWrap) return;
-  const rows = (Array.isArray(state.permitHearings) ? state.permitHearings : [])
+  const allRows = (Array.isArray(state.permitHearings) ? state.permitHearings : [])
     .slice()
     .sort((a, b) => toSortTimestamp(b.created_at || b.createdAt) - toSortTimestamp(a.created_at || a.createdAt));
+  const categorySet = new Set();
+  allRows.forEach((entry) => {
+    const category = String(entry.permit_category || "未設定");
+    if (category) categorySet.add(category);
+  });
+  if (permitHearingCategoryFilter) {
+    const currentValue = permitHearingCategoryFilter.value || "all";
+    const options = ['<option value="all">すべて</option>']
+      .concat(Array.from(categorySet).sort((a, b) => a.localeCompare(b, "ja")).map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`))
+      .join("");
+    permitHearingCategoryFilter.innerHTML = options;
+    permitHearingCategoryFilter.value = categorySet.has(currentValue) || currentValue === "all" ? currentValue : "all";
+    state.permitHearingCategoryFilter = permitHearingCategoryFilter.value;
+  }
+  const rows = allRows.filter((entry) => {
+    const linkedCase = state.cases.find((row) => row.id === (entry.case_id ?? entry.caseId));
+    const caseName = String(linkedCase?.caseName ?? linkedCase?.case_name ?? "案件不明");
+    const applicantName = String(entry.applicant_name || "");
+    const permitCategory = String(entry.permit_category || "未設定");
+    const urgency = String(entry.urgency || "通常");
+    const searchableText = [caseName, applicantName, permitCategory, urgency].join(" ").toLowerCase();
+    const matchesQuery = !state.permitHearingSearchQuery || searchableText.includes(state.permitHearingSearchQuery);
+    const matchesCategory = state.permitHearingCategoryFilter === "all" || permitCategory === state.permitHearingCategoryFilter;
+    const matchesUrgency = state.permitHearingUrgencyFilter === "all" || urgency === state.permitHearingUrgencyFilter;
+    return matchesQuery && matchesCategory && matchesUrgency;
+  });
+
   permitHearingsBody.innerHTML = "";
   permitHearingsEmpty.hidden = rows.length > 0;
   permitHearingsListWrap.hidden = rows.length === 0;
+  if (permitHearingFilterCount) {
+    permitHearingFilterCount.textContent = `表示中 ${rows.length}件 / 全${allRows.length}件`;
+  }
   rows.forEach((entry) => {
     const linkedCase = state.cases.find((row) => row.id === (entry.case_id ?? entry.caseId));
     const caseName = linkedCase?.caseName ?? linkedCase?.case_name ?? "案件不明";
@@ -5827,6 +5895,11 @@ function renderPermitHearings() {
     `;
     permitHearingsBody.appendChild(tr);
   });
+  if (!rows.length) {
+    permitHearingsEmpty.textContent = allRows.length === 0
+      ? "保存済みヒアリング履歴はまだありません。"
+      : "条件に一致するヒアリング履歴はありません。";
+  }
 }
 
 function renderWorkTemplateOptions() {
