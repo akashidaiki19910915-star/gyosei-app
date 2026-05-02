@@ -789,7 +789,7 @@ function renderPermitGeneratedResult(payload) {
     ? docs.map((doc) => `<li class="permit-edit-row"><input type="text" data-permit-field="docs" value="${escapeHtml(doc)}" /><button type="button" class="danger-btn" data-permit-delete="docs">削除</button></li>`).join("")
     : "<li>保存済み書類がありません。</li>";
   permitTasksList.innerHTML = tasks.length
-    ? tasks.map((task) => `<li class=\"permit-edit-row\"><input type=\"text\" data-permit-field=\"tasks\" value=\"${escapeHtml(task)}\" /><button type=\"button\" class=\"danger-btn\" data-permit-delete=\"tasks\">削除</button></li>`).join("")
+    ? tasks.map((task) => `<li class="permit-edit-row"><input type="text" data-permit-field="tasks" value="${escapeHtml(task)}" /><button type="button" class="danger-btn" data-permit-delete="tasks">削除</button></li>`).join("")
     : "<li>保存済みタスクがありません。</li>";
   permitResult.hidden = false;
   syncPermitGeneratedFromInputs();
