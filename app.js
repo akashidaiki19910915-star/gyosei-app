@@ -757,14 +757,19 @@ async function handlePermitHearingSubmit(event) {
   }
   const scenarioKey = String(formData.get("permitScenario") || "construction_corp");
   const scenario = PERMIT_SCENARIO_MASTER[scenarioKey] || PERMIT_SCENARIO_MASTER.construction_corp;
+  const applicantType = String(formData.get("permitApplicantType") || (scenarioKey.endsWith("_corp") ? "法人" : "個人"));
+  const applicationType = String(formData.get("permitApplicationType") || "").trim() || "新規";
+  const jurisdictionPrefecture = String(formData.get("permitJurisdictionPrefecture") || "").trim() || "大阪府";
+  const jurisdictionCity = String(formData.get("permitJurisdictionCity") || "").trim() || "（未入力）";
   const applicantName = String(formData.get("permitApplicantName") || "").trim() || "（未入力）";
   const officeAddress = String(formData.get("permitOfficeAddress") || "").trim() || "（未入力）";
   const officerCount = Number(formData.get("permitOfficerCount") || 0);
   const qualifiedCount = Number(formData.get("permitQualifiedCount") || 0);
   const online = String(formData.get("permitOnlineApplication") || "false") === "true" ? "希望する" : "希望しない";
   const urgency = String(formData.get("permitUrgency") || "通常");
+  const memo = String(formData.get("permitMemo") || "").trim();
   renderPermitGeneratedResult({
-    summary: `${scenario.label} / 申請者: ${applicantName} / 所在地: ${officeAddress} / 人員: ${officerCount}名 / 有資格者: ${qualifiedCount}名 / 電子申請: ${online} / 優先度: ${urgency}`,
+    summary: `${scenario.label} / ${applicantType} / 区分: ${applicationType} / 管轄: ${jurisdictionPrefecture}${jurisdictionCity === "（未入力）" ? "" : ` ${jurisdictionCity}`} / 申請者: ${applicantName} / 所在地: ${officeAddress} / 役員: ${officerCount}名 / 有資格者: ${qualifiedCount}名 / 電子申請: ${online} / 急ぎ度: ${urgency}`,
     docs: scenario.docs,
     tasks: scenario.tasks,
   });
@@ -779,16 +784,18 @@ async function handlePermitHearingSubmit(event) {
     case_id: caseId,
     client_id: linkedClientId,
     permit_category: scenario.label,
-    application_type: "新規",
-    jurisdiction_prefecture: "大阪府",
-    applicant_type: scenarioKey.endsWith("_corp") ? "法人" : "個人",
+    application_type: applicationType,
+    jurisdiction_prefecture: jurisdictionPrefecture,
+    jurisdiction_city: jurisdictionCity === "（未入力）" ? null : jurisdictionCity,
+    applicant_type: applicantType,
     applicant_name: applicantName === "（未入力）" ? null : applicantName,
     office_address: officeAddress === "（未入力）" ? null : officeAddress,
     officer_count: officerCount,
     qualified_person_count: qualifiedCount,
     online_application: online === "希望する",
     urgency,
-    answers: { permitScenario: scenarioKey, permitApplicantName: applicantName, permitOfficeAddress: officeAddress },
+    memo: memo || null,
+    answers: { permitScenario: scenarioKey, permitApplicantType: applicantType, permitApplicationType: applicationType, permitJurisdictionPrefecture: jurisdictionPrefecture, permitJurisdictionCity: jurisdictionCity, permitApplicantName: applicantName, permitOfficeAddress: officeAddress, permitOfficerCount: officerCount, permitQualifiedCount: qualifiedCount, permitOnlineApplication: online === "希望する", permitUrgency: urgency, permitMemo: memo },
     generated_documents: scenario.docs,
     generated_tasks: scenario.tasks,
     source_urls: [],
@@ -883,8 +890,9 @@ function handleViewSavedPermitHearing(event, button) {
   const tasks = Array.isArray(hearing.generated_tasks)
     ? hearing.generated_tasks
     : (Array.isArray(hearing.generatedTasks) ? hearing.generatedTasks : []);
-  const summary = `${hearing.permit_category || "許認可未設定"} / 申請者: ${hearing.applicant_name || "（未入力）"} / 所在地: ${hearing.office_address || "（未入力）"} / 人員: ${Number(hearing.officer_count || 0)}名 / 有資格者: ${Number(hearing.qualified_person_count || 0)}名 / 電子申請: ${hearing.online_application ? "希望する" : "希望しない"} / 優先度: ${hearing.urgency || "通常"}`;
+  const summary = `${hearing.permit_category || "許認可未設定"} / ${hearing.applicant_type || "法人/個人未設定"} / 区分: ${hearing.application_type || "新規"} / 管轄: ${hearing.jurisdiction_prefecture || "未設定"}${hearing.jurisdiction_city ? ` ${hearing.jurisdiction_city}` : ""} / 申請者: ${hearing.applicant_name || "（未入力）"} / 所在地: ${hearing.office_address || "（未入力）"} / 役員: ${Number(hearing.officer_count || 0)}名 / 有資格者: ${Number(hearing.qualified_person_count || 0)}名 / 電子申請: ${hearing.online_application ? "希望する" : "希望しない"} / 急ぎ度: ${hearing.urgency || "通常"}`;
   renderPermitGeneratedResult({ summary, docs, tasks });
+  restorePermitHearingFormValues(hearing);
   permitResult?.scrollIntoView({ behavior: "smooth", block: "start" });
   showAppMessage("保存済みヒアリングを表示しました。", false);
   lastPermitGenerated = {
@@ -896,6 +904,29 @@ function handleViewSavedPermitHearing(event, button) {
   };
   selectedPermitHearingId = hearing.id;
   setPermitOverwriteButtonState(true);
+}
+
+function restorePermitHearingFormValues(hearing) {
+  if (!permitHearingForm || !hearing) return;
+  const answers = hearing.answers && typeof hearing.answers === "object" ? hearing.answers : {};
+  const setValue = (name, value) => {
+    const field = permitHearingForm.elements.namedItem(name);
+    if (!field) return;
+    field.value = value;
+  };
+  setValue("permitCaseId", hearing.case_id ?? hearing.caseId ?? "");
+  setValue("permitScenario", answers.permitScenario || "construction_corp");
+  setValue("permitApplicantType", hearing.applicant_type || answers.permitApplicantType || "法人");
+  setValue("permitApplicationType", hearing.application_type || answers.permitApplicationType || "新規");
+  setValue("permitJurisdictionPrefecture", hearing.jurisdiction_prefecture || answers.permitJurisdictionPrefecture || "大阪府");
+  setValue("permitJurisdictionCity", hearing.jurisdiction_city || answers.permitJurisdictionCity || "");
+  setValue("permitApplicantName", hearing.applicant_name || answers.permitApplicantName || "");
+  setValue("permitOfficeAddress", hearing.office_address || answers.permitOfficeAddress || "");
+  setValue("permitOfficerCount", String(hearing.officer_count ?? answers.permitOfficerCount ?? 0));
+  setValue("permitQualifiedCount", String(hearing.qualified_person_count ?? answers.permitQualifiedCount ?? 0));
+  setValue("permitOnlineApplication", String(hearing.online_application ?? answers.permitOnlineApplication ?? false) === "true" ? "true" : "false");
+  setValue("permitUrgency", hearing.urgency || answers.permitUrgency || "通常");
+  setValue("permitMemo", hearing.memo || answers.permitMemo || "");
 }
 
 async function handleDeleteSavedPermitHearing(event, button) {
