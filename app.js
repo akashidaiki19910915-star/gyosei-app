@@ -745,6 +745,8 @@ function clearCaseFilters() {
   safeRender("cases", renderCases);
 }
 
+const PERMIT_HEARING_NOTICE = "この一覧は初回ヒアリング用の標準リストです。正式な必要書類は、管轄官公署・申請区分・法人/個人・個別事情により異なります。申請前に必ず最新の公式案内で確認してください。";
+
 const PERMIT_SCENARIO_MASTER = {
   construction_corp: { label: "大阪府 建設業許可 知事許可 新規 法人", docs: ["定款", "履歴事項全部証明書", "役員全員の住民票", "営業所写真", "専任技術者の資格証"], tasks: ["要件確認", "必要書類案内", "役員・技術者情報の確認", "申請書作成", "提出・補正対応"] },
   construction_solo: { label: "大阪府 建設業許可 知事許可 新規 個人", docs: ["本人住民票", "身分証明書", "営業所写真", "専任技術者の資格証", "確定申告書控え"], tasks: ["本人要件確認", "必要書類案内", "技術者要件確認", "申請書作成", "提出・補正対応"] },
@@ -768,6 +770,26 @@ const PERMIT_SCENARIO_MASTER = {
   isan_bunkatsu_prep: { label: "遺産分割協議書 作成準備", docs: ["相続関係説明図案", "財産目録案", "相続人意思確認メモ", "分割方針メモ", "実印・印鑑証明書確認資料"], tasks: ["相続関係確認", "分割方針ヒアリング", "協議書案作成準備", "必要資料回収", "司法書士連携要否確認"] },
   kousei_yuigon_prep: { label: "公正証書遺言 原案作成準備", docs: ["遺言者本人確認資料", "財産一覧メモ", "推定相続人情報", "遺言内容希望メモ", "証人候補情報"], tasks: ["遺言意思確認", "財産・相続人確認", "原案作成準備", "公証役場調整準備", "司法書士連携要否確認"] },
 };
+
+const PERMIT_COMMON_ADDITIONAL_TASKS = ["公式必要書類確認", "管轄提出先確認", "申請区分別の追加書類確認"];
+const PERMIT_TASK_RULES = [
+  { matcher: (key) => ["zairyu_nintei", "zairyu_henko", "zairyu_koshin"].includes(key), tasks: ["在留資格別必要書類確認", "申請取次資格確認", "本人・所属機関・代理人の提出可否確認"] },
+  { matcher: (key) => ["sozoku_initial", "isan_bunkatsu_prep", "kousei_yuigon_prep"].includes(key), tasks: ["紛争性の有無確認", "相続登記の司法書士連携要否確認", "相続税申告の税理士連携要否確認"] },
+  { matcher: (key) => ["kk_teikan_ninsho", "gk_teikan_check"].includes(key), tasks: ["登記手続の司法書士連携確認", "税務届出の税理士連携確認", "社会保険手続の社労士連携確認"] },
+  { matcher: (key) => ["shakoshomei_standard", "kei_hokan_todokede", "jidousha_transfer", "jidousha_change"].includes(key), tasks: ["管轄警察署または運輸支局の最新様式確認", "手数料・受付時間確認", "所有者/使用者/使用の本拠の位置確認"] },
+  { matcher: (key) => ["sangyo_unpan_new", "construction_corp", "construction_solo", "keiei_shinsa_bidding"].includes(key), tasks: ["管轄庁の最新手引き確認", "法人/個人別添付書類確認", "証明書類の発行期限確認"] },
+];
+
+Object.entries(PERMIT_SCENARIO_MASTER).forEach(([scenarioKey, scenario]) => {
+  if (!scenario || !Array.isArray(scenario.tasks)) return;
+  const merged = [...scenario.tasks];
+  const pushUniqueTask = (task) => { if (task && !merged.includes(task)) merged.push(task); };
+  PERMIT_COMMON_ADDITIONAL_TASKS.forEach(pushUniqueTask);
+  PERMIT_TASK_RULES.forEach((rule) => {
+    if (rule.matcher(scenarioKey)) rule.tasks.forEach(pushUniqueTask);
+  });
+  scenario.tasks = merged;
+});
 
 
 function buildPermitBranchingResult(baseDocs, baseTasks, conditions) {
@@ -941,6 +963,8 @@ function setPermitOverwriteButtonState(enabled) {
 function clearPermitGeneratedResult() {
   if (!permitSummary || !permitDocumentsList || !permitTasksList || !permitResult) return;
   permitSummary.textContent = "";
+  const permitNotice = document.getElementById("permit-notice");
+  if (permitNotice) permitNotice.textContent = "";
   if (permitWarningList) permitWarningList.innerHTML = "";
   if (permitWarningWrap) permitWarningWrap.hidden = true;
   permitDocumentsList.innerHTML = "";
@@ -958,6 +982,8 @@ function renderPermitGeneratedResult(payload) {
   const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
   const warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
   permitSummary.textContent = summary;
+  const permitNotice = document.getElementById("permit-notice");
+  if (permitNotice) permitNotice.textContent = PERMIT_HEARING_NOTICE;
   if (permitWarningWrap && permitWarningList) {
     permitWarningList.innerHTML = warnings.length
       ? warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")
@@ -1037,7 +1063,7 @@ dl { display:grid; grid-template-columns: 180px 1fr; gap: 4px 10px; margin: 0; }
 <dt>急ぎ度</dt><dd>${escapeHtml(lastPermitGenerated.urgency || "通常")}</dd><dt>メモ</dt><dd>${escapeHtml(lastPermitGenerated.memo || "（なし）")}</dd></dl></div>
 <h2>確認が必要な項目</h2><ul>${warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul>
 <h2>必要書類一覧</h2><ul>${docs.map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul>
-<h2>想定タスク一覧</h2><ul>${tasks.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul><script>window.print();</script></body></html>`;
+<h2>想定タスク一覧</h2><ul>${tasks.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul><p class="meta">${escapeHtml(PERMIT_HEARING_NOTICE)}</p><script>window.print();</script></body></html>`;
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const printWindow = window.open(url, "_blank");
@@ -3598,12 +3624,13 @@ function handleExportPermitHearingCsv() {
       warnings,
       required_documents: docs,
       expected_tasks: tasks,
+      notice: PERMIT_HEARING_NOTICE,
     };
     const headers = [
       "created_date", "case_name", "applicant_name", "permit_category", "applicant_type",
       "application_type", "jurisdiction_prefecture", "jurisdiction_city", "office_address",
       "officer_count", "qualified_person_count", "online_application", "urgency", "memo",
-      "warnings", "required_documents", "expected_tasks",
+      "warnings", "required_documents", "expected_tasks", "notice",
     ];
     downloadCsvFile(`permit-hearing-${filenameDate}.csv`, headers, [row]);
   });
