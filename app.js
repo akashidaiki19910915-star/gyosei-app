@@ -112,6 +112,7 @@ const CLICK_ACTION_HANDLERS = {
   apply_permit_documents: applyPermitDocumentsToCase,
   apply_permit_tasks: applyPermitTasksToCase,
   view_saved_permit_hearing: handleViewSavedPermitHearing,
+  delete_saved_permit_hearing: handleDeleteSavedPermitHearing,
   add_estimate_item_row: () => addEstimateItemRow(),
   remove_estimate_item_row: handleEstimateItemsClick,
   status_summary_filter: handleStatusSummaryClick,
@@ -789,6 +790,17 @@ function setPermitOverwriteButtonState(enabled) {
   permitOverwriteHearingBtn.disabled = !enabled;
 }
 
+function clearPermitGeneratedResult() {
+  if (!permitSummary || !permitDocumentsList || !permitTasksList || !permitResult) return;
+  permitSummary.textContent = "";
+  permitDocumentsList.innerHTML = "";
+  permitTasksList.innerHTML = "";
+  permitResult.hidden = true;
+  lastPermitGenerated = null;
+  selectedPermitHearingId = null;
+  setPermitOverwriteButtonState(false);
+}
+
 function renderPermitGeneratedResult(payload) {
   if (!payload || !permitSummary || !permitDocumentsList || !permitTasksList || !permitResult) return;
   const summary = payload.summary || "";
@@ -871,6 +883,27 @@ function handleViewSavedPermitHearing(event, button) {
   };
   selectedPermitHearingId = hearing.id;
   setPermitOverwriteButtonState(true);
+}
+
+async function handleDeleteSavedPermitHearing(event, button) {
+  const hearingId = button?.dataset?.permitHearingId;
+  if (!currentUser || !hearingId) return;
+  const hearing = (Array.isArray(state.permitHearings) ? state.permitHearings : []).find((entry) => String(entry.id) === String(hearingId));
+  if (!hearing) return showAppMessage("対象のヒアリング履歴が見つかりません。", true);
+  const confirmed = window.confirm("この保存済みヒアリング履歴を削除しますか？");
+  if (!confirmed) return;
+  const { error } = await sbClient
+    .from("permit_hearings")
+    .delete()
+    .eq("id", hearingId)
+    .eq("user_id", currentUser.id);
+  if (error) return showAppMessage(`ヒアリング履歴削除エラー: ${formatSupabaseError(error)}`, true);
+  await loadPermitHearings();
+  renderPermitHearings();
+  if (String(selectedPermitHearingId) === String(hearingId)) {
+    clearPermitGeneratedResult();
+  }
+  showAppMessage("ヒアリング履歴を削除しました。", false);
 }
 
 
@@ -5785,7 +5818,12 @@ function renderPermitHearings() {
       <td>${escapeHtml(entry.applicant_name || "（未入力）")}</td>
       <td>${escapeHtml(entry.permit_category || "未設定")}</td>
       <td>${escapeHtml(entry.urgency || "通常")}</td>
-      <td><button type="button" class="secondary-btn" data-action="view_saved_permit_hearing" data-permit-hearing-id="${entry.id}">表示</button></td>
+      <td>
+        <div class="btn-inline-group">
+          <button type="button" class="secondary-btn" data-action="view_saved_permit_hearing" data-permit-hearing-id="${entry.id}">表示</button>
+          <button type="button" class="danger-btn" data-action="delete_saved_permit_hearing" data-permit-hearing-id="${entry.id}">削除</button>
+        </div>
+      </td>
     `;
     permitHearingsBody.appendChild(tr);
   });
