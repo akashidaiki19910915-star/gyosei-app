@@ -333,6 +333,7 @@ alter table work_templates add column if not exists task_list text;
 
 ## 検証コマンド記録
 - `node --check app.js`（構文チェック）
+- `node --check app.js` 実行結果: 成功（PR #143 追補対応）
 
 ## 許認可ヒアリング機能の追加SQL
 
