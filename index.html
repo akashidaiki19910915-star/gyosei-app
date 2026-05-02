@@ -588,6 +588,7 @@
             <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="alerts">アラート</button>
             <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="tasks">タスク管理</button>
             <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="documents">書類管理</button>
+            <button type="button" class="subtab-btn" data-parent-tab="cases" data-subtab="permit-hearing">許認可ヒアリング</button>
           </nav>
           <div class="layout two-col">
             <section class="panel subtab-panel" data-parent-tab="cases" data-subtab="entry" hidden>
@@ -815,6 +816,47 @@
                   </thead>
                   <tbody id="case-documents-body"></tbody>
                 </table>
+              </div>
+            </section>
+            <section class="panel subtab-panel" data-parent-tab="cases" data-subtab="permit-hearing" hidden>
+              <h2>許認可ヒアリング</h2>
+              <form id="permit-hearing-form" class="form">
+                <label>
+                  v1対象業務
+                  <select id="permit-scenario" name="permitScenario" required>
+                    <option value="construction_corp">大阪府 建設業許可 知事許可 新規 法人</option>
+                    <option value="construction_solo">大阪府 建設業許可 知事許可 新規 個人</option>
+                    <option value="takken_corp">大阪府 宅建業免許 新規 法人</option>
+                    <option value="takken_solo">大阪府 宅建業免許 新規 個人</option>
+                    <option value="kobutsu_corp">大阪府警 古物商許可 新規 法人</option>
+                    <option value="kobutsu_solo">大阪府警 古物商許可 新規 個人</option>
+                  </select>
+                </label>
+                <label>申請者名<input id="permit-applicant-name" name="permitApplicantName" type="text" maxlength="120" /></label>
+                <label>営業所所在地<input id="permit-office-address" name="permitOfficeAddress" type="text" maxlength="200" /></label>
+                <label>役員・従業員数<input id="permit-officer-count" name="permitOfficerCount" type="number" min="0" value="0" /></label>
+                <label>有資格者数<input id="permit-qualified-count" name="permitQualifiedCount" type="number" min="0" value="0" /></label>
+                <label>オンライン申請希望
+                  <select id="permit-online-application" name="permitOnlineApplication">
+                    <option value="false">希望しない</option>
+                    <option value="true">希望する</option>
+                  </select>
+                </label>
+                <label>優先度
+                  <select id="permit-urgency" name="permitUrgency">
+                    <option value="通常">通常</option>
+                    <option value="急ぎ">急ぎ</option>
+                  </select>
+                </label>
+                <button id="permit-generate-btn" type="submit">必要書類・タスクを生成</button>
+              </form>
+              <div id="permit-hearing-result" class="permit-result" hidden>
+                <h3>生成結果</h3>
+                <p id="permit-summary"></p>
+                <h4>必要書類</h4>
+                <ul id="permit-documents-list" class="item-list compact-list"></ul>
+                <h4>想定タスク</h4>
+                <ul id="permit-tasks-list" class="item-list compact-list"></ul>
               </div>
             </section>
           </div>

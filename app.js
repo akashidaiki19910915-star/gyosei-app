@@ -351,6 +351,11 @@ const caseDocumentSubmitBtn = document.getElementById("case-document-submit-btn"
 const caseDocumentsBody = document.getElementById("case-documents-body");
 const caseDocumentsEmpty = document.getElementById("case-documents-empty");
 const caseDocumentsListWrap = document.getElementById("case-documents-list-wrap");
+const permitHearingForm = document.getElementById("permit-hearing-form");
+const permitResult = document.getElementById("permit-hearing-result");
+const permitSummary = document.getElementById("permit-summary");
+const permitDocumentsList = document.getElementById("permit-documents-list");
+const permitTasksList = document.getElementById("permit-tasks-list");
 
 const saleForm = document.getElementById("sale-form");
 const saleCaseSelect = document.getElementById("sale-case-id");
@@ -524,6 +529,7 @@ function bindEvents() {
   caseForm.addEventListener("submit", handleCaseSubmit);
   caseTaskForm?.addEventListener("submit", handleCaseTaskSubmit);
   caseDocumentForm?.addEventListener("submit", handleCaseDocumentSubmit);
+  permitHearingForm?.addEventListener("submit", handlePermitHearingSubmit);
   workTemplateForm?.addEventListener("submit", handleWorkTemplateSubmit);
   console.log("SALE FORM FOUND", !!saleForm);
   console.log("EXPENSE FORM FOUND", !!expenseForm);
@@ -691,6 +697,32 @@ function clearCaseFilters() {
   if (caseSearchInput) caseSearchInput.value = "";
   if (caseDeadlineFilterSelect) caseDeadlineFilterSelect.value = "all";
   safeRender("cases", renderCases);
+}
+
+const PERMIT_SCENARIO_MASTER = {
+  construction_corp: { label: "大阪府 建設業許可 知事許可 新規 法人", docs: ["定款", "履歴事項全部証明書", "役員全員の住民票", "営業所写真", "専任技術者の資格証"], tasks: ["要件確認", "必要書類案内", "役員・技術者情報の確認", "申請書作成", "提出・補正対応"] },
+  construction_solo: { label: "大阪府 建設業許可 知事許可 新規 個人", docs: ["本人住民票", "身分証明書", "営業所写真", "専任技術者の資格証", "確定申告書控え"], tasks: ["本人要件確認", "必要書類案内", "技術者要件確認", "申請書作成", "提出・補正対応"] },
+  takken_corp: { label: "大阪府 宅建業免許 新規 法人", docs: ["定款", "履歴事項全部証明書", "専任宅建士の登録証", "事務所使用権限書類", "役員の略歴書"], tasks: ["免許要件確認", "専任宅建士の確認", "必要書類回収", "申請書作成", "提出・審査対応"] },
+  takken_solo: { label: "大阪府 宅建業免許 新規 個人", docs: ["本人住民票", "身分証明書", "専任宅建士の登録証", "事務所使用権限書類", "略歴書"], tasks: ["免許要件確認", "専任宅建士の確認", "必要書類回収", "申請書作成", "提出・審査対応"] },
+  kobutsu_corp: { label: "大阪府警 古物商許可 新規 法人", docs: ["履歴事項全部証明書", "定款", "役員全員の住民票", "URL使用権限疎明資料（該当時）", "営業所の賃貸借契約書"], tasks: ["欠格要件確認", "営業所情報確認", "必要書類回収", "申請書作成", "警察署へ提出"] },
+  kobutsu_solo: { label: "大阪府警 古物商許可 新規 個人", docs: ["本人住民票", "身分証明書", "URL使用権限疎明資料（該当時）", "営業所の賃貸借契約書", "略歴書"], tasks: ["欠格要件確認", "営業所情報確認", "必要書類回収", "申請書作成", "警察署へ提出"] },
+};
+
+function handlePermitHearingSubmit(event) {
+  event.preventDefault();
+  const formData = new FormData(event.currentTarget);
+  const scenarioKey = String(formData.get("permitScenario") || "construction_corp");
+  const scenario = PERMIT_SCENARIO_MASTER[scenarioKey] || PERMIT_SCENARIO_MASTER.construction_corp;
+  const applicantName = String(formData.get("permitApplicantName") || "").trim() || "（未入力）";
+  const officeAddress = String(formData.get("permitOfficeAddress") || "").trim() || "（未入力）";
+  const officerCount = Number(formData.get("permitOfficerCount") || 0);
+  const qualifiedCount = Number(formData.get("permitQualifiedCount") || 0);
+  const online = String(formData.get("permitOnlineApplication") || "false") === "true" ? "希望する" : "希望しない";
+  const urgency = String(formData.get("permitUrgency") || "通常");
+  permitSummary.textContent = `${scenario.label} / 申請者: ${applicantName} / 所在地: ${officeAddress} / 人員: ${officerCount}名 / 有資格者: ${qualifiedCount}名 / 電子申請: ${online} / 優先度: ${urgency}`;
+  permitDocumentsList.innerHTML = scenario.docs.map((doc) => `<li>${escapeHtml(doc)}</li>`).join("");
+  permitTasksList.innerHTML = scenario.tasks.map((task) => `<li>${escapeHtml(task)}</li>`).join("");
+  permitResult.hidden = false;
 }
 
 function handleDeadlineAlertClick(event) {
