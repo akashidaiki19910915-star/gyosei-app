@@ -770,7 +770,16 @@ async function applyPermitDocumentsToCase() {
   const existing = new Set(state.caseDocuments
     .filter((d) => (d.case_id ?? d.caseId) === lastPermitGenerated.case_id)
     .map((d) => String((d.document_name ?? d.documentName) || "").trim()));
-  const payload = lastPermitGenerated.docs.filter((name) => !existing.has(name)).map((name) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.case_id, document_name: name, status: "未回収" }));
+  const payload = lastPermitGenerated.docs.filter((name) => !existing.has(name)).map((name) => ({
+    user_id: currentUser.id,
+    case_id: lastPermitGenerated.case_id,
+    document_name: name,
+    status: "未回収",
+    received_date: null,
+    checked_date: null,
+    memo: null,
+    file_url: null,
+  }));
   if (!payload.length) return showAppMessage("同一案件に同名書類があるため追加対象はありません。", false);
   const { error } = await sbClient.from("case_documents").insert(payload);
   if (error) return showAppMessage(`書類反映エラー: ${formatSupabaseError(error)}`, true);
@@ -784,7 +793,15 @@ async function applyPermitTasksToCase() {
     .filter((t) => (t.case_id ?? t.caseId) === lastPermitGenerated.case_id)
     .map((t) => String((t.task_title ?? t.taskTitle) || "").trim()));
   // case_tasks の実カラム名は task_title（既存の登録・表示・CSV・取込処理と同一）
-  const payload = lastPermitGenerated.tasks.filter((title) => !existing.has(title)).map((title) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.case_id, task_title: title, status: "未着手" }));
+  const payload = lastPermitGenerated.tasks.filter((title) => !existing.has(title)).map((title) => ({
+    user_id: currentUser.id,
+    case_id: lastPermitGenerated.case_id,
+    task_title: title,
+    task_memo: null,
+    due_date: null,
+    status: "未完了",
+    completed_at: null,
+  }));
   if (!payload.length) return showAppMessage("同一案件に同名タスクがあるため追加対象はありません。", false);
   const { error } = await sbClient.from("case_tasks").insert(payload);
   if (error) return showAppMessage(`タスク反映エラー: ${formatSupabaseError(error)}`, true);
@@ -1982,7 +1999,7 @@ async function startCaseEdit(caseId) {
 
 function startCaseTaskEdit(taskId) {
   if (!caseTaskForm) return;
-  const target = state.caseTasks.find((entry) => entry.id === taskId);
+  const target = state.caseTasks.find((entry) => String(entry.id) === String(taskId));
   if (!target) return;
   editState.caseTaskId = target.id;
   caseTaskForm.elements.caseTaskCaseId.value = target.caseId || "";
@@ -2083,7 +2100,7 @@ async function handleCaseDocumentsListAction(event) {
 }
 
 function startCaseDocumentEdit(caseDocumentId) {
-  const target = state.caseDocuments.find((entry) => entry.id === caseDocumentId);
+  const target = state.caseDocuments.find((entry) => String(entry.id) === String(caseDocumentId));
   if (!target || !caseDocumentForm) return;
   editState.caseDocumentId = target.id;
   caseDocumentForm.elements.caseDocumentCaseId.value = target.caseId || "";
@@ -2352,7 +2369,7 @@ function handleCaseTaskListAction(event) {
   const btn = event.target.closest("button");
   if (!(btn instanceof HTMLButtonElement)) return;
   const listAction = btn.dataset.listAction;
-  const taskId = btn.dataset.taskId;
+  const taskId = btn.dataset.taskId || btn.closest("[data-id]")?.dataset.id;
   if (!taskId) return;
   if (listAction === "edit_case_task") {
     startCaseTaskEdit(taskId);
@@ -5568,6 +5585,7 @@ function renderCaseTasksTable() {
     const caseName = linkedCase?.caseName || "案件なし";
     const tr = document.createElement("tr");
     tr.className = getCaseTaskUrgencyClass(entry);
+    tr.dataset.id = entry.id;
     tr.innerHTML = `
       <td>${escapeHtml(customerName)}</td>
       <td>${escapeHtml(caseName)}</td>
