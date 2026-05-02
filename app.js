@@ -775,8 +775,8 @@ async function applyPermitDocumentsToCase() {
 
 async function applyPermitTasksToCase() {
   if (!currentUser || !lastPermitGenerated?.caseId) return;
-  const existing = new Set(state.caseTasks.filter((t) => t.caseId === lastPermitGenerated.caseId).map((t) => String(t.title || "").trim()));
-  const payload = lastPermitGenerated.tasks.filter((title) => !existing.has(title)).map((title) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.caseId, customer_name: lastPermitGenerated.customerName, case_name: lastPermitGenerated.caseName, title, status: "未完了" }));
+  const existing = new Set(state.caseTasks.filter((t) => t.caseId === lastPermitGenerated.caseId).map((t) => String(t.taskTitle || "").trim()));
+  const payload = lastPermitGenerated.tasks.filter((title) => !existing.has(title)).map((title) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.caseId, customer_name: lastPermitGenerated.customerName, case_name: lastPermitGenerated.caseName, task_title: title, status: "未着手" }));
   if (!payload.length) return showAppMessage("同一案件に同名タスクがあるため追加対象はありません。", false);
   const { error } = await sbClient.from("case_tasks").insert(payload);
   if (error) return showAppMessage(`タスク反映エラー: ${formatSupabaseError(error)}`, true);
