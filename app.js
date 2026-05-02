@@ -111,6 +111,7 @@ const CLICK_ACTION_HANDLERS = {
   export_backup_json: handleExportBackupJson,
   apply_permit_documents: applyPermitDocumentsToCase,
   apply_permit_tasks: applyPermitTasksToCase,
+  view_saved_permit_hearing: handleViewSavedPermitHearing,
   add_estimate_item_row: () => addEstimateItemRow(),
   remove_estimate_item_row: handleEstimateItemsClick,
   status_summary_filter: handleStatusSummaryClick,
@@ -362,6 +363,9 @@ const permitDocumentsList = document.getElementById("permit-documents-list");
 const permitTasksList = document.getElementById("permit-tasks-list");
 const permitApplyDocumentsBtn = document.getElementById("permit-apply-documents-btn");
 const permitApplyTasksBtn = document.getElementById("permit-apply-tasks-btn");
+const permitHearingsBody = document.getElementById("permit-hearings-body");
+const permitHearingsEmpty = document.getElementById("permit-hearings-empty");
+const permitHearingsListWrap = document.getElementById("permit-hearings-list-wrap");
 let lastPermitGenerated = null;
 
 const saleForm = document.getElementById("sale-form");
@@ -734,10 +738,11 @@ async function handlePermitHearingSubmit(event) {
   const qualifiedCount = Number(formData.get("permitQualifiedCount") || 0);
   const online = String(formData.get("permitOnlineApplication") || "false") === "true" ? "希望する" : "希望しない";
   const urgency = String(formData.get("permitUrgency") || "通常");
-  permitSummary.textContent = `${scenario.label} / 申請者: ${applicantName} / 所在地: ${officeAddress} / 人員: ${officerCount}名 / 有資格者: ${qualifiedCount}名 / 電子申請: ${online} / 優先度: ${urgency}`;
-  permitDocumentsList.innerHTML = scenario.docs.map((doc) => `<li>${escapeHtml(doc)}</li>`).join("");
-  permitTasksList.innerHTML = scenario.tasks.map((task) => `<li>${escapeHtml(task)}</li>`).join("");
-  permitResult.hidden = false;
+  renderPermitGeneratedResult({
+    summary: `${scenario.label} / 申請者: ${applicantName} / 所在地: ${officeAddress} / 人員: ${officerCount}名 / 有資格者: ${qualifiedCount}名 / 電子申請: ${online} / 優先度: ${urgency}`,
+    docs: scenario.docs,
+    tasks: scenario.tasks,
+  });
   const linkedCustomerName = linkedCase.customer_name ?? linkedCase.customerName ?? "";
   const linkedCaseName = linkedCase.case_name ?? linkedCase.caseName ?? "";
   const linkedClientId = linkedCase.client_id ?? linkedCase.clientId ?? null;
@@ -763,6 +768,36 @@ async function handlePermitHearingSubmit(event) {
   });
   if (error) return showAppMessage(`許認可ヒアリング保存エラー: ${formatSupabaseError(error)}`, true);
   await loadPermitHearings();
+}
+
+function renderPermitGeneratedResult(payload) {
+  if (!payload || !permitSummary || !permitDocumentsList || !permitTasksList || !permitResult) return;
+  const summary = payload.summary || "";
+  const docs = Array.isArray(payload.docs) ? payload.docs : [];
+  const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+  permitSummary.textContent = summary;
+  permitDocumentsList.innerHTML = docs.map((doc) => `<li>${escapeHtml(doc)}</li>`).join("");
+  permitTasksList.innerHTML = tasks.map((task) => `<li>${escapeHtml(task)}</li>`).join("");
+  permitResult.hidden = false;
+}
+
+function handleViewSavedPermitHearing(event, button) {
+  const hearingId = button?.dataset?.permitHearingId;
+  if (!hearingId) return;
+  const hearing = (Array.isArray(state.permitHearings) ? state.permitHearings : []).find((entry) => String(entry.id) === String(hearingId));
+  if (!hearing) return;
+  const linkedCase = state.cases.find((entry) => entry.id === (hearing.case_id ?? hearing.caseId));
+  const docs = Array.isArray(hearing.generated_documents) ? hearing.generated_documents : [];
+  const tasks = Array.isArray(hearing.generated_tasks) ? hearing.generated_tasks : [];
+  const summary = `${hearing.permit_category || "許認可未設定"} / 申請者: ${hearing.applicant_name || "（未入力）"} / 所在地: ${hearing.office_address || "（未入力）"} / 人員: ${Number(hearing.officer_count || 0)}名 / 有資格者: ${Number(hearing.qualified_person_count || 0)}名 / 電子申請: ${hearing.online_application ? "希望する" : "希望しない"} / 優先度: ${hearing.urgency || "通常"}`;
+  renderPermitGeneratedResult({ summary, docs, tasks });
+  lastPermitGenerated = {
+    case_id: hearing.case_id ?? hearing.caseId ?? "",
+    customer_name: linkedCase?.customerName ?? linkedCase?.customer_name ?? "",
+    case_name: linkedCase?.caseName ?? linkedCase?.case_name ?? "",
+    docs: [...docs],
+    tasks: [...tasks],
+  };
 }
 
 async function applyPermitDocumentsToCase() {
@@ -5631,6 +5666,30 @@ function renderCaseDocuments() {
   });
 }
 
+function renderPermitHearings() {
+  if (!permitHearingsBody || !permitHearingsEmpty || !permitHearingsListWrap) return;
+  const rows = (Array.isArray(state.permitHearings) ? state.permitHearings : [])
+    .slice()
+    .sort((a, b) => toSortTimestamp(b.created_at || b.createdAt) - toSortTimestamp(a.created_at || a.createdAt));
+  permitHearingsBody.innerHTML = "";
+  permitHearingsEmpty.hidden = rows.length > 0;
+  permitHearingsListWrap.hidden = rows.length === 0;
+  rows.forEach((entry) => {
+    const linkedCase = state.cases.find((row) => row.id === (entry.case_id ?? entry.caseId));
+    const caseName = linkedCase?.caseName ?? linkedCase?.case_name ?? "案件不明";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${formatDate(entry.created_at || entry.createdAt)}</td>
+      <td>${escapeHtml(caseName)}</td>
+      <td>${escapeHtml(entry.applicant_name || "（未入力）")}</td>
+      <td>${escapeHtml(entry.permit_category || "未設定")}</td>
+      <td>${escapeHtml(entry.urgency || "通常")}</td>
+      <td><button type="button" class="secondary-btn" data-action="view_saved_permit_hearing" data-permit-hearing-id="${entry.id}">表示</button></td>
+    `;
+    permitHearingsBody.appendChild(tr);
+  });
+}
+
 function renderWorkTemplateOptions() {
   if (!caseTemplateSelect) return;
   const currentValue = caseTemplateSelect.value;
@@ -6519,6 +6578,7 @@ function renderCases() {
   } else {
     caseEmpty.textContent = "案件はまだ登録されていません。";
   }
+  renderPermitHearings();
 }
 
 function renderCaseProfitList(filter = {}) {
