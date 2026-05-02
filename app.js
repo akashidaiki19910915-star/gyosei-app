@@ -783,6 +783,7 @@ async function applyPermitTasksToCase() {
   const existing = new Set(state.caseTasks
     .filter((t) => (t.case_id ?? t.caseId) === lastPermitGenerated.case_id)
     .map((t) => String((t.task_title ?? t.taskTitle) || "").trim()));
+  // case_tasks の実カラム名は task_title（既存の登録・表示・CSV・取込処理と同一）
   const payload = lastPermitGenerated.tasks.filter((title) => !existing.has(title)).map((title) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.case_id, customer_name: lastPermitGenerated.customer_name, case_name: lastPermitGenerated.case_name, task_title: title, status: "未着手" }));
   if (!payload.length) return showAppMessage("同一案件に同名タスクがあるため追加対象はありません。", false);
   const { error } = await sbClient.from("case_tasks").insert(payload);
