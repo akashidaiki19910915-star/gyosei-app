@@ -836,22 +836,32 @@
                     <option value="kobutsu_solo">大阪府警 古物商許可 新規 個人</option>
                   </select>
                 </label>
+                <label>法人/個人
+                  <select id="permit-applicant-type" name="permitApplicantType">
+                    <option value="法人">法人</option>
+                    <option value="個人">個人</option>
+                  </select>
+                </label>
+                <label>申請区分<input id="permit-application-type" name="permitApplicationType" type="text" maxlength="120" placeholder="例: 新規" /></label>
+                <label>管轄都道府県<input id="permit-jurisdiction-prefecture" name="permitJurisdictionPrefecture" type="text" maxlength="40" placeholder="例: 大阪府" /></label>
+                <label>管轄市区町村<input id="permit-jurisdiction-city" name="permitJurisdictionCity" type="text" maxlength="80" placeholder="例: 大阪市北区" /></label>
                 <label>申請者名<input id="permit-applicant-name" name="permitApplicantName" type="text" maxlength="120" /></label>
-                <label>営業所所在地<input id="permit-office-address" name="permitOfficeAddress" type="text" maxlength="200" /></label>
-                <label>役員・従業員数<input id="permit-officer-count" name="permitOfficerCount" type="number" min="0" value="0" /></label>
-                <label>有資格者数<input id="permit-qualified-count" name="permitQualifiedCount" type="number" min="0" value="0" /></label>
-                <label>オンライン申請希望
+                <label>事業所所在地<input id="permit-office-address" name="permitOfficeAddress" type="text" maxlength="200" /></label>
+                <label>役員人数<input id="permit-officer-count" name="permitOfficerCount" type="number" min="0" value="0" /></label>
+                <label>有資格者人数<input id="permit-qualified-count" name="permitQualifiedCount" type="number" min="0" value="0" /></label>
+                <label>電子申請希望
                   <select id="permit-online-application" name="permitOnlineApplication">
                     <option value="false">希望しない</option>
                     <option value="true">希望する</option>
                   </select>
                 </label>
-                <label>優先度
+                <label>急ぎ度
                   <select id="permit-urgency" name="permitUrgency">
                     <option value="通常">通常</option>
                     <option value="急ぎ">急ぎ</option>
                   </select>
                 </label>
+                <label>メモ<textarea id="permit-memo" name="permitMemo" rows="3" maxlength="2000"></textarea></label>
                 <button id="permit-generate-btn" type="submit">必要書類・タスクを生成</button>
               </form>
               <div id="permit-hearing-result" class="permit-result" hidden>
