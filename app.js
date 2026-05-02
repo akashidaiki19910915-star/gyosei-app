@@ -364,6 +364,8 @@ const permitHearingForm = document.getElementById("permit-hearing-form");
 const permitCaseSelect = document.getElementById("permit-case-id");
 const permitResult = document.getElementById("permit-hearing-result");
 const permitSummary = document.getElementById("permit-summary");
+const permitWarningWrap = document.getElementById("permit-warning-wrap");
+const permitWarningList = document.getElementById("permit-warning-list");
 const permitDocumentsList = document.getElementById("permit-documents-list");
 const permitTasksList = document.getElementById("permit-tasks-list");
 const permitAddDocumentBtn = document.getElementById("permit-add-document-btn");
@@ -790,6 +792,17 @@ function buildPermitSummary(params) {
   return `${params.scenarioLabel} / ${params.applicantType} / 区分: ${params.applicationType} / 管轄: ${params.jurisdictionPrefecture}${cityPart} / 申請者: ${params.applicantName} / 所在地: ${params.officeAddress} / 役員: ${params.officerCount}名 / 有資格者: ${params.qualifiedCount}名 / 電子申請: ${params.online} / 急ぎ度: ${params.urgency} / 条件分岐追加: 書類${params.addedDocsCount}件・タスク${params.addedTasksCount}件`;
 }
 
+function buildPermitMissingWarnings(params) {
+  const warnings = [];
+  if (!params.applicantName || params.applicantName === "（未入力）") warnings.push("申請者名が未入力です。");
+  if (!params.officeAddress || params.officeAddress === "（未入力）") warnings.push("事業所所在地が未入力です。");
+  if (!params.jurisdictionPrefecture || params.jurisdictionPrefecture === "（未入力）") warnings.push("管轄都道府県が未入力です。");
+  if (!params.jurisdictionCity || params.jurisdictionCity === "（未入力）") warnings.push("管轄市区町村が未入力です。");
+  if (!Number.isFinite(params.officerCount) || Number(params.officerCount) <= 0) warnings.push("役員人数が未入力または0です。");
+  if (!Number.isFinite(params.qualifiedCount) || Number(params.qualifiedCount) <= 0) warnings.push("有資格者人数が未入力または0です。");
+  return warnings;
+}
+
 async function handlePermitHearingSubmit(event) {
   event.preventDefault();
   const formData = new FormData(event.currentTarget);
@@ -833,15 +846,24 @@ async function handlePermitHearingSubmit(event) {
     addedDocsCount: branchingResult.addedDocs.length,
     addedTasksCount: branchingResult.addedTasks.length,
   });
+  const missingWarnings = buildPermitMissingWarnings({
+    applicantName,
+    officeAddress,
+    jurisdictionPrefecture,
+    jurisdictionCity,
+    officerCount,
+    qualifiedCount,
+  });
   renderPermitGeneratedResult({
     summary: generatedSummary,
     docs: branchingResult.docs,
     tasks: branchingResult.tasks,
+    warnings: missingWarnings,
   });
   const linkedCustomerName = linkedCase.customer_name ?? linkedCase.customerName ?? "";
   const linkedCaseName = linkedCase.case_name ?? linkedCase.caseName ?? "";
   const linkedClientId = linkedCase.client_id ?? linkedCase.clientId ?? null;
-  lastPermitGenerated = { case_id: caseId, customer_name: linkedCustomerName, case_name: linkedCaseName, docs: [...branchingResult.docs], tasks: [...branchingResult.tasks] };
+  lastPermitGenerated = { case_id: caseId, customer_name: linkedCustomerName, case_name: linkedCaseName, docs: [...branchingResult.docs], tasks: [...branchingResult.tasks], warnings: [...missingWarnings] };
   selectedPermitHearingId = null;
   setPermitOverwriteButtonState(false);
   const { error } = await sbClient.from("permit_hearings").insert({
@@ -860,7 +882,7 @@ async function handlePermitHearingSubmit(event) {
     online_application: online === "希望する",
     urgency,
     memo: memo || null,
-    answers: { permitScenario: scenarioKey, permitApplicantType: applicantType, permitApplicationType: applicationType, permitJurisdictionPrefecture: jurisdictionPrefecture, permitJurisdictionCity: jurisdictionCity, permitApplicantName: applicantName, permitOfficeAddress: officeAddress, permitOfficerCount: officerCount, permitQualifiedCount: qualifiedCount, permitOnlineApplication: online === "希望する", permitUrgency: urgency, permitMemo: memo, permitConditionalAddedDocsCount: branchingResult.addedDocs.length, permitConditionalAddedTasksCount: branchingResult.addedTasks.length },
+    answers: { permitScenario: scenarioKey, permitApplicantType: applicantType, permitApplicationType: applicationType, permitJurisdictionPrefecture: jurisdictionPrefecture, permitJurisdictionCity: jurisdictionCity, permitApplicantName: applicantName, permitOfficeAddress: officeAddress, permitOfficerCount: officerCount, permitQualifiedCount: qualifiedCount, permitOnlineApplication: online === "希望する", permitUrgency: urgency, permitMemo: memo, permitConditionalAddedDocsCount: branchingResult.addedDocs.length, permitConditionalAddedTasksCount: branchingResult.addedTasks.length, permitMissingWarnings: missingWarnings },
     generated_documents: branchingResult.docs,
     generated_tasks: branchingResult.tasks,
     source_urls: [],
@@ -878,6 +900,8 @@ function setPermitOverwriteButtonState(enabled) {
 function clearPermitGeneratedResult() {
   if (!permitSummary || !permitDocumentsList || !permitTasksList || !permitResult) return;
   permitSummary.textContent = "";
+  if (permitWarningList) permitWarningList.innerHTML = "";
+  if (permitWarningWrap) permitWarningWrap.hidden = true;
   permitDocumentsList.innerHTML = "";
   permitTasksList.innerHTML = "";
   permitResult.hidden = true;
@@ -891,7 +915,14 @@ function renderPermitGeneratedResult(payload) {
   const summary = payload.summary || "";
   const docs = Array.isArray(payload.docs) ? payload.docs : [];
   const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+  const warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
   permitSummary.textContent = summary;
+  if (permitWarningWrap && permitWarningList) {
+    permitWarningList.innerHTML = warnings.length
+      ? warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")
+      : "<li>確認が必要な項目はありません。</li>";
+    permitWarningWrap.hidden = false;
+  }
   permitDocumentsList.innerHTML = docs.length
     ? docs.map((doc) => `<li class="permit-edit-row"><input type="text" data-permit-field="docs" value="${escapeHtml(doc)}" /><button type="button" class="danger-btn" data-permit-delete="docs">削除</button></li>`).join("")
     : "<li>保存済み書類がありません。</li>";
@@ -971,7 +1002,15 @@ function handleViewSavedPermitHearing(event, button) {
     addedDocsCount: Number(answers.permitConditionalAddedDocsCount || 0),
     addedTasksCount: Number(answers.permitConditionalAddedTasksCount || 0),
   });
-  renderPermitGeneratedResult({ summary, docs, tasks });
+  const missingWarnings = Array.isArray(answers.permitMissingWarnings) ? answers.permitMissingWarnings : buildPermitMissingWarnings({
+    applicantName: hearing.applicant_name || "（未入力）",
+    officeAddress: hearing.office_address || "（未入力）",
+    jurisdictionPrefecture: hearing.jurisdiction_prefecture || "（未入力）",
+    jurisdictionCity: hearing.jurisdiction_city || "（未入力）",
+    officerCount: Number(hearing.officer_count || 0),
+    qualifiedCount: Number(hearing.qualified_person_count || 0),
+  });
+  renderPermitGeneratedResult({ summary, docs, tasks, warnings: missingWarnings });
   restorePermitHearingFormValues(hearing);
   permitResult?.scrollIntoView({ behavior: "smooth", block: "start" });
   showAppMessage("保存済みヒアリングを表示しました。", false);
@@ -981,6 +1020,7 @@ function handleViewSavedPermitHearing(event, button) {
     case_name: linkedCase?.caseName ?? linkedCase?.case_name ?? "",
     docs: [...docs],
     tasks: [...tasks],
+    warnings: [...missingWarnings],
   };
   selectedPermitHearingId = hearing.id;
   setPermitOverwriteButtonState(true);
@@ -1037,11 +1077,26 @@ async function handleOverwritePermitHearing() {
   syncPermitGeneratedFromInputs();
   const docs = Array.isArray(lastPermitGenerated.docs) ? lastPermitGenerated.docs : [];
   const tasks = Array.isArray(lastPermitGenerated.tasks) ? lastPermitGenerated.tasks : [];
+  const currentWarnings = permitHearingForm
+    ? buildPermitMissingWarnings({
+      applicantName: String(permitHearingForm.elements.namedItem("permitApplicantName")?.value || "").trim() || "（未入力）",
+      officeAddress: String(permitHearingForm.elements.namedItem("permitOfficeAddress")?.value || "").trim() || "（未入力）",
+      jurisdictionPrefecture: String(permitHearingForm.elements.namedItem("permitJurisdictionPrefecture")?.value || "").trim() || "（未入力）",
+      jurisdictionCity: String(permitHearingForm.elements.namedItem("permitJurisdictionCity")?.value || "").trim() || "（未入力）",
+      officerCount: Number(permitHearingForm.elements.namedItem("permitOfficerCount")?.value || 0),
+      qualifiedCount: Number(permitHearingForm.elements.namedItem("permitQualifiedCount")?.value || 0),
+    })
+    : [];
+  lastPermitGenerated.warnings = [...currentWarnings];
   const selectedHearing = (Array.isArray(state.permitHearings) ? state.permitHearings : [])
     .find((entry) => String(entry.id) === String(selectedPermitHearingId));
   const payload = {
     generated_documents: docs,
     generated_tasks: tasks,
+    answers: {
+      ...(selectedHearing?.answers && typeof selectedHearing.answers === "object" ? selectedHearing.answers : {}),
+      permitMissingWarnings: currentWarnings,
+    },
   };
   if (selectedHearing && Object.prototype.hasOwnProperty.call(selectedHearing, "updated_at")) {
     payload.updated_at = new Date().toISOString();
