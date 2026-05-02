@@ -361,6 +361,8 @@ const permitResult = document.getElementById("permit-hearing-result");
 const permitSummary = document.getElementById("permit-summary");
 const permitDocumentsList = document.getElementById("permit-documents-list");
 const permitTasksList = document.getElementById("permit-tasks-list");
+const permitAddDocumentBtn = document.getElementById("permit-add-document-btn");
+const permitAddTaskBtn = document.getElementById("permit-add-task-btn");
 const permitApplyDocumentsBtn = document.getElementById("permit-apply-documents-btn");
 const permitApplyTasksBtn = document.getElementById("permit-apply-tasks-btn");
 const permitHearingsBody = document.getElementById("permit-hearings-body");
@@ -541,6 +543,12 @@ function bindEvents() {
   caseTaskForm?.addEventListener("submit", handleCaseTaskSubmit);
   caseDocumentForm?.addEventListener("submit", handleCaseDocumentSubmit);
   permitHearingForm?.addEventListener("submit", handlePermitHearingSubmit);
+  permitDocumentsList?.addEventListener("input", syncPermitGeneratedFromInputs);
+  permitTasksList?.addEventListener("input", syncPermitGeneratedFromInputs);
+  permitDocumentsList?.addEventListener("click", handlePermitGeneratedListClick);
+  permitTasksList?.addEventListener("click", handlePermitGeneratedListClick);
+  permitAddDocumentBtn?.addEventListener("click", () => addPermitGeneratedItem("docs"));
+  permitAddTaskBtn?.addEventListener("click", () => addPermitGeneratedItem("tasks"));
   if (permitApplyDocumentsBtn) permitApplyDocumentsBtn.dataset.action = "apply_permit_documents";
   if (permitApplyTasksBtn) permitApplyTasksBtn.dataset.action = "apply_permit_tasks";
   workTemplateForm?.addEventListener("submit", handleWorkTemplateSubmit);
@@ -778,12 +786,53 @@ function renderPermitGeneratedResult(payload) {
   const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
   permitSummary.textContent = summary;
   permitDocumentsList.innerHTML = docs.length
-    ? docs.map((doc) => `<li>${escapeHtml(doc)}</li>`).join("")
+    ? docs.map((doc) => `<li class="permit-edit-row"><input type="text" data-permit-field="docs" value="${escapeHtml(doc)}" /><button type="button" class="danger-btn" data-permit-delete="docs">削除</button></li>`).join("")
     : "<li>保存済み書類がありません。</li>";
   permitTasksList.innerHTML = tasks.length
-    ? tasks.map((task) => `<li>${escapeHtml(task)}</li>`).join("")
+    ? tasks.map((task) => `<li class="permit-edit-row"><input type="text" data-permit-field="tasks" value="${escapeHtml(task)}" /><button type="button" class="danger-btn" data-permit-delete="tasks">削除</button></li>`).join("")
     : "<li>保存済みタスクがありません。</li>";
   permitResult.hidden = false;
+  syncPermitGeneratedFromInputs();
+}
+
+function collectPermitGeneratedValues(type) {
+  const root = type === "docs" ? permitDocumentsList : permitTasksList;
+  if (!root) return [];
+  return Array.from(root.querySelectorAll(`input[data-permit-field="${type}"]`))
+    .map((input) => String(input.value || "").trim())
+    .filter(Boolean);
+}
+
+function syncPermitGeneratedFromInputs() {
+  if (!lastPermitGenerated) return;
+  lastPermitGenerated.docs = collectPermitGeneratedValues("docs");
+  lastPermitGenerated.tasks = collectPermitGeneratedValues("tasks");
+}
+
+function addPermitGeneratedItem(type) {
+  const root = type === "docs" ? permitDocumentsList : permitTasksList;
+  if (!root) return;
+  const emptyLabel = type === "docs" ? "保存済み書類がありません。" : "保存済みタスクがありません。";
+  if (root.children.length === 1 && !root.querySelector(`input[data-permit-field="${type}"]`) && root.textContent.includes(emptyLabel)) root.innerHTML = "";
+  const li = document.createElement("li");
+  li.className = "permit-edit-row";
+  li.innerHTML = `<input type="text" data-permit-field="${type}" value="" /><button type="button" class="danger-btn" data-permit-delete="${type}">削除</button>`;
+  root.appendChild(li);
+  syncPermitGeneratedFromInputs();
+  li.querySelector("input")?.focus();
+}
+
+function handlePermitGeneratedListClick(event) {
+  const button = event.target.closest("button[data-permit-delete]");
+  if (!(button instanceof HTMLButtonElement)) return;
+  const targetType = button.dataset.permitDelete;
+  const li = button.closest("li");
+  if (li) li.remove();
+  const root = targetType === "docs" ? permitDocumentsList : permitTasksList;
+  if (root && !root.querySelector(`input[data-permit-field="${targetType}"]`)) {
+    root.innerHTML = `<li>${targetType === "docs" ? "保存済み書類がありません。" : "保存済みタスクがありません。"}</li>`;
+  }
+  syncPermitGeneratedFromInputs();
 }
 
 function handleViewSavedPermitHearing(event, button) {
@@ -814,10 +863,11 @@ function handleViewSavedPermitHearing(event, button) {
 
 async function applyPermitDocumentsToCase() {
   if (!currentUser || !lastPermitGenerated?.case_id) return;
+  syncPermitGeneratedFromInputs();
   const existing = new Set(state.caseDocuments
     .filter((d) => (d.case_id ?? d.caseId) === lastPermitGenerated.case_id)
     .map((d) => String((d.document_name ?? d.documentName) || "").trim()));
-  const payload = lastPermitGenerated.docs.filter((name) => !existing.has(name)).map((name) => ({
+  const payload = lastPermitGenerated.docs.filter((name) => name && !existing.has(name)).map((name) => ({
     user_id: currentUser.id,
     case_id: lastPermitGenerated.case_id,
     document_name: name,
@@ -836,11 +886,12 @@ async function applyPermitDocumentsToCase() {
 
 async function applyPermitTasksToCase() {
   if (!currentUser || !lastPermitGenerated?.case_id) return;
+  syncPermitGeneratedFromInputs();
   const existing = new Set(state.caseTasks
     .filter((t) => (t.case_id ?? t.caseId) === lastPermitGenerated.case_id)
     .map((t) => String((t.task_title ?? t.taskTitle) || "").trim()));
   // case_tasks の実カラム名は task_title（既存の登録・表示・CSV・取込処理と同一）
-  const payload = lastPermitGenerated.tasks.filter((title) => !existing.has(title)).map((title) => ({
+  const payload = lastPermitGenerated.tasks.filter((title) => title && !existing.has(title)).map((title) => ({
     user_id: currentUser.id,
     case_id: lastPermitGenerated.case_id,
     task_title: title,
