@@ -370,6 +370,7 @@ const permitDocumentsList = document.getElementById("permit-documents-list");
 const permitTasksList = document.getElementById("permit-tasks-list");
 const permitAddDocumentBtn = document.getElementById("permit-add-document-btn");
 const permitAddTaskBtn = document.getElementById("permit-add-task-btn");
+const permitPrintPreviewBtn = document.getElementById("permit-print-preview-btn");
 const permitApplyDocumentsBtn = document.getElementById("permit-apply-documents-btn");
 const permitApplyTasksBtn = document.getElementById("permit-apply-tasks-btn");
 const permitOverwriteHearingBtn = document.getElementById("permit-overwrite-hearing-btn");
@@ -563,6 +564,7 @@ function bindEvents() {
   permitTasksList?.addEventListener("click", handlePermitGeneratedListClick);
   permitAddDocumentBtn?.addEventListener("click", () => addPermitGeneratedItem("docs"));
   permitAddTaskBtn?.addEventListener("click", () => addPermitGeneratedItem("tasks"));
+  permitPrintPreviewBtn?.addEventListener("click", openPermitPrintPreview);
   if (permitApplyDocumentsBtn) permitApplyDocumentsBtn.dataset.action = "apply_permit_documents";
   if (permitApplyTasksBtn) permitApplyTasksBtn.dataset.action = "apply_permit_tasks";
   if (permitOverwriteHearingBtn) permitOverwriteHearingBtn.addEventListener("click", handleOverwritePermitHearing);
@@ -863,7 +865,27 @@ async function handlePermitHearingSubmit(event) {
   const linkedCustomerName = linkedCase.customer_name ?? linkedCase.customerName ?? "";
   const linkedCaseName = linkedCase.case_name ?? linkedCase.caseName ?? "";
   const linkedClientId = linkedCase.client_id ?? linkedCase.clientId ?? null;
-  lastPermitGenerated = { case_id: caseId, customer_name: linkedCustomerName, case_name: linkedCaseName, docs: [...branchingResult.docs], tasks: [...branchingResult.tasks], warnings: [...missingWarnings] };
+  lastPermitGenerated = {
+    case_id: caseId,
+    customer_name: linkedCustomerName,
+    case_name: linkedCaseName,
+    permit_category: scenario.label,
+    applicant_type: applicantType,
+    application_type: applicationType,
+    jurisdiction_prefecture: jurisdictionPrefecture,
+    jurisdiction_city: jurisdictionCity,
+    applicant_name: applicantName,
+    office_address: officeAddress,
+    officer_count: officerCount,
+    qualified_person_count: qualifiedCount,
+    online_application: online === "希望する",
+    urgency,
+    memo,
+    docs: [...branchingResult.docs],
+    tasks: [...branchingResult.tasks],
+    warnings: [...missingWarnings],
+    created_at: new Date().toISOString(),
+  };
   selectedPermitHearingId = null;
   setPermitOverwriteButtonState(false);
   const { error } = await sbClient.from("permit_hearings").insert({
@@ -973,6 +995,37 @@ function handlePermitGeneratedListClick(event) {
   syncPermitGeneratedFromInputs();
 }
 
+function openPermitPrintPreview() {
+  if (!lastPermitGenerated) return showAppMessage("印刷対象のヒアリング結果がありません。", true);
+  const createdAt = formatDate(lastPermitGenerated.created_at || new Date().toISOString());
+  const jurisdiction = [lastPermitGenerated.jurisdiction_prefecture || "", lastPermitGenerated.jurisdiction_city || ""].join(" ").trim() || "（未入力）";
+  const warnings = Array.isArray(lastPermitGenerated.warnings) && lastPermitGenerated.warnings.length ? lastPermitGenerated.warnings : ["確認が必要な項目はありません。"];
+  const docs = Array.isArray(lastPermitGenerated.docs) && lastPermitGenerated.docs.length ? lastPermitGenerated.docs : ["（なし）"];
+  const tasks = Array.isArray(lastPermitGenerated.tasks) && lastPermitGenerated.tasks.length ? lastPermitGenerated.tasks : ["（なし）"];
+  const html = `<!doctype html><html lang="ja"><head><meta charset="UTF-8"><title>許認可ヒアリング印刷</title><style>
+@page { size: A4 portrait; margin: 12mm; } body { font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif; color:#222; line-height:1.5; }
+h1 { font-size: 20px; margin: 0 0 8px; } h2 { font-size: 16px; margin: 16px 0 8px; border-bottom:1px solid #ccc; }
+dl { display:grid; grid-template-columns: 180px 1fr; gap: 4px 10px; margin: 0; } dt { font-weight:700; } dd { margin:0; } ul { margin: 6px 0 0 18px; }
+.meta { margin-bottom: 8px; color:#444; } .print-actions { margin: 8px 0 16px; } .box { border:1px solid #d4d4d4; border-radius: 6px; padding: 10px; } @media print { .print-actions { display:none; } }
+</style></head><body>
+<div class="print-actions"><button onclick="window.print()">印刷する</button></div>
+<h1>許認可ヒアリング結果</h1><p class="meta">${escapeHtml(OFFICE_INFO.name)} / 作成日: ${escapeHtml(createdAt)}</p><div class="box"><dl>
+<dt>案件名</dt><dd>${escapeHtml(lastPermitGenerated.case_name || "（未入力）")}</dd><dt>申請者名</dt><dd>${escapeHtml(lastPermitGenerated.applicant_name || "（未入力）")}</dd>
+<dt>許認可種別</dt><dd>${escapeHtml(lastPermitGenerated.permit_category || "未設定")}</dd><dt>法人/個人</dt><dd>${escapeHtml(lastPermitGenerated.applicant_type || "未設定")}</dd>
+<dt>申請区分</dt><dd>${escapeHtml(lastPermitGenerated.application_type || "新規")}</dd><dt>管轄</dt><dd>${escapeHtml(jurisdiction)}</dd>
+<dt>事業所所在地</dt><dd>${escapeHtml(lastPermitGenerated.office_address || "（未入力）")}</dd><dt>役員人数</dt><dd>${escapeHtml(String(lastPermitGenerated.officer_count ?? 0))}名</dd>
+<dt>有資格者人数</dt><dd>${escapeHtml(String(lastPermitGenerated.qualified_person_count ?? 0))}名</dd><dt>電子申請希望</dt><dd>${lastPermitGenerated.online_application ? "希望する" : "希望しない"}</dd>
+<dt>急ぎ度</dt><dd>${escapeHtml(lastPermitGenerated.urgency || "通常")}</dd><dt>メモ</dt><dd>${escapeHtml(lastPermitGenerated.memo || "（なし）")}</dd></dl></div>
+<h2>確認が必要な項目</h2><ul>${warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul>
+<h2>必要書類一覧</h2><ul>${docs.map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul>
+<h2>想定タスク一覧</h2><ul>${tasks.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul><script>window.print();</script></body></html>`;
+  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  if (!printWindow) return showAppMessage("印刷プレビューを開けませんでした。ポップアップ設定をご確認ください。", true);
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
+
 function handleViewSavedPermitHearing(event, button) {
   const hearingId = button?.dataset?.permitHearingId;
   if (!hearingId) return;
@@ -1018,9 +1071,22 @@ function handleViewSavedPermitHearing(event, button) {
     case_id: hearingCaseId ?? "",
     customer_name: linkedCase?.customerName ?? linkedCase?.customer_name ?? "",
     case_name: linkedCase?.caseName ?? linkedCase?.case_name ?? "",
+    permit_category: hearing.permit_category || "未設定",
+    applicant_type: hearing.applicant_type || "法人/個人未設定",
+    application_type: hearing.application_type || "新規",
+    jurisdiction_prefecture: hearing.jurisdiction_prefecture || "未設定",
+    jurisdiction_city: hearing.jurisdiction_city || "（未入力）",
+    applicant_name: hearing.applicant_name || "（未入力）",
+    office_address: hearing.office_address || "（未入力）",
+    officer_count: Number(hearing.officer_count || 0),
+    qualified_person_count: Number(hearing.qualified_person_count || 0),
+    online_application: Boolean(hearing.online_application),
+    urgency: hearing.urgency || "通常",
+    memo: hearing.memo || "",
     docs: [...docs],
     tasks: [...tasks],
     warnings: [...missingWarnings],
+    created_at: hearing.created_at || new Date().toISOString(),
   };
   selectedPermitHearingId = hearing.id;
   setPermitOverwriteButtonState(true);
