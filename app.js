@@ -738,11 +738,14 @@ async function handlePermitHearingSubmit(event) {
   permitDocumentsList.innerHTML = scenario.docs.map((doc) => `<li>${escapeHtml(doc)}</li>`).join("");
   permitTasksList.innerHTML = scenario.tasks.map((task) => `<li>${escapeHtml(task)}</li>`).join("");
   permitResult.hidden = false;
-  lastPermitGenerated = { caseId, customerName: linkedCase.customerName, caseName: linkedCase.caseName, docs: [...scenario.docs], tasks: [...scenario.tasks] };
+  const linkedCustomerName = linkedCase.customer_name ?? linkedCase.customerName ?? "";
+  const linkedCaseName = linkedCase.case_name ?? linkedCase.caseName ?? "";
+  const linkedClientId = linkedCase.client_id ?? linkedCase.clientId ?? null;
+  lastPermitGenerated = { case_id: caseId, customer_name: linkedCustomerName, case_name: linkedCaseName, docs: [...scenario.docs], tasks: [...scenario.tasks] };
   const { error } = await sbClient.from("permit_hearings").insert({
     user_id: currentUser.id,
     case_id: caseId,
-    client_id: linkedCase.clientId || null,
+    client_id: linkedClientId,
     permit_category: scenario.label,
     application_type: "新規",
     jurisdiction_prefecture: "大阪府",
@@ -763,9 +766,11 @@ async function handlePermitHearingSubmit(event) {
 }
 
 async function applyPermitDocumentsToCase() {
-  if (!currentUser || !lastPermitGenerated?.caseId) return;
-  const existing = new Set(state.caseDocuments.filter((d) => d.caseId === lastPermitGenerated.caseId).map((d) => String(d.documentName || "").trim()));
-  const payload = lastPermitGenerated.docs.filter((name) => !existing.has(name)).map((name) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.caseId, customer_name: lastPermitGenerated.customerName, case_name: lastPermitGenerated.caseName, document_name: name, status: "未回収" }));
+  if (!currentUser || !lastPermitGenerated?.case_id) return;
+  const existing = new Set(state.caseDocuments
+    .filter((d) => (d.case_id ?? d.caseId) === lastPermitGenerated.case_id)
+    .map((d) => String((d.document_name ?? d.documentName) || "").trim()));
+  const payload = lastPermitGenerated.docs.filter((name) => !existing.has(name)).map((name) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.case_id, customer_name: lastPermitGenerated.customer_name, case_name: lastPermitGenerated.case_name, document_name: name, status: "未回収" }));
   if (!payload.length) return showAppMessage("同一案件に同名書類があるため追加対象はありません。", false);
   const { error } = await sbClient.from("case_documents").insert(payload);
   if (error) return showAppMessage(`書類反映エラー: ${formatSupabaseError(error)}`, true);
@@ -774,9 +779,11 @@ async function applyPermitDocumentsToCase() {
 }
 
 async function applyPermitTasksToCase() {
-  if (!currentUser || !lastPermitGenerated?.caseId) return;
-  const existing = new Set(state.caseTasks.filter((t) => t.caseId === lastPermitGenerated.caseId).map((t) => String(t.taskTitle || "").trim()));
-  const payload = lastPermitGenerated.tasks.filter((title) => !existing.has(title)).map((title) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.caseId, customer_name: lastPermitGenerated.customerName, case_name: lastPermitGenerated.caseName, task_title: title, status: "未着手" }));
+  if (!currentUser || !lastPermitGenerated?.case_id) return;
+  const existing = new Set(state.caseTasks
+    .filter((t) => (t.case_id ?? t.caseId) === lastPermitGenerated.case_id)
+    .map((t) => String((t.task_title ?? t.taskTitle) || "").trim()));
+  const payload = lastPermitGenerated.tasks.filter((title) => !existing.has(title)).map((title) => ({ user_id: currentUser.id, case_id: lastPermitGenerated.case_id, customer_name: lastPermitGenerated.customer_name, case_name: lastPermitGenerated.case_name, task_title: title, status: "未着手" }));
   if (!payload.length) return showAppMessage("同一案件に同名タスクがあるため追加対象はありません。", false);
   const { error } = await sbClient.from("case_tasks").insert(payload);
   if (error) return showAppMessage(`タスク反映エラー: ${formatSupabaseError(error)}`, true);
