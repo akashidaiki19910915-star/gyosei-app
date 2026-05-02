@@ -746,6 +746,50 @@ const PERMIT_SCENARIO_MASTER = {
   kobutsu_solo: { label: "大阪府警 古物商許可 新規 個人", docs: ["本人住民票", "身分証明書", "URL使用権限疎明資料（該当時）", "営業所の賃貸借契約書", "略歴書"], tasks: ["欠格要件確認", "営業所情報確認", "必要書類回収", "申請書作成", "警察署へ提出"] },
 };
 
+
+function buildPermitBranchingResult(baseDocs, baseTasks, conditions) {
+  const docs = [...(Array.isArray(baseDocs) ? baseDocs : [])];
+  const tasks = [...(Array.isArray(baseTasks) ? baseTasks : [])];
+  const addedDocs = [];
+  const addedTasks = [];
+  const docSet = new Set(docs.map((item) => String(item || "").trim()).filter(Boolean));
+  const taskSet = new Set(tasks.map((item) => String(item || "").trim()).filter(Boolean));
+  const pushUnique = (items, collector, set, target) => {
+    (Array.isArray(items) ? items : []).forEach((item) => {
+      const value = String(item || "").trim();
+      if (!value || set.has(value)) return;
+      set.add(value);
+      target.push(value);
+      collector.push(value);
+    });
+  };
+
+  if (conditions.applicantType === "法人") {
+    pushUnique(["法人番号確認資料", "役員の身分証明書"], addedDocs, docSet, docs);
+    pushUnique(["法人要件確認"], addedTasks, taskSet, tasks);
+  } else if (conditions.applicantType === "個人") {
+    pushUnique(["本人確認資料", "納税証明書（個人）"], addedDocs, docSet, docs);
+    pushUnique(["個人要件確認"], addedTasks, taskSet, tasks);
+  }
+
+  if (conditions.onlineApplication) {
+    pushUnique(["電子申請アカウント準備", "電子申請添付データ整形"], addedTasks, taskSet, tasks);
+  }
+  if (conditions.urgency === "急ぎ") {
+    pushUnique(["優先確認（急ぎ案件）"], addedTasks, taskSet, tasks);
+  }
+  if (conditions.hasJurisdictionInput) {
+    pushUnique(["管轄窓口確認"], addedTasks, taskSet, tasks);
+  }
+
+  return { docs, tasks, addedDocs, addedTasks };
+}
+
+function buildPermitSummary(params) {
+  const cityPart = params.jurisdictionCity === "（未入力）" ? "" : ` ${params.jurisdictionCity}`;
+  return `${params.scenarioLabel} / ${params.applicantType} / 区分: ${params.applicationType} / 管轄: ${params.jurisdictionPrefecture}${cityPart} / 申請者: ${params.applicantName} / 所在地: ${params.officeAddress} / 役員: ${params.officerCount}名 / 有資格者: ${params.qualifiedCount}名 / 電子申請: ${params.online} / 急ぎ度: ${params.urgency} / 条件分岐追加: 書類${params.addedDocsCount}件・タスク${params.addedTasksCount}件`;
+}
+
 async function handlePermitHearingSubmit(event) {
   event.preventDefault();
   const formData = new FormData(event.currentTarget);
@@ -768,15 +812,36 @@ async function handlePermitHearingSubmit(event) {
   const online = String(formData.get("permitOnlineApplication") || "false") === "true" ? "希望する" : "希望しない";
   const urgency = String(formData.get("permitUrgency") || "通常");
   const memo = String(formData.get("permitMemo") || "").trim();
+  const branchingResult = buildPermitBranchingResult(scenario.docs, scenario.tasks, {
+    applicantType,
+    onlineApplication: online === "希望する",
+    urgency,
+    hasJurisdictionInput: jurisdictionPrefecture !== "（未入力）" || jurisdictionCity !== "（未入力）",
+  });
+  const generatedSummary = buildPermitSummary({
+    scenarioLabel: scenario.label,
+    applicantType,
+    applicationType,
+    jurisdictionPrefecture,
+    jurisdictionCity,
+    applicantName,
+    officeAddress,
+    officerCount,
+    qualifiedCount,
+    online,
+    urgency,
+    addedDocsCount: branchingResult.addedDocs.length,
+    addedTasksCount: branchingResult.addedTasks.length,
+  });
   renderPermitGeneratedResult({
-    summary: `${scenario.label} / ${applicantType} / 区分: ${applicationType} / 管轄: ${jurisdictionPrefecture}${jurisdictionCity === "（未入力）" ? "" : ` ${jurisdictionCity}`} / 申請者: ${applicantName} / 所在地: ${officeAddress} / 役員: ${officerCount}名 / 有資格者: ${qualifiedCount}名 / 電子申請: ${online} / 急ぎ度: ${urgency}`,
-    docs: scenario.docs,
-    tasks: scenario.tasks,
+    summary: generatedSummary,
+    docs: branchingResult.docs,
+    tasks: branchingResult.tasks,
   });
   const linkedCustomerName = linkedCase.customer_name ?? linkedCase.customerName ?? "";
   const linkedCaseName = linkedCase.case_name ?? linkedCase.caseName ?? "";
   const linkedClientId = linkedCase.client_id ?? linkedCase.clientId ?? null;
-  lastPermitGenerated = { case_id: caseId, customer_name: linkedCustomerName, case_name: linkedCaseName, docs: [...scenario.docs], tasks: [...scenario.tasks] };
+  lastPermitGenerated = { case_id: caseId, customer_name: linkedCustomerName, case_name: linkedCaseName, docs: [...branchingResult.docs], tasks: [...branchingResult.tasks] };
   selectedPermitHearingId = null;
   setPermitOverwriteButtonState(false);
   const { error } = await sbClient.from("permit_hearings").insert({
@@ -795,9 +860,9 @@ async function handlePermitHearingSubmit(event) {
     online_application: online === "希望する",
     urgency,
     memo: memo || null,
-    answers: { permitScenario: scenarioKey, permitApplicantType: applicantType, permitApplicationType: applicationType, permitJurisdictionPrefecture: jurisdictionPrefecture, permitJurisdictionCity: jurisdictionCity, permitApplicantName: applicantName, permitOfficeAddress: officeAddress, permitOfficerCount: officerCount, permitQualifiedCount: qualifiedCount, permitOnlineApplication: online === "希望する", permitUrgency: urgency, permitMemo: memo },
-    generated_documents: scenario.docs,
-    generated_tasks: scenario.tasks,
+    answers: { permitScenario: scenarioKey, permitApplicantType: applicantType, permitApplicationType: applicationType, permitJurisdictionPrefecture: jurisdictionPrefecture, permitJurisdictionCity: jurisdictionCity, permitApplicantName: applicantName, permitOfficeAddress: officeAddress, permitOfficerCount: officerCount, permitQualifiedCount: qualifiedCount, permitOnlineApplication: online === "希望する", permitUrgency: urgency, permitMemo: memo, permitConditionalAddedDocsCount: branchingResult.addedDocs.length, permitConditionalAddedTasksCount: branchingResult.addedTasks.length },
+    generated_documents: branchingResult.docs,
+    generated_tasks: branchingResult.tasks,
     source_urls: [],
   });
   if (error) return showAppMessage(`許認可ヒアリング保存エラー: ${formatSupabaseError(error)}`, true);
@@ -890,7 +955,22 @@ function handleViewSavedPermitHearing(event, button) {
   const tasks = Array.isArray(hearing.generated_tasks)
     ? hearing.generated_tasks
     : (Array.isArray(hearing.generatedTasks) ? hearing.generatedTasks : []);
-  const summary = `${hearing.permit_category || "許認可未設定"} / ${hearing.applicant_type || "法人/個人未設定"} / 区分: ${hearing.application_type || "新規"} / 管轄: ${hearing.jurisdiction_prefecture || "未設定"}${hearing.jurisdiction_city ? ` ${hearing.jurisdiction_city}` : ""} / 申請者: ${hearing.applicant_name || "（未入力）"} / 所在地: ${hearing.office_address || "（未入力）"} / 役員: ${Number(hearing.officer_count || 0)}名 / 有資格者: ${Number(hearing.qualified_person_count || 0)}名 / 電子申請: ${hearing.online_application ? "希望する" : "希望しない"} / 急ぎ度: ${hearing.urgency || "通常"}`;
+  const answers = hearing.answers && typeof hearing.answers === "object" ? hearing.answers : {};
+  const summary = buildPermitSummary({
+    scenarioLabel: hearing.permit_category || "許認可未設定",
+    applicantType: hearing.applicant_type || "法人/個人未設定",
+    applicationType: hearing.application_type || "新規",
+    jurisdictionPrefecture: hearing.jurisdiction_prefecture || "未設定",
+    jurisdictionCity: hearing.jurisdiction_city || "（未入力）",
+    applicantName: hearing.applicant_name || "（未入力）",
+    officeAddress: hearing.office_address || "（未入力）",
+    officerCount: Number(hearing.officer_count || 0),
+    qualifiedCount: Number(hearing.qualified_person_count || 0),
+    online: hearing.online_application ? "希望する" : "希望しない",
+    urgency: hearing.urgency || "通常",
+    addedDocsCount: Number(answers.permitConditionalAddedDocsCount || 0),
+    addedTasksCount: Number(answers.permitConditionalAddedTasksCount || 0),
+  });
   renderPermitGeneratedResult({ summary, docs, tasks });
   restorePermitHearingFormValues(hearing);
   permitResult?.scrollIntoView({ behavior: "smooth", block: "start" });
