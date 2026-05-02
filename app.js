@@ -799,7 +799,7 @@ async function applyPermitTasksToCase() {
     task_title: title,
     task_memo: null,
     due_date: null,
-    status: "未完了",
+    status: "未着手",
     completed_at: null,
   }));
   if (!payload.length) return showAppMessage("同一案件に同名タスクがあるため追加対象はありません。", false);
