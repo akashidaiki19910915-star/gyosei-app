@@ -138,13 +138,30 @@
       const items=[{item_name:'基本報酬',quantity:1,unit_price:n(calc.base_fee),amount:n(calc.base_fee),sort_order:1},{item_name:'加算',quantity:1,unit_price:n(calc.addon_fee),amount:n(calc.addon_fee),sort_order:2},{item_name:'値引き',quantity:1,unit_price:-n(calc.discount_amount),amount:-n(calc.discount_amount),sort_order:3},{item_name:'実費(非課税)',quantity:1,unit_price:n(calc.expense_amount),amount:n(calc.expense_amount),sort_order:4}].map(i=>({...i,user_id:u.id,estimate_id:e.data.id}));
       const ir=await sb.from('estimate_items').insert(items); if(ir.error){app.showMessage('見積明細登録に失敗しました。'+ir.error.message,true);return false;}
       await app.reloadAllData();
+      await loadSavedCalculations();
       renderSavedList();
       app.showMessage('見積へ反映しました。');
       return true;
     };
 
+    let localEstimateCalculations=[];
+    const loadSavedCalculations=async()=>{
+      const sb=app?.getSupabaseClient?.(); const u=app?.getCurrentUser?.(); if(!sb||!u){localEstimateCalculations=[]; return;}
+      const { data, error }=await sb.from('estimate_calculations').select('*').eq('user_id', u.id).order('created_at', { ascending: false });
+      if(error){localEstimateCalculations=[]; app?.showMessage?.('保存済み概算見積の取得に失敗しました。'+error.message,true); return;}
+      localEstimateCalculations=Array.isArray(data)?data:[];
+    };
+
+    const getCalculationById=(id)=>{
+      const appCalcs=app?.getEstimateCalculations?.()||[];
+      const source=appCalcs.length?appCalcs:localEstimateCalculations;
+      return source.find((x)=>String(x.id)===String(id));
+    };
+
     const renderSavedList=()=>{
-      const calcs=(app?.getEstimateCalculations?.()||[]).slice().sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+      const appCalcs=app?.getEstimateCalculations?.()||[];
+      const sourceCalcs=appCalcs.length?appCalcs:localEstimateCalculations;
+      const calcs=sourceCalcs.slice().sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
       if(!calcs.length){savedList.innerHTML='<p class="meta">保存済みデータはありません。</p>'; return;}
       savedList.innerHTML=`<div class="saved-calc-list">${calcs.map(c=>`<article class="panel saved-calc-card">
         <div class="saved-calc-header"><strong>${h(c.project_name||"-")}</strong> / <span>${h(c.work_type||"-")}</span> / <strong>${h(yen(c.total||0))}</strong></div>
@@ -160,7 +177,10 @@
       run(); const r=JSON.parse(form.dataset.result||'{}'); const f=form.elements;
       const payload={user_id:u.id,client_id:f.clientId.value||null,project_name:f.projectName.value||null,work_type:f.workType.value,application_type:f.applicationType.value,corporate_type:f.corporateType.value,governor_type:f.governorType.value,general_specific:f.generalSpecific.value,industry_count:n(f.industryCount.value),officer_count:n(f.officerCount.value),office_count:n(f.officeCount.value),document_level:f.documentLevel.value,urgent:n(f.urgent.value)>0,keikan_level:f.keikan.value,sengi_level:f.sengi.value,zaisan_level:f.zaisan.value,visit_required:n(f.visit.value)>0,agent_required:n(f.agent.value)>0,expense_amount:r.expense||0,discount_amount:r.discount||0,memo:f.memo.value||null,base_fee:r.base||0,addon_fee:r.addon||0,taxable_subtotal:r.taxable||0,tax:r.tax||0,total:r.total||0,addon_breakdown:JSON.stringify(r.addons||[])};
       const res=await sb.from('estimate_calculations').insert(payload); if(res.error){app.showMessage('見積自動算出の保存に失敗しました。'+res.error.message,true);return;}
-      await app.reloadAllData(); renderSavedList(); app.showMessage('見積自動算出を保存しました。');
+      await app.reloadAllData();
+      await loadSavedCalculations();
+      renderSavedList();
+      app.showMessage('見積自動算出を保存しました。');
     });
     root.querySelector('#calc-apply').addEventListener('click', async()=>{run(); const r=JSON.parse(form.dataset.result||'{}'); const f=form.elements;
       await reflectToEstimate({client_id:f.clientId.value||null,project_name:f.projectName.value||null,memo:f.memo.value||null,base_fee:r.base||0,addon_fee:r.addon||0,discount_amount:r.discount||0,expense_amount:r.expense||0,taxable_subtotal:r.taxable||0,tax:r.tax||0,total:r.total||0});
@@ -169,7 +189,7 @@
     savedList.addEventListener('click', async(event)=>{
       const btn=event.target.closest('button[data-calc-action]'); if(!btn) return;
       const id=btn.dataset.id; const action=btn.dataset.calcAction;
-      const calc=(app?.getEstimateCalculations?.()||[]).find((x)=>String(x.id)===String(id)); if(!calc) return;
+      const calc=getCalculationById(id); if(!calc) return;
       if(action==='detail'){
         const addon=(()=>{try{return JSON.stringify(JSON.parse(calc.addon_breakdown||'[]'));}catch{return calc.addon_breakdown||'[]';}})();
         alert(`作成日: ${fmtDate(calc.created_at)}\n顧客: ${calc.client_name||'-'}\n案件: ${calc.project_name||'-'}\n業務種別: ${calc.work_type||'-'}\n申請区分: ${calc.application_type||'-'}\n基本報酬: ${yen(calc.base_fee||0)}\n加算: ${yen(calc.addon_fee||0)}\n実費: ${yen(calc.expense_amount||0)}\n消費税: ${yen(calc.tax||0)}\n合計: ${yen(calc.total||0)}\n加算明細: ${addon}\nメモ: ${calc.memo||'-'}`);
@@ -184,13 +204,17 @@
         const sb=app?.getSupabaseClient?.(); if(!sb) return;
         const del=await sb.from('estimate_calculations').delete().eq('id', calc.id);
         if(del.error){app.showMessage('保存済み算出データの削除に失敗しました。'+del.error.message,true); return;}
-        await app.reloadAllData(); renderSavedList(); app.showMessage('保存済み算出データを削除しました。');
+        await app.reloadAllData();
+        await loadSavedCalculations();
+        renderSavedList();
+        app.showMessage('保存済み算出データを削除しました。');
       }
     });
 
     if (app?.reloadAllData) {
       await app.reloadAllData();
     }
+    await loadSavedCalculations();
     renderSavedList();
   }
   document.addEventListener('DOMContentLoaded', () => {
