@@ -27,6 +27,15 @@
     const client=clients.find((c)=>String(c.id)===String(calc.client_id||""));
     return client?.name||client?.companyName||client?.contactName||calc.client_name||calc.customer_name||"-";
   }
+  async function waitForCurrentUser(app, maxMs = 5000) {
+    const start = Date.now();
+    while (Date.now() - start < maxMs) {
+      const u = app?.getCurrentUser?.();
+      if (u?.id) return u;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return app?.getCurrentUser?.() || null;
+  }
   function openPrintWindow(app,calc){
     const w=window.open("", "_blank", "width=960,height=1200");
     if(!w){ alert("印刷用ウィンドウを開けませんでした。ポップアップブロックをご確認ください。"); return; }
@@ -146,10 +155,20 @@
 
     let localEstimateCalculations=[];
     const loadSavedCalculations=async()=>{
-      const sb=app?.getSupabaseClient?.(); const u=app?.getCurrentUser?.(); if(!sb||!u){localEstimateCalculations=[]; return;}
-      const { data, error }=await sb.from('estimate_calculations').select('*').eq('user_id', u.id).order('created_at', { ascending: false });
-      if(error){localEstimateCalculations=[]; app?.showMessage?.('保存済み概算見積の取得に失敗しました。'+error.message,true); return;}
-      localEstimateCalculations=Array.isArray(data)?data:[];
+      const sb=app?.getSupabaseClient?.();
+      const u=await waitForCurrentUser(app);
+      console.log("LOAD ESTIMATE CALCULATIONS START", { hasClient: !!sb, userId: u?.id });
+      if(!sb||!u){localEstimateCalculations=[]; console.log("LOAD ESTIMATE CALCULATIONS RESULT", { count: localEstimateCalculations.length }); return;}
+      try {
+        const { data, error }=await sb.from('estimate_calculations').select('*').eq('user_id', u.id).order('created_at', { ascending: false });
+        if(error){throw error;}
+        localEstimateCalculations=Array.isArray(data)?data:[];
+        console.log("LOAD ESTIMATE CALCULATIONS RESULT", { count: localEstimateCalculations.length });
+      } catch (error) {
+        console.error("LOAD ESTIMATE CALCULATIONS ERROR", error);
+        localEstimateCalculations=[];
+        app?.showMessage?.('保存済み概算見積の取得に失敗しました。'+error.message,true);
+      }
     };
 
     const getCalculationById=(id)=>{
