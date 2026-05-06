@@ -10225,6 +10225,7 @@ window.GyoseiApp = {
   getCurrentUser: () => currentUser,
   getTaxRate: () => getCurrentTaxRate(),
   getClients: () => Array.isArray(state.clients) ? state.clients.slice() : [],
+  getEstimateCalculations: () => Array.isArray(state.estimateCalculations) ? state.estimateCalculations.slice() : [],
   reloadAllData: async () => {
     if (!currentUser) return;
     await loadAllDataSafely();
