@@ -279,6 +279,14 @@ alter table estimate_calculations add column if not exists sengi_level text;
 alter table estimate_calculations add column if not exists zaisan_level text;
 alter table estimate_calculations add column if not exists visit_required boolean default false;
 alter table estimate_calculations add column if not exists agent_required boolean default false;
+alter table estimate_calculations add column if not exists memo text;
+alter table estimate_calculations add column if not exists base_fee bigint default 0;
+alter table estimate_calculations add column if not exists addon_fee bigint default 0;
+alter table estimate_calculations add column if not exists taxable_subtotal bigint default 0;
+alter table estimate_calculations add column if not exists tax bigint default 0;
+alter table estimate_calculations add column if not exists total bigint default 0;
+alter table estimate_calculations add column if not exists expense_amount bigint default 0;
+alter table estimate_calculations add column if not exists discount_amount bigint default 0;
 alter table estimate_calculations add column if not exists addon_breakdown text;
 
 alter table estimate_calculations enable row level security;
