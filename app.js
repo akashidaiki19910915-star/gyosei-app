@@ -50,6 +50,7 @@ const state = {
   workTemplates: [],
   estimates: [],
   estimateItems: [],
+  estimateCalculations: [],
   sales: [],
   payments: [],
   expenses: [],
@@ -1645,6 +1646,25 @@ async function loadEstimateItems() {
   }
 }
 
+async function loadEstimateCalculations() {
+  if (!currentUser || isLoggingOut) {
+    state.estimateCalculations = [];
+    return;
+  }
+  try {
+    const { data, error } = await sbClient.from("estimate_calculations").select("*").eq("user_id", currentUser.id);
+    if (error) {
+      console.error("LOAD estimate_calculations ERROR", error);
+      state.estimateCalculations = [];
+      return;
+    }
+    state.estimateCalculations = data || [];
+  } catch (error) {
+    console.error("LOAD estimate_calculations ERROR", error);
+    state.estimateCalculations = [];
+  }
+}
+
 async function loadSales() {
   if (!currentUser || isLoggingOut) {
     state.sales = [];
@@ -1804,6 +1824,7 @@ async function loadAllDataSafely() {
     ["permitHearings", loadPermitHearings],
     ["estimates", loadEstimates],
     ["estimateItems", loadEstimateItems],
+    ["estimateCalculations", loadEstimateCalculations],
     ["sales", loadSales],
     ["payments", loadPayments],
     ["expenses", loadExpenses],
@@ -10172,6 +10193,7 @@ function clearAppState() {
   state.caseDocuments = [];
   state.estimates = [];
   state.estimateItems = [];
+  state.estimateCalculations = [];
   state.sales = [];
   state.payments = [];
   state.expenses = [];
@@ -10197,3 +10219,16 @@ function clearAppState() {
   appView.hidden = true;
   userLabel.textContent = "";
 }
+
+window.GyoseiApp = {
+  getSupabaseClient: () => sbClient,
+  getCurrentUser: () => currentUser,
+  getTaxRate: () => getCurrentTaxRate(),
+  getClients: () => Array.isArray(state.clients) ? state.clients.slice() : [],
+  reloadAllData: async () => {
+    if (!currentUser) return;
+    await loadAllDataSafely();
+    renderAfterDataChanged();
+  },
+  showMessage: (text, isError = false) => showAppMessage(text, isError),
+};

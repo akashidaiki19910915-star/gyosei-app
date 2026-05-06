@@ -8,6 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
     <script src="app.js?v=20260426-payment-control-upgrade" defer></script>
+    <script src="estimate-calculator.js" defer></script>
   </head>
   <body>
     <div id="loading-overlay" class="loading-overlay" hidden>
@@ -955,6 +956,7 @@
             <button type="button" class="subtab-btn active" data-parent-tab="estimates" data-subtab="create">見積作成</button>
             <button type="button" class="subtab-btn" data-parent-tab="estimates" data-subtab="list">見積一覧</button>
             <button type="button" class="subtab-btn" data-parent-tab="estimates" data-subtab="export">請求データ出力</button>
+            <button type="button" class="subtab-btn" data-parent-tab="estimates" data-subtab="calculator">見積自動算出</button>
           </nav>
           <div class="layout two-col">
             <section class="panel subtab-panel" data-parent-tab="estimates" data-subtab="create">
@@ -990,6 +992,10 @@
                 </div>
                 <button id="estimate-submit-btn" type="submit">見積を登録</button>
               </form>
+            </section>
+            <section class="panel subtab-panel" data-parent-tab="estimates" data-subtab="calculator" hidden>
+              <h2>見積自動算出</h2>
+              <div id="estimate-calculator-root"></div>
             </section>
             <section class="panel subtab-panel" data-parent-tab="estimates" data-subtab="list" hidden>
               <h2>見積一覧</h2>
