@@ -27,7 +27,7 @@
     return client?.name||client?.companyName||client?.contactName||calc.client_name||calc.customer_name||"-";
   }
   function openPrintWindow(app,calc){
-    const w=window.open("", "_blank", "noopener,noreferrer,width=960,height=1200");
+    const w=window.open("", "_blank", "width=960,height=1200");
     if(!w){ alert("印刷用ウィンドウを開けませんでした。ポップアップブロックをご確認ください。"); return; }
     const createdAt=fmtDate(calc.created_at||new Date());
     const addonDetails=parseAddonBreakdown(calc.addon_breakdown);
@@ -80,6 +80,7 @@
     w.document.open();
     w.document.write(html);
     w.document.close();
+    w.focus();
   }
 
   function init(){
@@ -151,11 +152,13 @@
     const renderSavedList=()=>{
       const calcs=(app?.getEstimateCalculations?.()||[]).slice().sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
       if(!calcs.length){savedList.innerHTML='<p class="meta">保存済みデータはありません。</p>'; return;}
-      savedList.innerHTML=`<table><thead><tr><th>作成日</th><th>顧客名</th><th>案件名</th><th>業務種別</th><th>申請区分</th><th>基本報酬</th><th>加算</th><th>実費</th><th>消費税</th><th>合計</th><th>メモ</th><th>操作</th></tr></thead><tbody>${calcs.map(c=>`<tr>
-      <td>${h(fmtDate(c.created_at))}</td><td>${h(c.client_name||c.customer_name||"-")}</td><td>${h(c.project_name||"-")}</td><td>${h(c.work_type||"-")}</td><td>${h(c.application_type||"-")}</td>
-      <td>${h(yen(c.base_fee||0))}</td><td>${h(yen(c.addon_fee||0))}</td><td>${h(yen(c.expense_amount||0))}</td><td>${h(yen(c.tax||0))}</td><td>${h(yen(c.total||0))}</td><td>${h(c.memo||"-")}</td>
-      <td><div class="row-actions"><button type="button" data-calc-action="detail" data-id="${h(c.id)}">詳細表示</button><button type="button" data-calc-action="reload" data-id="${h(c.id)}">フォームに再読込</button><button type="button" data-calc-action="reflect" data-id="${h(c.id)}">見積へ反映</button><button type="button" data-calc-action="print" data-id="${h(c.id)}">概算書出力</button><button type="button" data-calc-action="delete" data-id="${h(c.id)}" class="danger-btn">削除</button></div></td>
-      </tr>`).join('')}</tbody></table>`;
+      savedList.innerHTML=`<div class="saved-calc-list">${calcs.map(c=>`<article class="panel saved-calc-card">
+        <div class="saved-calc-header"><strong>${h(c.project_name||"-")}</strong> / <span>${h(c.work_type||"-")}</span> / <strong>${h(yen(c.total||0))}</strong></div>
+        <div class="saved-calc-meta">作成日: ${h(fmtDate(c.created_at))} / 顧客名: ${h(c.client_name||c.customer_name||"-")} / 申請区分: ${h(c.application_type||"-")}</div>
+        <div class="saved-calc-money">基本報酬: ${h(yen(c.base_fee||0))} / 加算: ${h(yen(c.addon_fee||0))} / 実費: ${h(yen(c.expense_amount||0))} / 消費税: ${h(yen(c.tax||0))}</div>
+        <div class="saved-calc-note">メモ: ${h(c.memo||"-")}</div>
+        <div class="row-actions saved-calc-actions"><button type="button" data-calc-action="detail" data-id="${h(c.id)}" class="secondary-btn">詳細表示</button><button type="button" data-calc-action="reload" data-id="${h(c.id)}" class="secondary-btn">フォームに再読込</button><button type="button" data-calc-action="reflect" data-id="${h(c.id)}" class="secondary-btn">見積へ反映</button><button type="button" data-calc-action="print" data-id="${h(c.id)}" class="secondary-btn">概算書出力</button><button type="button" data-calc-action="delete" data-id="${h(c.id)}" class="danger-btn">削除</button></div>
+      </article>`).join('')}</div>`;
     };
 
     root.querySelector('#calc-run').addEventListener('click',run); run();
