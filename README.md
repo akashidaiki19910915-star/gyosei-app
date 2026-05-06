@@ -263,6 +263,24 @@ create table if not exists estimate_calculations (
   updated_at timestamptz default now()
 );
 
+-- 既存テーブルに対しても、保存payloadで使うカラムを不足なく追加
+alter table estimate_calculations add column if not exists project_name text;
+alter table estimate_calculations add column if not exists work_type text;
+alter table estimate_calculations add column if not exists corporate_type text;
+alter table estimate_calculations add column if not exists governor_type text;
+alter table estimate_calculations add column if not exists general_specific text;
+alter table estimate_calculations add column if not exists industry_count integer default 1;
+alter table estimate_calculations add column if not exists officer_count integer default 0;
+alter table estimate_calculations add column if not exists office_count integer default 1;
+alter table estimate_calculations add column if not exists document_level text;
+alter table estimate_calculations add column if not exists urgent boolean default false;
+alter table estimate_calculations add column if not exists keikan_level text;
+alter table estimate_calculations add column if not exists sengi_level text;
+alter table estimate_calculations add column if not exists zaisan_level text;
+alter table estimate_calculations add column if not exists visit_required boolean default false;
+alter table estimate_calculations add column if not exists agent_required boolean default false;
+alter table estimate_calculations add column if not exists addon_breakdown text;
+
 alter table estimate_calculations enable row level security;
 
 drop policy if exists "estimate_calculations_own" on estimate_calculations;
