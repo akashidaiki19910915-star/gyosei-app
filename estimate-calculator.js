@@ -86,7 +86,7 @@
       savedList.innerHTML=`<table><thead><tr><th>作成日</th><th>顧客名</th><th>案件名</th><th>業務種別</th><th>申請区分</th><th>基本報酬</th><th>加算</th><th>実費</th><th>消費税</th><th>合計</th><th>メモ</th><th>操作</th></tr></thead><tbody>${calcs.map(c=>`<tr>
       <td>${h(fmtDate(c.created_at))}</td><td>${h(c.client_name||c.customer_name||"-")}</td><td>${h(c.project_name||"-")}</td><td>${h(c.work_type||"-")}</td><td>${h(c.application_type||"-")}</td>
       <td>${h(yen(c.base_fee||0))}</td><td>${h(yen(c.addon_fee||0))}</td><td>${h(yen(c.expense_amount||0))}</td><td>${h(yen(c.tax||0))}</td><td>${h(yen(c.total||0))}</td><td>${h(c.memo||"-")}</td>
-      <td><div class="row-actions"><button type="button" data-action="detail" data-id="${h(c.id)}">詳細表示</button><button type="button" data-action="reload" data-id="${h(c.id)}">フォームに再読込</button><button type="button" data-action="reflect" data-id="${h(c.id)}">見積へ反映</button><button type="button" data-action="delete" data-id="${h(c.id)}" class="danger-btn">削除</button></div></td>
+      <td><div class="row-actions"><button type="button" data-calc-action="detail" data-id="${h(c.id)}">詳細表示</button><button type="button" data-calc-action="reload" data-id="${h(c.id)}">フォームに再読込</button><button type="button" data-calc-action="reflect" data-id="${h(c.id)}">見積へ反映</button><button type="button" data-calc-action="delete" data-id="${h(c.id)}" class="danger-btn">削除</button></div></td>
       </tr>`).join('')}</tbody></table>`;
     };
 
@@ -102,8 +102,8 @@
     });
 
     savedList.addEventListener('click', async(event)=>{
-      const btn=event.target.closest('button[data-action]'); if(!btn) return;
-      const id=btn.dataset.id; const action=btn.dataset.action;
+      const btn=event.target.closest('button[data-calc-action]'); if(!btn) return;
+      const id=btn.dataset.id; const action=btn.dataset.calcAction;
       const calc=(app?.getEstimateCalculations?.()||[]).find((x)=>String(x.id)===String(id)); if(!calc) return;
       if(action==='detail'){
         const addon=(()=>{try{return JSON.stringify(JSON.parse(calc.addon_breakdown||'[]'));}catch{return calc.addon_breakdown||'[]';}})();
