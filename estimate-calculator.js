@@ -77,7 +77,7 @@
     w.focus();
   }
 
-  function init(){
+  async function init(){
     const root=document.getElementById("estimate-calculator-root"); if(!root)return;
     root.innerHTML=`<form id="estimate-calc-form" class="form"><div class="grid cols-2">
       <label>顧客<select name="clientId"></select></label><label>案件名<input name="projectName" /></label>
@@ -188,7 +188,12 @@
       }
     });
 
+    if (app?.reloadAllData) {
+      await app.reloadAllData();
+    }
     renderSavedList();
   }
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', () => {
+    init();
+  });
 })();
