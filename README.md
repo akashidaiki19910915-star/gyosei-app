@@ -288,6 +288,15 @@ alter table estimate_calculations add column if not exists total bigint default 
 alter table estimate_calculations add column if not exists expense_amount bigint default 0;
 alter table estimate_calculations add column if not exists discount_amount bigint default 0;
 alter table estimate_calculations add column if not exists addon_breakdown text;
+alter table estimate_calculations add column if not exists business_type text;
+alter table estimate_calculations add column if not exists jurisdiction_type text;
+alter table estimate_calculations add column if not exists applicant_type text;
+alter table estimate_calculations add column if not exists urgency text;
+alter table estimate_calculations add column if not exists document_readiness text;
+
+-- 古い初期SQLで business_type が not null の場合、現行payload保存時にエラーになるため解除
+alter table estimate_calculations
+alter column business_type drop not null;
 
 alter table estimate_calculations enable row level security;
 
