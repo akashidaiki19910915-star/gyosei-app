@@ -225,6 +225,48 @@ with check (auth.uid() = user_id);
 - 今後の機能追加前は、必ずこの安定版コミットとの差分を確認してから着手してください。
 - 新機能追加後に不具合が出た場合は、この安定版コミットに戻せるように運用してください。
 
+## 見積自動算出機能の追加SQL
+
+`estimate-calculator.js` の保存 payload（`estimate_calculations`）に合わせる場合は、以下のテーブルを追加してください。
+
+```sql
+create table if not exists estimate_calculations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  client_id uuid,
+  project_name text,
+  work_type text,
+  application_type text,
+  corporate_type text,
+  governor_type text,
+  general_specific text,
+  industry_count integer default 1,
+  officer_count integer default 0,
+  office_count integer default 1,
+  document_level text,
+  urgent boolean default false,
+  keikan_level text,
+  sengi_level text,
+  zaisan_level text,
+  visit_required boolean default false,
+  agent_required boolean default false,
+  expense_amount bigint default 0,
+  discount_amount bigint default 0,
+  memo text,
+  base_fee bigint default 0,
+  addon_fee bigint default 0,
+  taxable_subtotal bigint default 0,
+  tax bigint default 0,
+  total bigint default 0,
+  addon_breakdown text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists idx_estimate_calculations_user_id on estimate_calculations(user_id);
+create index if not exists idx_estimate_calculations_client_id on estimate_calculations(client_id);
+```
+
 ## 設定機能（事務所情報・帳票設定・請求設定）の追加SQL
 
 ```sql
