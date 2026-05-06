@@ -1,5 +1,6 @@
 (function () {
   const NOTICE = "この金額は入力内容に基づく概算です。正式な報酬額は必要資料・申請先・業務範囲確認後に確定します。";
+  const PRINT_NOTICE_EXTRA = "上記報酬には、申請書類作成、要件確認、必要書類案内、申請先確認、提出準備に関する業務を含みます。";
   const BASE = {
     "建設業許可|法人|新規|知事": 150000, "建設業許可|個人|新規|知事": 120000,
     "建設業許可|法人|更新|知事": 75000, "建設業許可|個人|更新|知事": 65000,
@@ -30,10 +31,7 @@
     const w=window.open("", "_blank", "width=960,height=1200");
     if(!w){ alert("印刷用ウィンドウを開けませんでした。ポップアップブロックをご確認ください。"); return; }
     const createdAt=fmtDate(calc.created_at||new Date());
-    const addonDetails=parseAddonBreakdown(calc.addon_breakdown);
-    const addonHtml=addonDetails.length
-      ? `<ul class="addon-list">${addonDetails.map((a)=>`<li><span>${h(a?.name||"-")}</span><strong>${h(yen(a?.amount||0))}</strong></li>`).join("")}</ul>`
-      : "<p>なし</p>";
+    const gyoseiReward=(n(calc.base_fee)+n(calc.addon_fee)-n(calc.discount_amount));
     const html=`<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>概算見積書</title>
     <style>
       @page { size: A4 portrait; margin: 12mm; }
@@ -47,8 +45,6 @@
       th, td { border: 1px solid #d1d5db; padding: 8px 10px; vertical-align: top; text-align: left; }
       th { width: 28%; background: #f3f4f6; font-weight: 700; }
       .money { text-align: right; font-variant-numeric: tabular-nums; }
-      .addon-list { margin: 0; padding-left: 18px; }
-      .addon-list li { display: flex; justify-content: space-between; gap: 12px; margin: 4px 0; }
       .notice { margin-top: 18px; padding: 12px; border: 1px solid #fbbf24; background: #fffbeb; border-radius: 8px; }
       @media print {
         body { background: #fff; padding: 0; }
@@ -65,15 +61,13 @@
           <tr><th>案件名</th><td>${h(calc.project_name||"-")}</td></tr>
           <tr><th>業務種別</th><td>${h(calc.work_type||"-")}</td></tr>
           <tr><th>申請区分</th><td>${h(calc.application_type||"-")}</td></tr>
-          <tr><th>基本報酬</th><td class="money">${h(yen(calc.base_fee||0))}</td></tr>
-          <tr><th>加算明細</th><td>${addonHtml}</td></tr>
-          <tr><th>値引き</th><td class="money">${h(yen(calc.discount_amount||0))}</td></tr>
-          <tr><th>実費</th><td class="money">${h(yen(calc.expense_amount||0))}</td></tr>
+          <tr><th>行政書士報酬</th><td class="money">${h(yen(gyoseiReward))}</td></tr>
+          <tr><th>実費・法定費用</th><td class="money">${h(yen(calc.expense_amount||0))}</td></tr>
           <tr><th>消費税</th><td class="money">${h(yen(calc.tax||0))}</td></tr>
           <tr><th>合計金額</th><td class="money"><strong>${h(yen(calc.total||0))}</strong></td></tr>
           <tr><th>メモ</th><td>${h(calc.memo||"-")}</td></tr>
         </tbody></table>
-        <p class="notice">${h(NOTICE)}</p>
+        <p class="notice">${h(`${NOTICE} ${PRINT_NOTICE_EXTRA}`)}</p>
       </main>
       <script>document.getElementById('print-trigger').addEventListener('click', function(){ window.print(); });</script>
     </body></html>`;
