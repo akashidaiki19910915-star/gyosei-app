@@ -13,6 +13,74 @@
   function yen(v){return `${Math.floor(v).toLocaleString("ja-JP")} 円`;}
   function h(s){return String(s ?? "").replace(/[&<>\"']/g,(ch)=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]));}
   function fmtDate(v){if(!v) return "-"; const d=new Date(v); return Number.isNaN(d.getTime())?String(v):d.toLocaleDateString("ja-JP");}
+  function parseAddonBreakdown(v){
+    try {
+      const parsed=typeof v==="string"?JSON.parse(v||"[]"):v;
+      return Array.isArray(parsed)?parsed:[];
+    } catch {
+      return [];
+    }
+  }
+  function getClientName(app,calc){
+    const clients=app?.getClients?.()||[];
+    const client=clients.find((c)=>String(c.id)===String(calc.client_id||""));
+    return client?.name||client?.companyName||client?.contactName||calc.client_name||calc.customer_name||"-";
+  }
+  function openPrintWindow(app,calc){
+    const w=window.open("", "_blank", "noopener,noreferrer,width=960,height=1200");
+    if(!w){ alert("印刷用ウィンドウを開けませんでした。ポップアップブロックをご確認ください。"); return; }
+    const createdAt=fmtDate(calc.created_at||new Date());
+    const addonDetails=parseAddonBreakdown(calc.addon_breakdown);
+    const addonHtml=addonDetails.length
+      ? `<ul class="addon-list">${addonDetails.map((a)=>`<li><span>${h(a?.name||"-")}</span><strong>${h(yen(a?.amount||0))}</strong></li>`).join("")}</ul>`
+      : "<p>なし</p>";
+    const html=`<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>概算見積書</title>
+    <style>
+      @page { size: A4 portrait; margin: 12mm; }
+      body { margin: 0; padding: 24px; font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif; color: #1f2937; background: #f8fafc; }
+      .sheet { max-width: 840px; margin: 0 auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px; }
+      h1 { margin: 0 0 12px; font-size: 28px; letter-spacing: 0.08em; }
+      .print-toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+      .print-btn { border: none; background: #2563eb; color: #fff; padding: 10px 16px; border-radius: 6px; font-size: 14px; cursor: pointer; }
+      .meta { margin-bottom: 16px; color: #4b5563; }
+      table { width: 100%; border-collapse: collapse; margin: 10px 0 18px; }
+      th, td { border: 1px solid #d1d5db; padding: 8px 10px; vertical-align: top; text-align: left; }
+      th { width: 28%; background: #f3f4f6; font-weight: 700; }
+      .money { text-align: right; font-variant-numeric: tabular-nums; }
+      .addon-list { margin: 0; padding-left: 18px; }
+      .addon-list li { display: flex; justify-content: space-between; gap: 12px; margin: 4px 0; }
+      .notice { margin-top: 18px; padding: 12px; border: 1px solid #fbbf24; background: #fffbeb; border-radius: 8px; }
+      @media print {
+        body { background: #fff; padding: 0; }
+        .sheet { border: none; border-radius: 0; padding: 0; max-width: none; }
+        .print-toolbar { display: none; }
+      }
+    </style></head><body>
+      <main class="sheet">
+        <div class="print-toolbar"><button type="button" class="print-btn" id="print-trigger">印刷する</button></div>
+        <h1>概算見積書</h1>
+        <p class="meta">作成日: ${h(createdAt)}</p>
+        <table><tbody>
+          <tr><th>顧客名</th><td>${h(getClientName(app,calc))}</td></tr>
+          <tr><th>案件名</th><td>${h(calc.project_name||"-")}</td></tr>
+          <tr><th>業務種別</th><td>${h(calc.work_type||"-")}</td></tr>
+          <tr><th>申請区分</th><td>${h(calc.application_type||"-")}</td></tr>
+          <tr><th>基本報酬</th><td class="money">${h(yen(calc.base_fee||0))}</td></tr>
+          <tr><th>加算明細</th><td>${addonHtml}</td></tr>
+          <tr><th>値引き</th><td class="money">${h(yen(calc.discount_amount||0))}</td></tr>
+          <tr><th>実費</th><td class="money">${h(yen(calc.expense_amount||0))}</td></tr>
+          <tr><th>消費税</th><td class="money">${h(yen(calc.tax||0))}</td></tr>
+          <tr><th>合計金額</th><td class="money"><strong>${h(yen(calc.total||0))}</strong></td></tr>
+          <tr><th>メモ</th><td>${h(calc.memo||"-")}</td></tr>
+        </tbody></table>
+        <p class="notice">${h(NOTICE)}</p>
+      </main>
+      <script>document.getElementById('print-trigger').addEventListener('click', function(){ window.print(); });</script>
+    </body></html>`;
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
 
   function init(){
     const root=document.getElementById("estimate-calculator-root"); if(!root)return;
@@ -86,7 +154,7 @@
       savedList.innerHTML=`<table><thead><tr><th>作成日</th><th>顧客名</th><th>案件名</th><th>業務種別</th><th>申請区分</th><th>基本報酬</th><th>加算</th><th>実費</th><th>消費税</th><th>合計</th><th>メモ</th><th>操作</th></tr></thead><tbody>${calcs.map(c=>`<tr>
       <td>${h(fmtDate(c.created_at))}</td><td>${h(c.client_name||c.customer_name||"-")}</td><td>${h(c.project_name||"-")}</td><td>${h(c.work_type||"-")}</td><td>${h(c.application_type||"-")}</td>
       <td>${h(yen(c.base_fee||0))}</td><td>${h(yen(c.addon_fee||0))}</td><td>${h(yen(c.expense_amount||0))}</td><td>${h(yen(c.tax||0))}</td><td>${h(yen(c.total||0))}</td><td>${h(c.memo||"-")}</td>
-      <td><div class="row-actions"><button type="button" data-calc-action="detail" data-id="${h(c.id)}">詳細表示</button><button type="button" data-calc-action="reload" data-id="${h(c.id)}">フォームに再読込</button><button type="button" data-calc-action="reflect" data-id="${h(c.id)}">見積へ反映</button><button type="button" data-calc-action="delete" data-id="${h(c.id)}" class="danger-btn">削除</button></div></td>
+      <td><div class="row-actions"><button type="button" data-calc-action="detail" data-id="${h(c.id)}">詳細表示</button><button type="button" data-calc-action="reload" data-id="${h(c.id)}">フォームに再読込</button><button type="button" data-calc-action="reflect" data-id="${h(c.id)}">見積へ反映</button><button type="button" data-calc-action="print" data-id="${h(c.id)}">概算書出力</button><button type="button" data-calc-action="delete" data-id="${h(c.id)}" class="danger-btn">削除</button></div></td>
       </tr>`).join('')}</tbody></table>`;
     };
 
@@ -112,6 +180,8 @@
         fillForm(calc); app.showMessage('保存済みデータをフォームへ再読込しました。');
       } else if(action==='reflect'){
         await reflectToEstimate(calc);
+      } else if(action==='print'){
+        openPrintWindow(app,calc);
       } else if(action==='delete'){
         const ok=confirm('この保存済み算出データを削除しますか？'); if(!ok) return;
         const sb=app?.getSupabaseClient?.(); if(!sb) return;
