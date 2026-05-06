@@ -263,6 +263,17 @@ create table if not exists estimate_calculations (
   updated_at timestamptz default now()
 );
 
+alter table estimate_calculations enable row level security;
+
+drop policy if exists "estimate_calculations_own" on estimate_calculations;
+
+create policy "estimate_calculations_own"
+on estimate_calculations
+for all
+to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
 create index if not exists idx_estimate_calculations_user_id on estimate_calculations(user_id);
 create index if not exists idx_estimate_calculations_client_id on estimate_calculations(client_id);
 ```
