@@ -148,8 +148,20 @@
       run();
     };
 
+    const getReflectionInfo=(calc)=>{
+      const reflectedAt=calc?.reflected_at||null;
+      const reflectedEstimateId=calc?.reflected_estimate_id||null;
+      return { reflectedAt, reflectedEstimateId, isReflected: !!(reflectedAt||reflectedEstimateId) };
+    };
+
     const reflectToEstimate=async(calc)=>{
       const sb=app?.getSupabaseClient?.(); const u=app?.getCurrentUser?.(); if(!sb||!u)return;
+      const reflectionInfo=getReflectionInfo(calc);
+      if(reflectionInfo.isReflected){
+        const reflectedDate=reflectionInfo.reflectedAt?fmtDate(reflectionInfo.reflectedAt):'日時未記録';
+        const shouldContinue=confirm(`この概算見積はすでに見積へ反映済みです。（反映日: ${reflectedDate}）\n再反映しますか？`);
+        if(!shouldContinue) return false;
+      }
       const clients=app?.getClients?.()||[]; const selected=clients.find(c=>String(c.id)===String(calc.client_id||''));
       const customerName=(selected?.name||selected?.companyName||selected?.contactName||calc.project_name||'自動算出');
       const est={user_id:u.id,client_id:calc.client_id||null,customer_name:customerName,estimate_title:calc.project_name||'見積自動算出',estimate_date:new Date().toISOString().slice(0,10),status:'未回答',memo:calc.memo||null,subtotal:n(calc.taxable_subtotal)+n(calc.expense_amount),tax:n(calc.tax),total:n(calc.total)};
@@ -157,6 +169,10 @@
       const e=await sb.from('estimates').insert(est).select('id').single(); if(e.error){app.showMessage('見積登録に失敗しました。'+e.error.message,true);return false;}
       const items=[{item_name:'基本報酬',quantity:1,unit_price:n(calc.base_fee),amount:n(calc.base_fee),sort_order:1},{item_name:'加算',quantity:1,unit_price:n(calc.addon_fee),amount:n(calc.addon_fee),sort_order:2},{item_name:'値引き',quantity:1,unit_price:-n(calc.discount_amount),amount:-n(calc.discount_amount),sort_order:3},{item_name:'実費(非課税)',quantity:1,unit_price:n(calc.expense_amount),amount:n(calc.expense_amount),sort_order:4}].map(i=>({...i,user_id:u.id,estimate_id:e.data.id}));
       const ir=await sb.from('estimate_items').insert(items); if(ir.error){app.showMessage('見積明細登録に失敗しました。'+ir.error.message,true);return false;}
+      if(calc?.id){
+        const reflected=await sb.from('estimate_calculations').update({reflected_estimate_id:e.data.id,reflected_at:new Date().toISOString()}).eq('id',calc.id).eq('user_id',u.id);
+        if(reflected.error){app.showMessage('反映済み情報の保存に失敗しました。'+reflected.error.message,true);return false;}
+      }
       await app.reloadAllData();
       await loadSavedCalculations();
       renderSavedList();
@@ -209,7 +225,7 @@
       const calcs=sourceCalcs.slice().sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
       if(!calcs.length){savedList.innerHTML='<p class="meta">保存済みデータはありません。</p>'; return;}
       savedList.innerHTML=`<div class="saved-calc-list">${calcs.map(c=>`<article class="panel saved-calc-card">
-        <div class="saved-calc-header"><strong>${h(c.project_name||"-")}</strong> / <span>${h(c.work_type||"-")}</span> / <strong>${h(yen(c.total||0))}</strong></div>
+        <div class="saved-calc-header"><strong>${h(c.project_name||"-")}</strong> / <span>${h(c.work_type||"-")}</span> / <strong>${h(yen(c.total||0))}</strong> ${getReflectionInfo(c).isReflected?`<span class="status-badge">反映済み</span>`:''}</div>
         <div class="saved-calc-meta">作成日: ${h(fmtDate(c.created_at))} / 顧客名: ${h(c.client_name||c.customer_name||"-")} / 申請区分: ${h(c.application_type||"-")}</div>
         <div class="saved-calc-money">基本報酬: ${h(yen(c.base_fee||0))} / 加算: ${h(yen(c.addon_fee||0))} / 実費: ${h(yen(c.expense_amount||0))} / 消費税: ${h(yen(c.tax||0))}</div>
         <div class="saved-calc-note">メモ: ${h(c.memo||"-")}</div>
