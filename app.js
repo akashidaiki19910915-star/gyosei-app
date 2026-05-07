@@ -777,6 +777,16 @@ const PERMIT_SCENARIO_MASTER = {
 const PERMIT_COMMON_ADDITIONAL_TASKS = ["公式必要書類確認", "管轄提出先確認", "申請区分別の追加書類確認"];
 const WORK_TYPE_FIELD_SCHEMA = {
   default: [],
+  automobile: [
+    { name: "permitVehicleNumber", label: "車両番号", type: "text", placeholder: "例: 大阪500 あ 12-34" },
+    { name: "permitChassisNumber", label: "車台番号", type: "text", placeholder: "例: ABCD-1234567" },
+    { name: "permitVehicleUser", label: "使用者", type: "text", placeholder: "例: 山田 太郎" },
+    { name: "permitVehicleOwner", label: "所有者", type: "text", placeholder: "例: 株式会社サンプル" },
+    { name: "permitBaseLocation", label: "使用の本拠", type: "text", placeholder: "例: 大阪府大東市..." },
+    { name: "permitParkingLocation", label: "保管場所", type: "text", placeholder: "例: 大阪府大東市..." },
+    { name: "permitHasProxyLetter", label: "委任状有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },
+    { name: "permitHasVehicleInspection", label: "車検証有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },
+  ],
   construction: [
     { name: "permitCapitalAmount", label: "資本金（円）", type: "number", min: 0, placeholder: "例: 5000000", affectsEstimate: true, estimateUnit: 5000000, estimateIncrement: 5000 },
     { name: "permitBusinessTypes", label: "業種数", type: "number", min: 1, value: 1, affectsDocs: true, docThreshold: 3, doc: "業種ごとの専任技術者疎明資料" },
@@ -785,10 +795,14 @@ const WORK_TYPE_FIELD_SCHEMA = {
     { name: "permitOfficeCount", label: "事務所数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 1, estimateIncrement: 10000 },
   ],
   inheritance: [
+    { name: "permitDeceasedName", label: "被相続人", type: "text", placeholder: "例: 山田 花子" },
     { name: "permitHeirCount", label: "相続人想定人数", type: "number", min: 1, value: 1, affectsDocs: true, docThreshold: 3, doc: "相続関係説明図（詳細版）" },
+    { name: "permitKosekiCollectionStatus", label: "戸籍収集状況", type: "select", options: [{ value: "未着手", label: "未着手" }, { value: "収集中", label: "収集中" }, { value: "収集済", label: "収集済" }] },
+    { name: "permitHasInheritanceAgreement", label: "遺産分割協議書の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },
   ],
 };
 const SCENARIO_WORK_TYPE_CONFIG = [
+  { key: "automobile", scenarios: ["shakoshomei_standard", "kei_hokan_todokede", "jidousha_transfer", "jidousha_change"] },
   { key: "construction", scenarios: ["construction_corp", "construction_solo", "keiei_shinsa_bidding"] },
   { key: "takken", scenarios: ["takken_corp", "takken_solo"] },
   { key: "inheritance", scenarios: ["sozoku_initial", "isan_bunkatsu_prep", "kousei_yuigon_prep"] },
@@ -879,23 +893,56 @@ function renderWorkTypeFields() {
     const value = previous[field.name] ?? field.value ?? "";
     const min = Number.isFinite(Number(field.min)) ? ` min="${Number(field.min)}"` : "";
     const placeholder = field.placeholder ? ` placeholder="${escapeHtml(field.placeholder)}"` : "";
+    if (field.type === "select" && Array.isArray(field.options)) {
+      const options = field.options.map((option) => `<option value="${escapeHtml(String(option.value))}"${String(value) === String(option.value) ? " selected" : ""}>${escapeHtml(String(option.label))}</option>`).join("");
+      return `<label class="${field.fullWidth ? "full-width" : ""}">${escapeHtml(field.label)}<select name="${escapeHtml(field.name)}">${options}</select></label>`;
+    }
     return `<label class="${field.fullWidth ? "full-width" : ""}">${escapeHtml(field.label)}<input name="${escapeHtml(field.name)}" type="${escapeHtml(field.type || "text")}"${min} value="${escapeHtml(String(value))}"${placeholder} /></label>`;
   }).join("");
+  syncPermitBaseFieldsVisibility();
+}
+
+function getPermitBaseFieldConfig(scenarioKey) {
+  const workTypeKey = SCENARIO_WORK_TYPE_CONFIG.find((entry) => entry.scenarios.includes(scenarioKey))?.key || "default";
+  const common = ["permitApplicantType", "permitApplicationType", "permitJurisdictionPrefecture", "permitJurisdictionCity", "permitApplicantName", "permitOnlineApplication", "permitUrgency", "permitMemo"];
+  if (workTypeKey === "construction" || workTypeKey === "takken") return [...common, "permitOfficeAddress", "permitOfficerCount", "permitQualifiedCount"];
+  return common;
+}
+
+function syncPermitBaseFieldsVisibility() {
+  if (!permitHearingForm || !permitScenarioSelect) return;
+  const visibleFieldNames = new Set(getPermitBaseFieldConfig(String(permitScenarioSelect.value || "")));
+  const fieldNames = ["permitApplicantType", "permitApplicationType", "permitJurisdictionPrefecture", "permitJurisdictionCity", "permitApplicantName", "permitOfficeAddress", "permitOfficerCount", "permitQualifiedCount", "permitOnlineApplication", "permitUrgency", "permitMemo"];
+  fieldNames.forEach((name) => {
+    const field = permitHearingForm.elements.namedItem(name);
+    const label = field?.closest?.("label");
+    if (label) label.hidden = !visibleFieldNames.has(name);
+  });
 }
 
 function buildPermitSummary(params) {
   const cityPart = params.jurisdictionCity === "（未入力）" ? "" : ` ${params.jurisdictionCity}`;
-  return `${params.scenarioLabel} / ${params.applicantType} / 区分: ${params.applicationType} / 管轄: ${params.jurisdictionPrefecture}${cityPart} / 申請者: ${params.applicantName} / 所在地: ${params.officeAddress} / 役員: ${params.officerCount}名 / 有資格者: ${params.qualifiedCount}名 / 電子申請: ${params.online} / 急ぎ度: ${params.urgency} / 条件分岐追加: 書類${params.addedDocsCount}件・タスク${params.addedTasksCount}件`;
+  const dynamicSummary = Object.entries(params.dynamicAnswers || {})
+    .map(([key, value]) => `${key}: ${value || "（未入力）"}`)
+    .join(" / ");
+  const basic = `${params.scenarioLabel} / ${params.applicantType} / 区分: ${params.applicationType} / 管轄: ${params.jurisdictionPrefecture}${cityPart} / 申請者: ${params.applicantName} / 電子申請: ${params.online} / 急ぎ度: ${params.urgency}`;
+  const optional = [];
+  if (params.showOfficeFields) optional.push(`所在地: ${params.officeAddress}`, `役員: ${params.officerCount}名`, `有資格者: ${params.qualifiedCount}名`);
+  if (dynamicSummary) optional.push(dynamicSummary);
+  return `${basic}${optional.length ? ` / ${optional.join(" / ")}` : ""} / 条件分岐追加: 書類${params.addedDocsCount}件・タスク${params.addedTasksCount}件`;
 }
 
 function buildPermitMissingWarnings(params) {
   const warnings = [];
+  const showOfficeFields = Boolean(params.showOfficeFields);
   if (!params.applicantName || params.applicantName === "（未入力）") warnings.push("申請者名が未入力です。");
-  if (!params.officeAddress || params.officeAddress === "（未入力）") warnings.push("事業所所在地が未入力です。");
   if (!params.jurisdictionPrefecture || params.jurisdictionPrefecture === "（未入力）") warnings.push("管轄都道府県が未入力です。");
   if (!params.jurisdictionCity || params.jurisdictionCity === "（未入力）") warnings.push("管轄市区町村が未入力です。");
-  if (!Number.isFinite(params.officerCount) || Number(params.officerCount) <= 0) warnings.push("役員人数が未入力または0です。");
-  if (!Number.isFinite(params.qualifiedCount) || Number(params.qualifiedCount) <= 0) warnings.push("有資格者人数が未入力または0です。");
+  if (showOfficeFields) {
+    if (!params.officeAddress || params.officeAddress === "（未入力）") warnings.push("事業所所在地が未入力です。");
+    if (!Number.isFinite(params.officerCount) || Number(params.officerCount) <= 0) warnings.push("役員人数が未入力または0です。");
+    if (!Number.isFinite(params.qualifiedCount) || Number(params.qualifiedCount) <= 0) warnings.push("有資格者人数が未入力または0です。");
+  }
   return warnings;
 }
 
@@ -911,6 +958,7 @@ async function handlePermitHearingSubmit(event) {
   const scenarioKey = String(formData.get("permitScenario") || "construction_corp");
   const scenario = PERMIT_SCENARIO_MASTER[scenarioKey] || PERMIT_SCENARIO_MASTER.construction_corp;
   const workTypeSchema = resolveWorkTypeSchema(scenarioKey);
+  const showOfficeFields = getPermitBaseFieldConfig(scenarioKey).includes("permitOfficeAddress");
   const dynamicAnswers = workTypeSchema.reduce((acc, field) => {
     acc[field.name] = formData.get(field.name);
     return acc;
@@ -944,8 +992,13 @@ async function handlePermitHearingSubmit(event) {
     officeAddress,
     officerCount,
     qualifiedCount,
+    showOfficeFields,
     online,
     urgency,
+    dynamicAnswers: workTypeSchema.reduce((acc, field) => {
+      acc[field.label] = dynamicAnswers[field.name];
+      return acc;
+    }, {}),
     addedDocsCount: branchingResult.addedDocs.length,
     addedTasksCount: branchingResult.addedTasks.length,
   });
@@ -956,6 +1009,7 @@ async function handlePermitHearingSubmit(event) {
     jurisdictionCity,
     officerCount,
     qualifiedCount,
+    showOfficeFields,
   });
   renderPermitGeneratedResult({
     summary: generatedSummary,
@@ -1156,6 +1210,7 @@ function handleViewSavedPermitHearing(event, button) {
     officeAddress: hearing.office_address || "（未入力）",
     officerCount: Number(hearing.officer_count || 0),
     qualifiedCount: Number(hearing.qualified_person_count || 0),
+    showOfficeFields: getPermitBaseFieldConfig(String(answers.permitScenario || "")).includes("permitOfficeAddress"),
     online: hearing.online_application ? "希望する" : "希望しない",
     urgency: hearing.urgency || "通常",
     addedDocsCount: Number(answers.permitConditionalAddedDocsCount || 0),
@@ -1168,6 +1223,7 @@ function handleViewSavedPermitHearing(event, button) {
     jurisdictionCity: hearing.jurisdiction_city || "（未入力）",
     officerCount: Number(hearing.officer_count || 0),
     qualifiedCount: Number(hearing.qualified_person_count || 0),
+    showOfficeFields: getPermitBaseFieldConfig(String(answers.permitScenario || "")).includes("permitOfficeAddress"),
   });
   renderPermitGeneratedResult({ summary, docs, tasks, warnings: missingWarnings });
   restorePermitHearingFormValues(hearing);
@@ -1261,6 +1317,7 @@ async function handleOverwritePermitHearing() {
       jurisdictionCity: String(permitHearingForm.elements.namedItem("permitJurisdictionCity")?.value || "").trim() || "（未入力）",
       officerCount: Number(permitHearingForm.elements.namedItem("permitOfficerCount")?.value || 0),
       qualifiedCount: Number(permitHearingForm.elements.namedItem("permitQualifiedCount")?.value || 0),
+      showOfficeFields: getPermitBaseFieldConfig(String(permitHearingForm.elements.namedItem("permitScenario")?.value || "")).includes("permitOfficeAddress"),
     })
     : [];
   lastPermitGenerated.warnings = [...currentWarnings];
