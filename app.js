@@ -1168,43 +1168,45 @@ function resolvePermitEstimatePreset(hearing) {
   const qualifiedCount = Number(hearing?.qualified_person_count || 0);
   const urgency = String(hearing?.urgency || "通常");
   const docCount = Array.isArray(hearing?.generated_documents) ? hearing.generated_documents.length : 0;
-  const items = [];
-  const addItem = (name, amount) => { if (amount) items.push({ item_name: name, quantity: 1, unit_price: amount, amount, sort_order: items.length + 1 }); };
-  const expenseCandidates = [];
+  const taxableItems = [];
+  const expenseItems = [];
+  const addTaxableItem = (name, amount) => { if (amount) taxableItems.push({ item_name: name, quantity: 1, unit_price: amount, amount }); };
+  const addExpenseItem = (label, amount) => {
+    if (amount) expenseItems.push({ item_name: `実費候補（別途精算）: ${label}`, quantity: 1, unit_price: amount, amount });
+  };
   let baseFee = 50000;
   let addon = 0;
   if (category.includes("自動車") || category.includes("車庫証明")) {
     baseFee = category.includes("移転登録") ? 38000 : 28000;
     if (applicationType.includes("変更")) addon += 6000;
     if (dynamic.permitHasProxyLetter === "なし") addon += 4000;
-    expenseCandidates.push({ item_name: "実費候補: 証紙代・印紙代", amount: 3500 });
+    addExpenseItem("証紙代・印紙代", 3500);
   } else if (category.includes("建設業")) {
     baseFee = 120000;
     const businessTypes = Number(dynamic.permitBusinessTypes || 1);
     if (businessTypes > 1) addon += (businessTypes - 1) * 12000;
     if (officerCount > 4) addon += (officerCount - 4) * 3000;
     if (qualifiedCount > 1) addon += (qualifiedCount - 1) * 5000;
-    expenseCandidates.push({ item_name: "実費候補: 証明書取得・証紙代", amount: 20000 });
+    addExpenseItem("証明書取得・証紙代", 20000);
   } else if (category.includes("宅建")) {
     baseFee = 100000;
     const officeCount = Number(dynamic.permitOfficeCount || 1);
     if (officeCount > 1) addon += (officeCount - 1) * 12000;
     if (urgency === "急ぎ") addon += 10000;
-    expenseCandidates.push({ item_name: "実費候補: 免許申請手数料", amount: 33000 });
+    addExpenseItem("免許申請手数料", 33000);
   } else if (category.includes("相続") || category.includes("遺産")) {
     baseFee = 70000;
     const heirCount = Number(dynamic.permitHeirCount || 1);
     if (heirCount > 2) addon += (heirCount - 2) * 8000;
     if (dynamic.permitKosekiCollectionStatus === "未着手") addon += 12000;
-    expenseCandidates.push({ item_name: "実費候補: 戸籍・証明書取得費", amount: 15000 });
+    addExpenseItem("戸籍・証明書取得費", 15000);
   }
   addon += estimateAdjustments.reduce((sum, row) => sum + Number(row?.amount || 0), 0);
   if (urgency === "急ぎ") addon += 8000;
   if (docCount > 8) addon += (docCount - 8) * 1000;
-  addItem("基本報酬", baseFee);
-  addItem("加算報酬", addon);
-  expenseCandidates.forEach((expense) => addItem(expense.item_name, Number(expense.amount || 0)));
-  return items;
+  addTaxableItem("基本報酬", baseFee);
+  addTaxableItem("加算報酬", addon);
+  return { taxableItems, expenseItems };
 }
 
 async function handleReflectPermitHearingToEstimate(event, button) {
@@ -1215,12 +1217,19 @@ async function handleReflectPermitHearingToEstimate(event, button) {
   const linkedCase = state.cases.find((entry) => String(entry.id) === String(hearing.case_id || hearing.caseId || ""));
   const customerName = hearing.customer_name || linkedCase?.customer_name || linkedCase?.customerName || hearing.applicant_name || "顧客未設定";
   const estimateTitle = `${hearing.permit_category || "許認可"} / ${hearing.application_type || "新規"}`;
-  const rows = resolvePermitEstimatePreset(hearing);
+  const preset = resolvePermitEstimatePreset(hearing);
+  const taxableRows = Array.isArray(preset?.taxableItems) ? preset.taxableItems : [];
+  const expenseRows = Array.isArray(preset?.expenseItems) ? preset.expenseItems : [];
+  const rows = [...taxableRows, ...expenseRows];
   if (!rows.length) return showAppMessage("見積明細の自動生成に失敗しました。", true);
-  const subtotal = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const taxableSubtotal = taxableRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const expenseSubtotal = expenseRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const subtotal = taxableSubtotal + expenseSubtotal;
   const taxRate = getCurrentTaxRate();
-  const tax = Math.floor(subtotal * taxRate);
-  const total = subtotal + tax;
+  const tax = Math.floor(taxableSubtotal * taxRate);
+  const total = taxableSubtotal + tax + expenseSubtotal;
+  const expenseNotice = "実費・法定費用は申請先確認後に別途精算";
+  const mergedMemo = [String(hearing.memo || "").trim(), expenseNotice].filter(Boolean).join("\n");
   const estimatePayload = {
     user_id: currentUser.id,
     client_id: hearing.client_id || linkedCase?.client_id || linkedCase?.clientId || null,
@@ -1228,7 +1237,7 @@ async function handleReflectPermitHearingToEstimate(event, button) {
     estimate_title: estimateTitle,
     estimate_date: new Date().toISOString().slice(0, 10),
     status: "未回答",
-    memo: hearing.memo || null,
+    memo: mergedMemo || null,
     subtotal,
     tax,
     total,
