@@ -27,7 +27,16 @@
     const client=clients.find((c)=>String(c.id)===String(calc.client_id||""));
     return client?.name||client?.companyName||client?.contactName||calc.client_name||calc.customer_name||"-";
   }
-  async function waitForCurrentUser(app, maxMs = 5000) {
+  async function waitForGyoseiApp(maxMs = 10000) {
+    const start = Date.now();
+    while (Date.now() - start < maxMs) {
+      if (window.GyoseiApp) return window.GyoseiApp;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return window.GyoseiApp || null;
+  }
+
+  async function waitForCurrentUser(app, maxMs = 10000) {
     const start = Date.now();
     while (Date.now() - start < maxMs) {
       const u = app?.getCurrentUser?.();
@@ -105,7 +114,9 @@
     <div id="calc-result" class="panel"></div></form>
     <section class="panel" id="calc-saved-list-wrap"><h3>保存済み概算見積</h3><div id="calc-saved-list"></div></section>`;
 
-    const app=window.GyoseiApp; const form=root.querySelector('#estimate-calc-form'); const cs=form.elements.clientId;
+    const app=await waitForGyoseiApp();
+    if(!app) return;
+    const form=root.querySelector('#estimate-calc-form'); const cs=form.elements.clientId;
     const savedList=root.querySelector('#calc-saved-list');
     (app?.getClients?.()||[]).forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=c.name||c.companyName||c.contactName||'未設定';cs.appendChild(o)});
 
@@ -156,11 +167,26 @@
     let localEstimateCalculations=[];
     const loadSavedCalculations=async()=>{
       const sb=app?.getSupabaseClient?.();
+      if(!sb){
+        localEstimateCalculations=[];
+        console.log("LOAD ESTIMATE CALCULATIONS RESULT", { count: localEstimateCalculations.length, reason: "missing_supabase_client" });
+        return;
+      }
+
       const u=await waitForCurrentUser(app);
       console.log("LOAD ESTIMATE CALCULATIONS START", { hasClient: !!sb, userId: u?.id });
-      if(!sb||!u){localEstimateCalculations=[]; console.log("LOAD ESTIMATE CALCULATIONS RESULT", { count: localEstimateCalculations.length }); return;}
+      if(!u?.id){
+        localEstimateCalculations=[];
+        console.log("LOAD ESTIMATE CALCULATIONS RESULT", { count: localEstimateCalculations.length, reason: "missing_user_id" });
+        return;
+      }
+
       try {
-        const { data, error }=await sb.from('estimate_calculations').select('*').eq('user_id', u.id).order('created_at', { ascending: false });
+        const { data, error }=await sb
+          .from('estimate_calculations')
+          .select('*')
+          .eq('user_id', u.id)
+          .order('created_at', { ascending: false });
         if(error){throw error;}
         localEstimateCalculations=Array.isArray(data)?data:[];
         console.log("LOAD ESTIMATE CALCULATIONS RESULT", { count: localEstimateCalculations.length });
