@@ -116,6 +116,7 @@ const CLICK_ACTION_HANDLERS = {
   export_backup_json: handleExportBackupJson,
   apply_permit_documents: applyPermitDocumentsToCase,
   apply_permit_tasks: applyPermitTasksToCase,
+  reflect_permit_hearing_to_estimate: handleReflectPermitHearingToEstimate,
   view_saved_permit_hearing: handleViewSavedPermitHearing,
   delete_saved_permit_hearing: handleDeleteSavedPermitHearing,
   clear_permit_hearing_filters: clearPermitHearingFilters,
@@ -378,6 +379,7 @@ const permitPrintPreviewBtn = document.getElementById("permit-print-preview-btn"
 const permitExportCsvBtn = document.getElementById("permit-export-csv-btn");
 const permitApplyDocumentsBtn = document.getElementById("permit-apply-documents-btn");
 const permitApplyTasksBtn = document.getElementById("permit-apply-tasks-btn");
+const permitReflectEstimateBtn = document.getElementById("permit-reflect-estimate-btn");
 const permitOverwriteHearingBtn = document.getElementById("permit-overwrite-hearing-btn");
 const permitHearingsBody = document.getElementById("permit-hearings-body");
 const permitHearingsEmpty = document.getElementById("permit-hearings-empty");
@@ -574,6 +576,7 @@ function bindEvents() {
   if (permitExportCsvBtn) permitExportCsvBtn.dataset.action = "export_permit_hearing_csv";
   if (permitApplyDocumentsBtn) permitApplyDocumentsBtn.dataset.action = "apply_permit_documents";
   if (permitApplyTasksBtn) permitApplyTasksBtn.dataset.action = "apply_permit_tasks";
+  if (permitReflectEstimateBtn) permitReflectEstimateBtn.dataset.action = "reflect_permit_hearing_to_estimate";
   if (permitOverwriteHearingBtn) permitOverwriteHearingBtn.addEventListener("click", handleOverwritePermitHearing);
   workTemplateForm?.addEventListener("submit", handleWorkTemplateSubmit);
   console.log("SALE FORM FOUND", !!saleForm);
@@ -1153,6 +1156,91 @@ function handlePermitGeneratedListClick(event) {
     root.innerHTML = `<li>${targetType === "docs" ? "保存済み書類がありません。" : "保存済みタスクがありません。"}</li>`;
   }
   syncPermitGeneratedFromInputs();
+}
+
+function resolvePermitEstimatePreset(hearing) {
+  const category = String(hearing?.permit_category || "");
+  const applicationType = String(hearing?.application_type || "新規");
+  const answers = hearing?.answers && typeof hearing.answers === "object" ? hearing.answers : {};
+  const dynamic = answers.permitDynamicAnswers && typeof answers.permitDynamicAnswers === "object" ? answers.permitDynamicAnswers : {};
+  const estimateAdjustments = Array.isArray(answers.permitEstimateAdjustments) ? answers.permitEstimateAdjustments : (Array.isArray(hearing?.estimate_adjustments) ? hearing.estimate_adjustments : []);
+  const officerCount = Number(hearing?.officer_count || 0);
+  const qualifiedCount = Number(hearing?.qualified_person_count || 0);
+  const urgency = String(hearing?.urgency || "通常");
+  const docCount = Array.isArray(hearing?.generated_documents) ? hearing.generated_documents.length : 0;
+  const items = [];
+  const addItem = (name, amount) => { if (amount) items.push({ item_name: name, quantity: 1, unit_price: amount, amount, sort_order: items.length + 1 }); };
+  const expenseCandidates = [];
+  let baseFee = 50000;
+  let addon = 0;
+  if (category.includes("自動車") || category.includes("車庫証明")) {
+    baseFee = category.includes("移転登録") ? 38000 : 28000;
+    if (applicationType.includes("変更")) addon += 6000;
+    if (dynamic.permitHasProxyLetter === "なし") addon += 4000;
+    expenseCandidates.push({ item_name: "実費候補: 証紙代・印紙代", amount: 3500 });
+  } else if (category.includes("建設業")) {
+    baseFee = 120000;
+    const businessTypes = Number(dynamic.permitBusinessTypes || 1);
+    if (businessTypes > 1) addon += (businessTypes - 1) * 12000;
+    if (officerCount > 4) addon += (officerCount - 4) * 3000;
+    if (qualifiedCount > 1) addon += (qualifiedCount - 1) * 5000;
+    expenseCandidates.push({ item_name: "実費候補: 証明書取得・証紙代", amount: 20000 });
+  } else if (category.includes("宅建")) {
+    baseFee = 100000;
+    const officeCount = Number(dynamic.permitOfficeCount || 1);
+    if (officeCount > 1) addon += (officeCount - 1) * 12000;
+    if (urgency === "急ぎ") addon += 10000;
+    expenseCandidates.push({ item_name: "実費候補: 免許申請手数料", amount: 33000 });
+  } else if (category.includes("相続") || category.includes("遺産")) {
+    baseFee = 70000;
+    const heirCount = Number(dynamic.permitHeirCount || 1);
+    if (heirCount > 2) addon += (heirCount - 2) * 8000;
+    if (dynamic.permitKosekiCollectionStatus === "未着手") addon += 12000;
+    expenseCandidates.push({ item_name: "実費候補: 戸籍・証明書取得費", amount: 15000 });
+  }
+  addon += estimateAdjustments.reduce((sum, row) => sum + Number(row?.amount || 0), 0);
+  if (urgency === "急ぎ") addon += 8000;
+  if (docCount > 8) addon += (docCount - 8) * 1000;
+  addItem("基本報酬", baseFee);
+  addItem("加算報酬", addon);
+  expenseCandidates.forEach((expense) => addItem(expense.item_name, Number(expense.amount || 0)));
+  return items;
+}
+
+async function handleReflectPermitHearingToEstimate(event, button) {
+  const targetHearingId = button?.dataset?.permitHearingId || selectedPermitHearingId;
+  const hearing = (Array.isArray(state.permitHearings) ? state.permitHearings : []).find((entry) => String(entry.id) === String(targetHearingId))
+    || (lastPermitGenerated ? { ...lastPermitGenerated, answers: { permitDynamicAnswers: {} } } : null);
+  if (!currentUser || !hearing) return showAppMessage("反映対象のヒアリング結果がありません。", true);
+  const linkedCase = state.cases.find((entry) => String(entry.id) === String(hearing.case_id || hearing.caseId || ""));
+  const customerName = hearing.customer_name || linkedCase?.customer_name || linkedCase?.customerName || hearing.applicant_name || "顧客未設定";
+  const estimateTitle = `${hearing.permit_category || "許認可"} / ${hearing.application_type || "新規"}`;
+  const rows = resolvePermitEstimatePreset(hearing);
+  if (!rows.length) return showAppMessage("見積明細の自動生成に失敗しました。", true);
+  const subtotal = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const taxRate = getCurrentTaxRate();
+  const tax = Math.floor(subtotal * taxRate);
+  const total = subtotal + tax;
+  const estimatePayload = {
+    user_id: currentUser.id,
+    client_id: hearing.client_id || linkedCase?.client_id || linkedCase?.clientId || null,
+    customer_name: customerName,
+    estimate_title: estimateTitle,
+    estimate_date: new Date().toISOString().slice(0, 10),
+    status: "未回答",
+    memo: hearing.memo || null,
+    subtotal,
+    tax,
+    total,
+    estimate_number: await getNextMonthlyNumber("estimates", "estimate_number", "M", new Date().toISOString().slice(0, 10)),
+  };
+  const { data, error } = await sbClient.from("estimates").insert(estimatePayload).select("id").single();
+  if (error || !data?.id) return showAppMessage(`見積登録に失敗しました。${formatSupabaseError(error)}`, true);
+  const insertRows = rows.map((row, index) => ({ ...row, sort_order: index + 1, user_id: currentUser.id, estimate_id: data.id }));
+  const itemRes = await sbClient.from("estimate_items").insert(insertRows);
+  if (itemRes.error) return showAppMessage(`見積明細登録に失敗しました。${formatSupabaseError(itemRes.error)}`, true);
+  await reloadAllData();
+  showAppMessage("ヒアリング結果を見積へ反映しました。");
 }
 
 function openPermitPrintPreview() {
@@ -6373,6 +6461,7 @@ function renderPermitHearings() {
       <td>
         <div class="btn-inline-group">
           <button type="button" class="secondary-btn" data-action="view_saved_permit_hearing" data-permit-hearing-id="${entry.id}">表示</button>
+          <button type="button" class="secondary-btn" data-action="reflect_permit_hearing_to_estimate" data-permit-hearing-id="${entry.id}">見積へ反映</button>
           <button type="button" class="danger-btn" data-action="delete_saved_permit_hearing" data-permit-hearing-id="${entry.id}">削除</button>
         </div>
       </td>
