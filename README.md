@@ -288,6 +288,8 @@ alter table estimate_calculations add column if not exists total bigint default 
 alter table estimate_calculations add column if not exists expense_amount bigint default 0;
 alter table estimate_calculations add column if not exists discount_amount bigint default 0;
 alter table estimate_calculations add column if not exists addon_breakdown text;
+alter table estimate_calculations add column if not exists reflected_estimate_id uuid;
+alter table estimate_calculations add column if not exists reflected_at timestamptz;
 alter table estimate_calculations add column if not exists business_type text;
 alter table estimate_calculations add column if not exists jurisdiction_type text;
 alter table estimate_calculations add column if not exists applicant_type text;
@@ -465,7 +467,6 @@ for all
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 ```
-
 
 
 
