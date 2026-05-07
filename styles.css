@@ -1177,4 +1177,11 @@ input[type="number"] {
 .permit-edit-row input[type="text"] {
   flex: 1;
 }
+.permit-worktype-fields {
+  display: grid;
+  gap: 12px;
+}
+.permit-worktype-fields .full-width {
+  grid-column: 1 / -1;
+}
 .compact-list li { margin: 4px 0; }
