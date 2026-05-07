@@ -8116,27 +8116,41 @@ function downloadInvoiceWorkbook(invoiceData) {
 
 function buildEstimateDocumentFromEstimate(estimate) {
   const appSettings = getAppSettings();
-  const rows = state.estimateItems
+  const rawRows = state.estimateItems
     .filter((row) => row.estimateId === estimate.id)
     .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((row, index) => ({
-      no: index + 1,
-      itemName: row.itemName,
-      quantity: row.quantity,
-      unitPrice: row.unitPrice,
-      amount: row.amount,
+    .map((row) => ({
+      itemName: String(row.itemName || ""),
+      quantity: Number(row.quantity || 0) || 0,
+      unitPrice: Number(row.unitPrice || 0) || 0,
+      amount: Number(row.amount || 0) || 0,
     }));
-  if (!rows.length) {
-    rows.push({
-      no: 1,
-      itemName: estimate.estimateTitle || "見積内容",
-      quantity: 1,
-      unitPrice: estimate.subtotal ?? 0,
-      amount: estimate.subtotal ?? 0,
-    });
+
+  const baseRows = rawRows.filter((row) => row.amount > 0 && !row.itemName.includes("加算") && !row.itemName.includes("実費"));
+  const addonTotal = rawRows.filter((row) => row.itemName.includes("加算")).reduce((sum, row) => sum + row.amount, 0);
+  const expenseTotal = rawRows.filter((row) => row.itemName.includes("実費")).reduce((sum, row) => sum + row.amount, 0);
+  const discountTotal = rawRows.filter((row) => row.amount < 0 || row.itemName.includes("値引き")).reduce((sum, row) => sum + row.amount, 0);
+  const baseTotal = baseRows.reduce((sum, row) => sum + row.amount, 0);
+  const gyoseiReward = baseTotal + addonTotal + discountTotal;
+
+  const displayRows = [];
+  if (gyoseiReward !== 0) {
+    displayRows.push({ itemName: "行政書士報酬", quantity: 1, unitPrice: gyoseiReward, amount: gyoseiReward });
+  }
+  if (expenseTotal > 0) {
+    displayRows.push({ itemName: "実費・法定費用", quantity: 1, unitPrice: expenseTotal, amount: expenseTotal });
+  }
+  if (discountTotal < 0) {
+    displayRows.push({ itemName: "値引き", quantity: 1, unitPrice: discountTotal, amount: discountTotal });
+  }
+  if (!displayRows.length) {
+    displayRows.push({ itemName: estimate.estimateTitle || "見積内容", quantity: 1, unitPrice: estimate.subtotal ?? 0, amount: estimate.subtotal ?? 0 });
   }
 
   const estimateDate = estimate.estimateDate || toDateString(new Date());
+  const expenseNotice = "実費・法定費用は申請先確認後に別途精算";
+  const noteLines = [asTrimmedText(estimate.memo || "") || asTrimmedText(appSettings.estimateNote || "") || ""];
+  if (expenseTotal <= 0) noteLines.push(expenseNotice);
   return {
     customerName: estimate.customerName || "顧客名未設定",
     subject: estimate.estimateTitle || "見積内容",
@@ -8148,13 +8162,13 @@ function buildEstimateDocumentFromEstimate(estimate) {
     companyAddress: appSettings.address,
     companyPhone: appSettings.tel,
     companyEmail: appSettings.email,
-    details: rows,
+    details: displayRows.map((row, index) => ({ ...row, no: index + 1 })),
     subtotal: estimate.subtotal ?? 0,
     tax: estimate.tax ?? 0,
     total: estimate.total ?? 0,
     paymentTerms: `お支払い条件：請求書受領後${getDefaultInvoiceDueDays()}日以内に銀行振込`,
     taxRate: getCurrentTaxRate(),
-    note: estimate.memo || appSettings.estimateNote,
+    note: noteLines.filter(Boolean).join("\n"),
   };
 }
 
