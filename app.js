@@ -365,6 +365,7 @@ const caseDocumentsListWrap = document.getElementById("case-documents-list-wrap"
 const permitHearingForm = document.getElementById("permit-hearing-form");
 const permitCaseSelect = document.getElementById("permit-case-id");
 const permitScenarioSelect = document.getElementById("permit-scenario");
+const permitWorkTypeFields = document.getElementById("permit-worktype-fields");
 const permitResult = document.getElementById("permit-hearing-result");
 const permitSummary = document.getElementById("permit-summary");
 const permitWarningWrap = document.getElementById("permit-warning-wrap");
@@ -562,6 +563,7 @@ function bindEvents() {
   caseTaskForm?.addEventListener("submit", handleCaseTaskSubmit);
   caseDocumentForm?.addEventListener("submit", handleCaseDocumentSubmit);
   permitHearingForm?.addEventListener("submit", handlePermitHearingSubmit);
+  permitScenarioSelect?.addEventListener("change", renderWorkTypeFields);
   permitDocumentsList?.addEventListener("input", syncPermitGeneratedFromInputs);
   permitTasksList?.addEventListener("input", syncPermitGeneratedFromInputs);
   permitDocumentsList?.addEventListener("click", handlePermitGeneratedListClick);
@@ -773,6 +775,24 @@ const PERMIT_SCENARIO_MASTER = {
 };
 
 const PERMIT_COMMON_ADDITIONAL_TASKS = ["公式必要書類確認", "管轄提出先確認", "申請区分別の追加書類確認"];
+const WORK_TYPE_FIELD_SCHEMA = {
+  default: [],
+  construction: [
+    { name: "permitCapitalAmount", label: "資本金（円）", type: "number", min: 0, placeholder: "例: 5000000", affectsEstimate: true, estimateUnit: 5000000, estimateIncrement: 5000 },
+    { name: "permitBusinessTypes", label: "業種数", type: "number", min: 1, value: 1, affectsDocs: true, docThreshold: 3, doc: "業種ごとの専任技術者疎明資料" },
+  ],
+  takken: [
+    { name: "permitOfficeCount", label: "事務所数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 1, estimateIncrement: 10000 },
+  ],
+  inheritance: [
+    { name: "permitHeirCount", label: "相続人想定人数", type: "number", min: 1, value: 1, affectsDocs: true, docThreshold: 3, doc: "相続関係説明図（詳細版）" },
+  ],
+};
+const SCENARIO_WORK_TYPE_CONFIG = [
+  { key: "construction", scenarios: ["construction_corp", "construction_solo", "keiei_shinsa_bidding"] },
+  { key: "takken", scenarios: ["takken_corp", "takken_solo"] },
+  { key: "inheritance", scenarios: ["sozoku_initial", "isan_bunkatsu_prep", "kousei_yuigon_prep"] },
+];
 const PERMIT_TASK_RULES = [
   { matcher: (key) => ["zairyu_nintei", "zairyu_henko", "zairyu_koshin"].includes(key), tasks: ["在留資格別必要書類確認", "申請取次資格確認", "本人・所属機関・代理人の提出可否確認"] },
   { matcher: (key) => ["sozoku_initial", "isan_bunkatsu_prep", "kousei_yuigon_prep"].includes(key), tasks: ["紛争性の有無確認", "相続登記の司法書士連携要否確認", "相続税申告の税理士連携要否確認"] },
@@ -827,8 +847,40 @@ function buildPermitBranchingResult(baseDocs, baseTasks, conditions) {
   if (conditions.hasJurisdictionInput) {
     pushUnique(["管轄窓口確認"], addedTasks, taskSet, tasks);
   }
+  const estimateAdjustments = [];
+  const dynamicAnswers = conditions.dynamicAnswers && typeof conditions.dynamicAnswers === "object" ? conditions.dynamicAnswers : {};
+  (Array.isArray(conditions.dynamicSchema) ? conditions.dynamicSchema : []).forEach((field) => {
+    const raw = dynamicAnswers[field.name];
+    const numericValue = Number(raw || 0);
+    if (field.affectsDocs && Number.isFinite(numericValue) && numericValue >= Number(field.docThreshold || 0) && field.doc) {
+      pushUnique([field.doc], addedDocs, docSet, docs);
+    }
+    if (field.affectsEstimate && Number.isFinite(numericValue) && field.estimateIncrement) {
+      const unit = Math.max(1, Number(field.estimateUnit || 1));
+      const extraSteps = Math.max(0, Math.ceil(numericValue / unit) - 1);
+      const amount = extraSteps * Number(field.estimateIncrement || 0);
+      if (amount > 0) estimateAdjustments.push({ field: field.name, amount });
+    }
+  });
 
-  return { docs, tasks, addedDocs, addedTasks };
+  return { docs, tasks, addedDocs, addedTasks, estimateAdjustments };
+}
+
+function resolveWorkTypeSchema(scenarioKey) {
+  const config = SCENARIO_WORK_TYPE_CONFIG.find((entry) => entry.scenarios.includes(scenarioKey));
+  return WORK_TYPE_FIELD_SCHEMA[config?.key || "default"] || [];
+}
+
+function renderWorkTypeFields() {
+  if (!permitWorkTypeFields || !permitScenarioSelect) return;
+  const schema = resolveWorkTypeSchema(String(permitScenarioSelect.value || ""));
+  const previous = permitHearingForm ? Object.fromEntries(new FormData(permitHearingForm).entries()) : {};
+  permitWorkTypeFields.innerHTML = schema.map((field) => {
+    const value = previous[field.name] ?? field.value ?? "";
+    const min = Number.isFinite(Number(field.min)) ? ` min="${Number(field.min)}"` : "";
+    const placeholder = field.placeholder ? ` placeholder="${escapeHtml(field.placeholder)}"` : "";
+    return `<label class="${field.fullWidth ? "full-width" : ""}">${escapeHtml(field.label)}<input name="${escapeHtml(field.name)}" type="${escapeHtml(field.type || "text")}"${min} value="${escapeHtml(String(value))}"${placeholder} /></label>`;
+  }).join("");
 }
 
 function buildPermitSummary(params) {
@@ -858,6 +910,11 @@ async function handlePermitHearingSubmit(event) {
   }
   const scenarioKey = String(formData.get("permitScenario") || "construction_corp");
   const scenario = PERMIT_SCENARIO_MASTER[scenarioKey] || PERMIT_SCENARIO_MASTER.construction_corp;
+  const workTypeSchema = resolveWorkTypeSchema(scenarioKey);
+  const dynamicAnswers = workTypeSchema.reduce((acc, field) => {
+    acc[field.name] = formData.get(field.name);
+    return acc;
+  }, {});
   const applicantType = String(formData.get("permitApplicantType") || (scenarioKey.endsWith("_corp") ? "法人" : "個人"));
   const applicationType = String(formData.get("permitApplicationType") || "").trim() || "新規";
   const jurisdictionPrefecture = String(formData.get("permitJurisdictionPrefecture") || "").trim() || "大阪府";
@@ -874,6 +931,8 @@ async function handlePermitHearingSubmit(event) {
     onlineApplication: online === "希望する",
     urgency,
     hasJurisdictionInput: jurisdictionPrefecture !== "（未入力）" || jurisdictionCity !== "（未入力）",
+    dynamicSchema: workTypeSchema,
+    dynamicAnswers,
   });
   const generatedSummary = buildPermitSummary({
     scenarioLabel: scenario.label,
@@ -926,6 +985,7 @@ async function handlePermitHearingSubmit(event) {
     docs: [...branchingResult.docs],
     tasks: [...branchingResult.tasks],
     warnings: [...missingWarnings],
+    estimate_adjustments: [...(branchingResult.estimateAdjustments || [])],
     created_at: new Date().toISOString(),
   };
   selectedPermitHearingId = null;
@@ -946,7 +1006,7 @@ async function handlePermitHearingSubmit(event) {
     online_application: online === "希望する",
     urgency,
     memo: memo || null,
-    answers: { permitScenario: scenarioKey, permitApplicantType: applicantType, permitApplicationType: applicationType, permitJurisdictionPrefecture: jurisdictionPrefecture, permitJurisdictionCity: jurisdictionCity, permitApplicantName: applicantName, permitOfficeAddress: officeAddress, permitOfficerCount: officerCount, permitQualifiedCount: qualifiedCount, permitOnlineApplication: online === "希望する", permitUrgency: urgency, permitMemo: memo, permitConditionalAddedDocsCount: branchingResult.addedDocs.length, permitConditionalAddedTasksCount: branchingResult.addedTasks.length, permitMissingWarnings: missingWarnings },
+    answers: { permitScenario: scenarioKey, permitApplicantType: applicantType, permitApplicationType: applicationType, permitJurisdictionPrefecture: jurisdictionPrefecture, permitJurisdictionCity: jurisdictionCity, permitApplicantName: applicantName, permitOfficeAddress: officeAddress, permitOfficerCount: officerCount, permitQualifiedCount: qualifiedCount, permitOnlineApplication: online === "希望する", permitUrgency: urgency, permitMemo: memo, permitConditionalAddedDocsCount: branchingResult.addedDocs.length, permitConditionalAddedTasksCount: branchingResult.addedTasks.length, permitMissingWarnings: missingWarnings, permitDynamicAnswers: dynamicAnswers, permitEstimateAdjustments: branchingResult.estimateAdjustments },
     generated_documents: branchingResult.docs,
     generated_tasks: branchingResult.tasks,
     source_urls: [],
@@ -1149,6 +1209,7 @@ function restorePermitHearingFormValues(hearing) {
   };
   setValue("permitCaseId", hearing.case_id ?? hearing.caseId ?? "");
   setValue("permitScenario", answers.permitScenario || "construction_corp");
+  renderWorkTypeFields();
   setValue("permitApplicantType", hearing.applicant_type || answers.permitApplicantType || "法人");
   setValue("permitApplicationType", hearing.application_type || answers.permitApplicationType || "新規");
   setValue("permitJurisdictionPrefecture", hearing.jurisdiction_prefecture || answers.permitJurisdictionPrefecture || "大阪府");
@@ -1160,6 +1221,8 @@ function restorePermitHearingFormValues(hearing) {
   setValue("permitOnlineApplication", String(hearing.online_application ?? answers.permitOnlineApplication ?? false) === "true" ? "true" : "false");
   setValue("permitUrgency", hearing.urgency || answers.permitUrgency || "通常");
   setValue("permitMemo", hearing.memo || answers.permitMemo || "");
+  const dynamicAnswers = answers.permitDynamicAnswers && typeof answers.permitDynamicAnswers === "object" ? answers.permitDynamicAnswers : {};
+  Object.entries(dynamicAnswers).forEach(([name, value]) => setValue(name, value ?? ""));
 }
 
 async function handleDeleteSavedPermitHearing(event, button) {
@@ -6099,6 +6162,7 @@ function renderPermitScenarioOptions() {
   } else if (scenarioEntries.length > 0) {
     permitScenarioSelect.value = scenarioEntries[0][0];
   }
+  renderWorkTypeFields();
 }
 
 function renderCaseOptions() {
