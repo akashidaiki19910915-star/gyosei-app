@@ -708,7 +708,7 @@
               <div class="inline-actions">
                 <button type="button" class="secondary-btn" data-action="select_all_cases">全選択</button>
                 <button type="button" class="secondary-btn" data-action="clear_all_cases">全解除</button>
-                <button type="button" class="danger-btn" data-action="bulk_delete_cases">選択を削除</button>
+                <button type="button" class="danger-btn" data-action="bulk_delete_cases">選択を一括削除</button>
               </div>
               <p id="case-filter-count" class="filter-count">表示中 0件 / 全0件</p>
               <div id="case-empty" class="empty">案件はまだ登録されていません。</div>
@@ -1051,7 +1051,7 @@
               <div class="inline-actions">
                 <button type="button" class="secondary-btn" data-action="select_all_estimates">全選択</button>
                 <button type="button" class="secondary-btn" data-action="clear_all_estimates">全解除</button>
-                <button type="button" class="danger-btn" data-action="bulk_delete_estimates">選択を削除</button>
+                <button type="button" class="danger-btn" data-action="bulk_delete_estimates">選択を一括削除</button>
               </div>
               <ul id="estimate-list" class="item-list estimate-list-grid"></ul>
             </section>
@@ -1115,7 +1115,12 @@
                 </label>
                 <button id="sales-filter-clear-btn" type="button" class="secondary-btn">条件クリア</button>
               </div>
-              <p id="sales-filter-count" class="filter-count">表示中 0件 / 全0件</p>
+              <p id="sales-filter-count" class="filter-count">表示中 0件 / 全0件 / 選択 0件</p>
+              <div class="inline-actions">
+                <button type="button" class="secondary-btn" data-action="select_all_sales">全選択</button>
+                <button type="button" class="secondary-btn" data-action="clear_all_sales">全解除</button>
+                <button type="button" class="danger-btn" data-action="bulk_delete_sales">選択を削除</button>
+              </div>
               <div id="sales-empty" class="empty">売上データはまだありません。</div>
               <div id="sales-list-wrap" class="table-wrap" hidden>
                 <table>
@@ -1215,7 +1220,12 @@
                 </label>
                 <button id="expenses-filter-clear-btn" type="button" class="secondary-btn">条件クリア</button>
               </div>
-              <p id="expenses-filter-count" class="filter-count">表示中 0件 / 全0件</p>
+              <p id="expenses-filter-count" class="filter-count">表示中 0件 / 全0件 / 選択 0件</p>
+              <div class="inline-actions">
+                <button type="button" class="secondary-btn" data-action="select_all_expenses">全選択</button>
+                <button type="button" class="secondary-btn" data-action="clear_all_expenses">全解除</button>
+                <button type="button" class="danger-btn" data-action="bulk_delete_expenses">選択を削除</button>
+              </div>
               <div id="expenses-empty" class="empty">経費データはまだありません。</div>
               <ul id="expenses-list" class="item-list"></ul>
             </section>
@@ -1251,6 +1261,11 @@
 
             <section class="panel subtab-panel" data-parent-tab="expenses" data-subtab="fixed" hidden>
               <h2>固定費一覧</h2>
+              <div class="inline-actions">
+                <button type="button" class="secondary-btn" data-action="select_all_fixed_expenses">全選択</button>
+                <button type="button" class="secondary-btn" data-action="clear_all_fixed_expenses">全解除</button>
+                <button type="button" class="danger-btn" data-action="bulk_delete_fixed_expenses">選択を削除</button>
+              </div>
               <div id="fixed-expenses-empty" class="empty">固定費データはまだありません。</div>
               <ul id="fixed-expenses-list" class="item-list"></ul>
             </section>
@@ -1358,7 +1373,12 @@
                 </label>
                 <button id="daily-report-filter-clear-btn" type="button" class="secondary-btn">条件クリア</button>
               </div>
-              <p id="daily-report-filter-count" class="filter-count">表示中 0件 / 全0件</p>
+              <p id="daily-report-filter-count" class="filter-count">表示中 0件 / 全0件 / 選択 0件</p>
+              <div class="inline-actions">
+                <button type="button" class="secondary-btn" data-action="select_all_daily_reports">全選択</button>
+                <button type="button" class="secondary-btn" data-action="clear_all_daily_reports">全解除</button>
+                <button type="button" class="danger-btn" data-action="bulk_delete_daily_reports">選択を削除</button>
+              </div>
               <div id="daily-reports-empty" class="empty">日報データはまだありません。</div>
               <div id="daily-reports-list-wrap" class="daily-reports-cards" hidden>
                 <div id="daily-reports-body" class="daily-reports-grid"></div>

@@ -91,6 +91,7 @@ const state = {
   selectedSaleIds: [],
   selectedExpenseIds: [],
   selectedDailyReportIds: [],
+  selectedFixedExpenseIds: [],
 };
 const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
 
@@ -225,6 +226,10 @@ const CLICK_ACTION_HANDLERS = {
   select_all_expenses: ()=>{ setAllSelections('selectedExpenseIds', state.expenses||[], true); renderExpenses(); },
   clear_all_expenses: ()=>{ setAllSelections('selectedExpenseIds', state.expenses||[], false); renderExpenses(); },
   bulk_delete_expenses: ()=>handleGenericBulkDelete({label:'経費', table:'expenses', stateKey:'expenses', selectionKey:'selectedExpenseIds', render:renderExpenses}),
+  select_fixed_expense: (e,b)=>{const id=b?.dataset?.fixedExpenseId; if(!id)return; toggleSelectedId('selectedFixedExpenseIds',id); renderFixedExpenses();},
+  select_all_fixed_expenses: ()=>{ setAllSelections('selectedFixedExpenseIds', state.fixedExpenses||[], true); renderFixedExpenses(); },
+  clear_all_fixed_expenses: ()=>{ setAllSelections('selectedFixedExpenseIds', state.fixedExpenses||[], false); renderFixedExpenses(); },
+  bulk_delete_fixed_expenses: ()=>handleGenericBulkDelete({label:'固定費', table:'fixed_expenses', stateKey:'fixedExpenses', selectionKey:'selectedFixedExpenseIds', render:renderFixedExpenses}),
   select_daily_report: (e,b)=>{const id=b?.dataset?.dailyReportId; if(!id)return; toggleSelectedId('selectedDailyReportIds',id); renderDailyReports();},
   select_all_daily_reports: ()=>{ setAllSelections('selectedDailyReportIds', state.dailyReports||[], true); renderDailyReports(); },
   clear_all_daily_reports: ()=>{ setAllSelections('selectedDailyReportIds', state.dailyReports||[], false); renderDailyReports(); },
@@ -6677,7 +6682,7 @@ function renderPermitHearings() {
   permitHearingsEmpty.hidden = rows.length > 0;
   permitHearingsListWrap.hidden = rows.length === 0;
   if (permitHearingFilterCount) {
-    permitHearingFilterCount.textContent = `表示中 ${rows.length}件 / 全${allRows.length}件`;
+    permitHearingFilterCount.textContent = `表示中 ${rows.length}件 / 全${allRows.length}件 / 選択 ${getSelectedIdsByKey('selectedPermitHearingIds').length}件`;
   }
   rows.forEach((entry) => {
     const linkedCase = state.cases.find((row) => row.id === (entry.case_id ?? entry.caseId));
@@ -6799,7 +6804,7 @@ function renderClients() {
         <p class="meta">紹介元: ${escapeHtml(client.referralSource || "未設定")} / メモ: ${escapeHtml(truncateText(client.memo || "未設定", 60))}</p>
         <p class="meta">最終対応日: ${lastInteraction ? formatDate(lastInteraction) : "未設定"} / 次回対応日: ${nextInteraction ? formatDate(nextInteraction) : "未設定"} / 対応履歴件数: ${related.length}件</p>
       </div>
-      <div class="row-actions"><button type="button" class="secondary-btn" data-action="select_client" data-client-id="${client.id}">${new Set(getSelectedIdsByKey('selectedClientIds')).has(String(client.id))?"☑":"☐"}</button><button type="button" class="secondary-btn edit-client-btn" data-action="edit_client" data-list-action="edit_client">編集</button><button type="button" class="danger-btn delete-client-btn" data-action="delete_client" data-list-action="delete_client">削除</button></div>
+      <div class="row-actions"><button type="button" class="secondary-btn card-select-btn" data-action="select_client" data-client-id="${client.id}">${new Set(getSelectedIdsByKey('selectedClientIds')).has(String(client.id))?"☑":"☐"}</button><button type="button" class="secondary-btn edit-client-btn" data-action="edit_client" data-list-action="edit_client">編集</button><button type="button" class="danger-btn delete-client-btn" data-action="delete_client" data-list-action="delete_client">削除</button></div>
     `;
     clientsList.appendChild(li);
   });
@@ -6875,6 +6880,7 @@ function renderDailyReports() {
           <p class="daily-report-card-case">対応種別: ${escapeHtml(entry.interactionType || "作業")}</p>
         </div>
         <div class="daily-report-card-actions">
+          <button type="button" class="secondary-btn card-select-btn" data-action="select_daily_report" data-daily-report-id="${entry.id}">${new Set(getSelectedIdsByKey('selectedDailyReportIds')).has(String(entry.id))?"☑":"☐"}</button>
           <button type="button" class="secondary-btn edit-daily-report-btn" data-action="edit_daily_report" data-list-action="edit_daily_report">編集</button>
           <button type="button" class="danger-btn delete-daily-report-btn" data-action="delete_daily_report" data-list-action="delete_daily_report">削除</button>
         </div>
@@ -6912,7 +6918,7 @@ function renderDailyReports() {
     : "条件に一致する日報はありません。";
 
   if (dailyReportFilterCount) {
-    dailyReportFilterCount.textContent = `表示中 ${filtered.length}件 / 全${sorted.length}件`;
+    dailyReportFilterCount.textContent = `表示中 ${filtered.length}件 / 全${sorted.length}件 / 選択 ${getSelectedIdsByKey('selectedDailyReportIds').length}件`;
   }
 
   const summary = buildDailyReportSummary();
@@ -7221,7 +7227,7 @@ function renderEstimates() {
       </div>
       <div class="row-actions estimate-card-actions">
         <button type="button" class="secondary-btn estimate-edit-btn" data-action="edit_estimate" data-list-action="edit_estimate">編集</button>
-        <button type="button" class="secondary-btn" data-action="select_estimate" data-estimate-id="${entry.id}">${new Set(getSelectedIdsByKey('selectedEstimateIds')).has(String(entry.id))?"☑":"☐"}</button><button type="button" class="danger-btn estimate-delete-btn" data-action="delete_estimate" data-list-action="delete_estimate">削除</button>
+        <button type="button" class="secondary-btn card-select-btn" data-action="select_estimate" data-estimate-id="${entry.id}">${new Set(getSelectedIdsByKey('selectedEstimateIds')).has(String(entry.id))?"☑":"☐"}</button><button type="button" class="danger-btn estimate-delete-btn" data-action="delete_estimate" data-list-action="delete_estimate">削除</button>
         <button type="button" class="secondary-btn create-case-btn" data-action="create_case_from_estimate" data-list-action="create_case_from_estimate" ${isCaseCreated ? "disabled" : ""}>${isCaseCreated ? "案件化済み" : "案件化"}</button>
         <button type="button" class="secondary-btn estimate-estimate-print-btn" data-action="print_estimate" data-list-action="print_estimate">見積書出力</button>
         <button type="button" class="secondary-btn estimate-print-btn" data-action="print_invoice_from_estimate" data-list-action="print_invoice_from_estimate">請求書出力</button>
@@ -7607,7 +7613,7 @@ function renderCases() {
     if (rowActions && !rowActions.querySelector(".case-print-btn")) {
       const selectBtn = document.createElement("button");
       selectBtn.type = "button";
-      selectBtn.className = "secondary-btn";
+      selectBtn.className = "secondary-btn card-select-btn";
       selectBtn.dataset.action = "select_case";
       selectBtn.dataset.caseId = entry.id;
       selectBtn.textContent = new Set(getSelectedIdsByKey("selectedCaseIds")).has(String(entry.id)) ? "☑" : "☐";
@@ -7650,7 +7656,7 @@ function renderCases() {
   });
 
   if (caseFilterCount) {
-    caseFilterCount.textContent = `表示中 ${filteredCases.length}件 / 全${sorted.length}件`;
+    caseFilterCount.textContent = `表示中 ${filteredCases.length}件 / 全${sorted.length}件 / 選択 ${getSelectedIdsByKey('selectedCaseIds').length}件`;
   }
   caseEmpty.hidden = filteredCases.length > 0;
   if (!filteredCases.length && (state.caseStatusFilter !== "all" || state.caseSearchQuery || state.caseDeadlineFilter !== "all")) {
@@ -7815,7 +7821,7 @@ function renderSales() {
   });
 
   if (salesFilterCount) {
-    salesFilterCount.textContent = `表示中 ${filteredSales.length}件 / 全${sorted.length}件`;
+    salesFilterCount.textContent = `表示中 ${filteredSales.length}件 / 全${sorted.length}件 / 選択 ${getSelectedIdsByKey('selectedSaleIds').length}件`;
   }
   salesListWrap.hidden = filteredSales.length === 0;
   salesEmpty.hidden = filteredSales.length > 0;
@@ -7845,11 +7851,21 @@ function renderExpenses() {
     item.dataset.id = expense.id;
     title.textContent = `日付: ${formatDate(expense.date)}｜内容: ${expense.content}｜金額: ${formatCurrency(expense.amount)}`;
     meta.innerHTML = `支払先: ${escapeHtml(payeeLabel)} / 支払方法: ${escapeHtml(paymentMethodLabel)} / 紐付け案件: ${escapeHtml(expense.caseId ? resolveCaseName(expense.caseId) : "なし")}${expense.receiptUrl ? ` / <a href="${escapeHtml(expense.receiptUrl)}" target="_blank" rel="noopener noreferrer">領収書を開く</a>` : ""}`;
+    const rowActions = node.querySelector(".row-actions");
+    if (rowActions && !rowActions.querySelector(".card-select-btn")) {
+      const selectBtn = document.createElement("button");
+      selectBtn.type = "button";
+      selectBtn.className = "secondary-btn card-select-btn";
+      selectBtn.dataset.action = "select_expense";
+      selectBtn.dataset.expenseId = expense.id;
+      selectBtn.textContent = new Set(getSelectedIdsByKey("selectedExpenseIds")).has(String(expense.id)) ? "☑" : "☐";
+      rowActions.prepend(selectBtn);
+    }
     expensesList.appendChild(node);
   });
 
   if (expensesFilterCount) {
-    expensesFilterCount.textContent = `表示中 ${filteredExpenses.length}件 / 全${sorted.length}件`;
+    expensesFilterCount.textContent = `表示中 ${filteredExpenses.length}件 / 全${sorted.length}件 / 選択 ${getSelectedIdsByKey('selectedExpenseIds').length}件`;
   }
   expensesEmpty.hidden = filteredExpenses.length > 0;
   expensesEmpty.textContent = filteredExpenses.length || !state.expensesSearchQuery
@@ -7873,6 +7889,16 @@ function renderFixedExpenses() {
     title.textContent = `${entry.content}｜${formatCurrency(entry.amount)}`;
     meta.textContent = `毎月${entry.dayOfMonth}日 / 開始日: ${formatDate(entry.startDate)} / 状態: ${entry.active ? "有効" : "無効"}`;
     toggleBtn.textContent = entry.active ? "無効にする" : "有効にする";
+    const rowActions = node.querySelector(".row-actions");
+    if (rowActions && !rowActions.querySelector(".card-select-btn")) {
+      const selectBtn = document.createElement("button");
+      selectBtn.type = "button";
+      selectBtn.className = "secondary-btn card-select-btn";
+      selectBtn.dataset.action = "select_fixed_expense";
+      selectBtn.dataset.fixedExpenseId = entry.id;
+      selectBtn.textContent = new Set(getSelectedIdsByKey("selectedFixedExpenseIds")).has(String(entry.id)) ? "☑" : "☐";
+      rowActions.prepend(selectBtn);
+    }
     fixedExpensesList.appendChild(node);
   });
 
