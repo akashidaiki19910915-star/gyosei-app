@@ -803,11 +803,37 @@ const WORK_TYPE_FIELD_SCHEMA = {
     { name: "permitKosekiCollectionStatus", label: "戸籍収集状況", type: "select", options: [{ value: "未着手", label: "未着手" }, { value: "収集中", label: "収集中" }, { value: "収集済", label: "収集済" }] },
     { name: "permitHasInheritanceAgreement", label: "遺産分割協議書の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },
   ],
+  shakoshomei: [
+    { name: "permitVehicleCount", label: "対象車両台数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 1, estimateIncrement: 4000, affectsDocs: true, docThreshold: 2, doc: "車両ごとの保管場所図面" },
+    { name: "permitParkingType", label: "保管場所区分", type: "select", options: [{ value: "自己所有", label: "自己所有" }, { value: "賃貸", label: "賃貸" }, { value: "親族所有", label: "親族所有" }] },
+  ],
+  company_establishment: [
+    { name: "permitFounderCount", label: "発起人/社員数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 1, estimateIncrement: 5000, affectsDocs: true, docThreshold: 2, doc: "発起人全員の本人確認資料" },
+    { name: "permitDirectorsCount", label: "役員予定者数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 2, estimateIncrement: 5000 },
+    { name: "permitNeedNotary", label: "公証人認証", type: "select", options: [{ value: "あり", label: "あり（株式会社）" }, { value: "なし", label: "なし（合同会社）" }] },
+  ],
+  startup_finance: [
+    { name: "permitLoanAmount", label: "希望融資額（万円）", type: "number", min: 100, value: 500, affectsEstimate: true, estimateUnit: 500, estimateIncrement: 10000 },
+    { name: "permitInterviewSupport", label: "面談同席支援", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },
+  ],
+  sangyo_unpan: [
+    { name: "permitVehicleUnits", label: "運搬車両台数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 1, estimateIncrement: 7000, affectsDocs: true, docThreshold: 3, doc: "車両別写真・車検証写し一式" },
+    { name: "permitPrefectureCount", label: "収集運搬先都道府県数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 1, estimateIncrement: 12000 },
+  ],
+  zairyu: [
+    { name: "permitTargetPersons", label: "対象人数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 1, estimateIncrement: 15000, affectsDocs: true, docThreshold: 2, doc: "対象者ごとの身分関係資料一式" },
+    { name: "permitSponsorType", label: "受入機関区分", type: "select", options: [{ value: "法人", label: "法人" }, { value: "個人", label: "個人事業主" }, { value: "なし", label: "該当なし" }] },
+  ],
 };
 const SCENARIO_WORK_TYPE_CONFIG = [
-  { key: "automobile", scenarios: ["shakoshomei_standard", "kei_hokan_todokede", "jidousha_transfer", "jidousha_change"] },
+  { key: "automobile", scenarios: ["kei_hokan_todokede", "jidousha_transfer", "jidousha_change"] },
+  { key: "shakoshomei", scenarios: ["shakoshomei_standard"] },
   { key: "construction", scenarios: ["construction_corp", "construction_solo", "keiei_shinsa_bidding"] },
   { key: "takken", scenarios: ["takken_corp", "takken_solo"] },
+  { key: "company_establishment", scenarios: ["kk_teikan_ninsho", "gk_teikan_check"] },
+  { key: "startup_finance", scenarios: ["startup_finance_hearing"] },
+  { key: "sangyo_unpan", scenarios: ["sangyo_unpan_new"] },
+  { key: "zairyu", scenarios: ["zairyu_nintei", "zairyu_henko", "zairyu_koshin"] },
   { key: "inheritance", scenarios: ["sozoku_initial", "isan_bunkatsu_prep", "kousei_yuigon_prep"] },
 ];
 const PERMIT_TASK_RULES = [
