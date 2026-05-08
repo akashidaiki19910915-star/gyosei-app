@@ -1369,11 +1369,17 @@ async function handleReflectPermitHearingToEstimate(event, button) {
     estimate_number: await getNextMonthlyNumber("estimates", "estimate_number", "M", new Date().toISOString().slice(0, 10)),
     estimate_source: "permit_hearing",
   };
-  const { data, error } = await sbClient.from("estimates").insert(estimatePayload).select("id").single();
+  const { data, error } = await sbClient.from("estimates").insert(estimatePayload).select("*").single();
   if (error || !data?.id) return showAppMessage(`見積登録に失敗しました。${formatSupabaseError(error)}`, true);
   const insertRows = rows.map((row, index) => ({ ...row, sort_order: index + 1, user_id: currentUser.id, estimate_id: data.id }));
-  const itemRes = await sbClient.from("estimate_items").insert(insertRows);
+  const itemRes = await sbClient.from("estimate_items").insert(insertRows).select("*");
   if (itemRes.error) return showAppMessage(`見積明細登録に失敗しました。${formatSupabaseError(itemRes.error)}`, true);
+  addEstimateToState(mapEstimateFromDb(data));
+  addEstimateItemsToState((itemRes.data || []).map(mapEstimateItemFromDb));
+  const reflectedAt = new Date().toISOString();
+  const reflectedRes = await sbClient.from("permit_hearings").update({ reflected_estimate_id: data.id, reflected_at: reflectedAt }).eq("id", hearing.id).eq("user_id", currentUser.id);
+  if (reflectedRes.error) return showAppMessage(`ヒアリング反映状態の更新に失敗しました。${formatSupabaseError(reflectedRes.error)}`, true);
+  markPermitHearingAsReflected(hearing.id, data.id, reflectedAt);
   await refreshEstimateListData();
   renderAfterDataChanged();
   safeRender("estimates", renderEstimates);
@@ -6606,6 +6612,8 @@ function renderPermitHearings() {
   rows.forEach((entry) => {
     const linkedCase = state.cases.find((row) => row.id === (entry.case_id ?? entry.caseId));
     const caseName = linkedCase?.caseName ?? linkedCase?.case_name ?? "案件不明";
+    const isReflected = Boolean(entry.reflected_estimate_id || entry.reflected_at);
+    const reflectedText = entry.reflected_at ? `反映済み (${formatDate(entry.reflected_at)})` : "反映済み";
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${formatDate(entry.created_at || entry.createdAt)}</td>
@@ -6614,9 +6622,10 @@ function renderPermitHearings() {
       <td>${escapeHtml(entry.permit_category || "未設定")}</td>
       <td>${escapeHtml(entry.urgency || "通常")}</td>
       <td>
+        ${isReflected ? `<div class="meta">✅ ${escapeHtml(reflectedText)}</div>` : ""}
         <div class="btn-inline-group">
           <button type="button" class="secondary-btn" data-action="view_saved_permit_hearing" data-permit-hearing-id="${entry.id}">表示</button>
-          <button type="button" class="secondary-btn" data-action="reflect_permit_hearing_to_estimate" data-permit-hearing-id="${entry.id}">見積へ反映</button>
+          <button type="button" class="secondary-btn" data-action="reflect_permit_hearing_to_estimate" data-permit-hearing-id="${entry.id}">${isReflected ? "再反映" : "見積へ反映"}</button>
           <button type="button" class="danger-btn" data-action="delete_saved_permit_hearing" data-permit-hearing-id="${entry.id}">削除</button>
         </div>
       </td>
@@ -7065,10 +7074,11 @@ async function handleEstimateSubmit(event) {
         if (oldItemsDeleteRes.error) throw oldItemsDeleteRes.error;
       } else {
         payload.estimate_number = await getNextMonthlyNumber("estimates", "estimate_number", "M", estimateDate);
-        const res = await sbClient.from("estimates").insert(payload).select("id").single();
+        const res = await sbClient.from("estimates").insert(payload).select("*").single();
         if (res.error) throw res.error;
         if (!res.data?.id) throw new Error("登録結果を取得できませんでした。");
         estimateId = res.data.id;
+        addEstimateToState(mapEstimateFromDb(res.data));
       }
       if (items.length) {
         const { data, error } = await sbClient.from("estimate_items").insert(items.map((item) => ({
@@ -7079,10 +7089,12 @@ async function handleEstimateSubmit(event) {
           unit_price: item.unitPrice,
           amount: item.amount,
           sort_order: item.sortOrder,
-        }))).select("id");
+        }))).select("*");
         if (error) throw error;
         if (!data) throw new Error("明細登録結果を取得できませんでした。");
+        addEstimateItemsToState(data.map(mapEstimateItemFromDb));
       }
+      safeRender("estimates", renderEstimates);
       if (payload.status === "受注") await ensureCaseFromEstimate(estimateId);
       console.log("DB DONE", taskName, estimateId);
       return { estimateId, isUpdate };
@@ -7105,7 +7117,7 @@ function renderEstimates() {
   estimateList.innerHTML = "";
   const filtered = state.estimates
     .slice()
-    .sort((a, b) => toSortTimestamp(b.estimateDate) - toSortTimestamp(a.estimateDate))
+    .sort(compareEstimatesByCreatedOrDateDesc)
     .filter((entry) => {
       if (state.estimateCustomerQuery && !String(entry.customerName || "").toLowerCase().includes(state.estimateCustomerQuery)) return false;
       if (state.estimateTitleQuery && !String(entry.estimateTitle || "").toLowerCase().includes(state.estimateTitleQuery)) return false;
@@ -7155,6 +7167,35 @@ function renderEstimates() {
     estimateList.appendChild(li);
   });
   estimateEmpty.hidden = filtered.length > 0;
+}
+
+function compareEstimatesByCreatedOrDateDesc(a, b) {
+  const createdDiff = toSortTimestamp(b.createdAt || b.created_at) - toSortTimestamp(a.createdAt || a.created_at);
+  if (createdDiff !== 0) return createdDiff;
+  return toSortTimestamp(b.estimateDate || b.estimate_date) - toSortTimestamp(a.estimateDate || a.estimate_date);
+}
+
+function addEstimateToState(estimate) {
+  if (!estimate || !estimate.id) return;
+  const next = Array.isArray(state.estimates) ? state.estimates.slice() : [];
+  next.unshift(estimate);
+  state.estimates = next
+    .filter((entry, index, self) => entry?.id && self.findIndex((x) => x.id === entry.id) === index)
+    .sort(compareEstimatesByCreatedOrDateDesc);
+}
+
+function addEstimateItemsToState(items) {
+  if (!Array.isArray(items) || !items.length) return;
+  const next = Array.isArray(state.estimateItems) ? state.estimateItems.slice() : [];
+  next.push(...items.filter((item) => item?.id));
+  state.estimateItems = next.filter((entry, index, self) => self.findIndex((x) => x.id === entry.id) === index);
+}
+
+function markPermitHearingAsReflected(hearingId, estimateId, reflectedAt) {
+  state.permitHearings = (Array.isArray(state.permitHearings) ? state.permitHearings : []).map((entry) => {
+    if (String(entry.id) !== String(hearingId)) return entry;
+    return { ...entry, reflected_estimate_id: estimateId, reflected_at: reflectedAt };
+  });
 }
 
 
@@ -10639,6 +10680,15 @@ window.GyoseiApp = {
   },
   refreshEstimateListData: async () => {
     await refreshEstimateListData();
+  },
+  addEstimateToState: (estimateRow) => {
+    addEstimateToState(mapEstimateFromDb(estimateRow));
+  },
+  addEstimateItemsToState: (itemRows) => {
+    addEstimateItemsToState((Array.isArray(itemRows) ? itemRows : []).map(mapEstimateItemFromDb));
+  },
+  renderEstimatesNow: () => {
+    safeRender("estimates", renderEstimates);
   },
   showMessage: (text, isError = false) => showAppMessage(text, isError),
 };
