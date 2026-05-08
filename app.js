@@ -1374,8 +1374,9 @@ async function handleReflectPermitHearingToEstimate(event, button) {
   const insertRows = rows.map((row, index) => ({ ...row, sort_order: index + 1, user_id: currentUser.id, estimate_id: data.id }));
   const itemRes = await sbClient.from("estimate_items").insert(insertRows);
   if (itemRes.error) return showAppMessage(`見積明細登録に失敗しました。${formatSupabaseError(itemRes.error)}`, true);
-  await loadAllDataSafely();
+  await refreshEstimateListData();
   renderAfterDataChanged();
+  safeRender("estimates", renderEstimates);
   showAppMessage("ヒアリング結果を見積へ反映しました。");
 }
 
@@ -2318,6 +2319,15 @@ async function handleClientSubmit(event) {
   } catch (error) {
     showAppMessage(`顧客保存に失敗しました。${formatSupabaseError(error)}`, true);
   }
+}
+
+async function refreshEstimateListData() {
+  if (!currentUser || isLoggingOut) return false;
+  await loadEstimates();
+  await loadEstimateItems();
+  safeRender("estimates", renderEstimates);
+  safeRender("estimateTotals", recalcEstimateTotals);
+  return true;
 }
 
 async function handleCaseSubmit(event) {
@@ -10626,6 +10636,9 @@ window.GyoseiApp = {
     if (!currentUser) return;
     await loadAllDataSafely();
     renderAfterDataChanged();
+  },
+  refreshEstimateListData: async () => {
+    await refreshEstimateListData();
   },
   showMessage: (text, isError = false) => showAppMessage(text, isError),
 };
