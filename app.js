@@ -997,6 +997,20 @@ const SCENARIO_WORK_TYPE_CONFIG = [
   { key: "zairyu", scenarios: ["zairyu_nintei", "zairyu_henko", "zairyu_koshin"] },
   { key: "inheritance", scenarios: ["sozoku_initial", "isan_bunkatsu_prep", "kousei_yuigon_prep"] },
 ];
+const PERMIT_BASE_FIELD_ID_MAP = {
+  permitApplicantType: "permit-applicant-type",
+  permitApplicationType: "permit-application-type",
+  permitJurisdictionPrefecture: "permit-jurisdiction-prefecture",
+  permitJurisdictionCity: "permit-jurisdiction-city",
+  permitApplicantName: "permit-applicant-name",
+  permitOfficeAddress: "permit-office-address",
+  permitOfficerCount: "permit-officer-count",
+  permitQualifiedCount: "permit-qualified-count",
+  permitOnlineApplication: "permit-online-application",
+  permitUrgency: "permit-urgency",
+  permitMemo: "permit-memo",
+};
+
 const WORK_TYPE_BASE_FIELDS = {
   default: ["permitApplicantType", "permitApplicationType", "permitApplicantName", "permitMemo"],
   construction: ["permitApplicantType", "permitApplicationType", "permitOfficeAddress", "permitOfficerCount", "permitQualifiedCount", "permitMemo"],
@@ -1009,6 +1023,16 @@ const WORK_TYPE_BASE_FIELDS = {
   inheritance: ["permitApplicantName", "permitMemo"],
   automobile: ["permitApplicationType", "permitApplicantName", "permitMemo"],
 };
+
+const PERMIT_CATEGORY_CONFIG = Object.freeze(
+  Object.fromEntries(Object.keys(WORK_TYPE_BASE_FIELDS).map((categoryKey) => [
+    categoryKey,
+    {
+      baseFields: WORK_TYPE_BASE_FIELDS[categoryKey],
+      dynamicSchema: WORK_TYPE_FIELD_SCHEMA[categoryKey] || WORK_TYPE_FIELD_SCHEMA.default || [],
+    },
+  ])),
+);
 const PERMIT_TASK_RULES = [
   { matcher: (key) => ["zairyu_nintei", "zairyu_henko", "zairyu_koshin"].includes(key), tasks: ["在留資格別必要書類確認", "申請取次資格確認", "本人・所属機関・代理人の提出可否確認"] },
   { matcher: (key) => ["sozoku_initial", "isan_bunkatsu_prep", "kousei_yuigon_prep"].includes(key), tasks: ["紛争性の有無確認", "相続登記の司法書士連携要否確認", "相続税申告の税理士連携要否確認"] },
@@ -1083,21 +1107,32 @@ function buildPermitBranchingResult(baseDocs, baseTasks, conditions) {
 }
 
 function getCurrentPermitScenarioKey(explicitScenarioKey = "") {
-  const direct = String(explicitScenarioKey || "").trim();
+  const direct = normalizePermitScenarioKey(explicitScenarioKey);
   if (direct) return direct;
   if (!permitScenarioSelect) return "";
-  const selected = String(permitScenarioSelect.value || "").trim();
+  const selected = normalizePermitScenarioKey(permitScenarioSelect.value);
   if (selected) return selected;
-  const formSelected = String(permitHearingForm?.elements?.namedItem("permitScenario")?.value || "").trim();
-  return formSelected;
+  return normalizePermitScenarioKey(permitHearingForm?.elements?.namedItem("permitScenario")?.value || "");
+}
+
+function normalizePermitScenarioKey(rawScenarioKey = "") {
+  const candidate = String(rawScenarioKey || "").trim();
+  if (!candidate) return "";
+  if (PERMIT_SCENARIO_MASTER[candidate]) return candidate;
+  return Object.entries(PERMIT_SCENARIO_MASTER).find(([, scenario]) => String(scenario?.label || "").trim() === candidate)?.[0] || "";
 }
 
 function resolveWorkTypeCategory(scenarioKey) {
-  return SCENARIO_WORK_TYPE_CONFIG.find((entry) => entry.scenarios.includes(scenarioKey))?.key || "default";
+  const normalizedScenarioKey = normalizePermitScenarioKey(scenarioKey);
+  return SCENARIO_WORK_TYPE_CONFIG.find((entry) => entry.scenarios.includes(normalizedScenarioKey))?.key || "default";
+}
+
+function resolvePermitCategoryConfig(scenarioKey) {
+  return PERMIT_CATEGORY_CONFIG[resolveWorkTypeCategory(scenarioKey)] || PERMIT_CATEGORY_CONFIG.default;
 }
 
 function resolveWorkTypeSchema(scenarioKey) {
-  return WORK_TYPE_FIELD_SCHEMA[resolveWorkTypeCategory(scenarioKey)] || WORK_TYPE_FIELD_SCHEMA.default || [];
+  return resolvePermitCategoryConfig(scenarioKey).dynamicSchema;
 }
 
 function renderWorkTypeFields(explicitScenarioKey = "") {
@@ -1119,27 +1154,14 @@ function renderWorkTypeFields(explicitScenarioKey = "") {
 }
 
 function getPermitBaseFieldConfig(scenarioKey) {
-  return WORK_TYPE_BASE_FIELDS[resolveWorkTypeCategory(scenarioKey)] || WORK_TYPE_BASE_FIELDS.default;
+  return resolvePermitCategoryConfig(scenarioKey).baseFields;
 }
 
 function syncPermitBaseFieldsVisibility(explicitScenarioKey = "") {
   if (!permitHearingForm || !permitScenarioSelect) return;
   const scenarioKey = getCurrentPermitScenarioKey(explicitScenarioKey);
   const visibleFieldNames = new Set(getPermitBaseFieldConfig(scenarioKey));
-  const baseFieldIdMap = {
-    permitApplicantType: "permit-applicant-type",
-    permitApplicationType: "permit-application-type",
-    permitJurisdictionPrefecture: "permit-jurisdiction-prefecture",
-    permitJurisdictionCity: "permit-jurisdiction-city",
-    permitApplicantName: "permit-applicant-name",
-    permitOfficeAddress: "permit-office-address",
-    permitOfficerCount: "permit-officer-count",
-    permitQualifiedCount: "permit-qualified-count",
-    permitOnlineApplication: "permit-online-application",
-    permitUrgency: "permit-urgency",
-    permitMemo: "permit-memo",
-  };
-  Object.entries(baseFieldIdMap).forEach(([name, id]) => {
+  Object.entries(PERMIT_BASE_FIELD_ID_MAP).forEach(([name, id]) => {
     const control = document.getElementById(id) || permitHearingForm.elements.namedItem(name);
     const label = control?.closest?.("label") || permitHearingForm.querySelector(`label[for="${id}"]`) || control?.parentElement;
     const wrapper = label?.closest?.(".form-row, .form-grid, .inline-field") || label;
