@@ -185,6 +185,7 @@ create table if not exists estimates (
   estimate_date date not null,
   valid_until date,
   status text default '作成中',
+  estimate_source text default 'manual',
   memo text,
   subtotal bigint default 0,
   tax bigint default 0,
@@ -374,6 +375,7 @@ alter table cases add column if not exists client_id uuid;
 alter table estimates add column if not exists client_id uuid;
 
 alter table estimates add column if not exists estimate_number text;
+alter table estimates add column if not exists estimate_source text;
 alter table sales add column if not exists invoice_number text;
 
 alter table cases add column if not exists document_url text;

@@ -1367,6 +1367,7 @@ async function handleReflectPermitHearingToEstimate(event, button) {
     tax,
     total,
     estimate_number: await getNextMonthlyNumber("estimates", "estimate_number", "M", new Date().toISOString().slice(0, 10)),
+    estimate_source: "permit_hearing",
   };
   const { data, error } = await sbClient.from("estimates").insert(estimatePayload).select("id").single();
   if (error || !data?.id) return showAppMessage(`見積登録に失敗しました。${formatSupabaseError(error)}`, true);
@@ -7034,8 +7035,10 @@ async function handleEstimateSubmit(event) {
     subtotal: totals.subtotal,
     tax: totals.tax,
     total: totals.total,
+    estimate_source: editState.estimateId ? undefined : "manual",
   };
 
+  if (editState.estimateId) delete payload.estimate_source;
   const taskName = editState.estimateId ? "見積更新" : "見積登録";
   console.log("EDIT STATE", editState);
   console.log("ACTION START", taskName, editState.estimateId || "new");
@@ -7108,6 +7111,7 @@ function renderEstimates() {
     li.dataset.id = entry.id;
     const itemCount = state.estimateItems.filter((row) => row.estimateId === entry.id).length;
     const casedLabel = isCaseCreated ? "案件化済み" : "未案件化";
+    const sourceLabel = entry.estimateSourceLabel || getEstimateSourceLabel(entry.estimateSource);
     li.innerHTML = `
       <div class="estimate-card-body">
         <p class="title estimate-card-title">${escapeHtml(entry.estimateTitle)}</p>
@@ -7117,6 +7121,7 @@ function renderEstimates() {
           <p class="meta"><span>見積日:</span> ${formatDate(entry.estimateDate)}</p>
           <p class="meta"><span>有効期限:</span> ${formatDate(entry.validUntil)}</p>
           <p class="meta"><span>ステータス:</span> ${escapeHtml(entry.status)}</p>
+          <p class="meta"><span>作成元:</span> <span class="estimate-source-badge">${escapeHtml(sourceLabel)}</span></p>
           <p class="meta"><span>合計金額:</span> ${formatCurrency(entry.totalAmount ?? entry.total ?? 0)}</p>
           <p class="meta"><span>明細件数:</span> ${itemCount}件</p>
           <p class="meta"><span>案件化:</span> ${casedLabel}</p>
@@ -7140,6 +7145,24 @@ function renderEstimates() {
     estimateList.appendChild(li);
   });
   estimateEmpty.hidden = filtered.length > 0;
+}
+
+
+const ESTIMATE_SOURCE_LABELS = {
+  permit_hearing: "許認可ヒアリング反映",
+  auto_calculation: "見積自動算出反映",
+  manual: "直接作成",
+};
+
+function normalizeEstimateSource(value) {
+  const normalized = String(value || "").trim();
+  if (["permit_hearing", "auto_calculation", "manual"].includes(normalized)) return normalized;
+  return "";
+}
+
+function getEstimateSourceLabel(source) {
+  const normalized = normalizeEstimateSource(source);
+  return ESTIMATE_SOURCE_LABELS[normalized] || "作成元不明";
 }
 
 function isEstimateExpired(entry) {
@@ -10202,6 +10225,8 @@ function mapEstimateFromDb(row) {
     customerName: row.customer_name || "",
     estimateNumber: row.estimate_number || "",
     estimateTitle: row.estimate_title || "",
+    estimateSource: normalizeEstimateSource(row.estimate_source),
+    estimateSourceLabel: getEstimateSourceLabel(row.estimate_source),
     estimateDate: row.estimate_date || "",
     sentDate: row.sent_date || row.estimate_date || "",
     validUntil: row.valid_until || "",
