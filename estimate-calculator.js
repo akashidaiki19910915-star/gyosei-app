@@ -16,6 +16,12 @@
     "創業融資|事業計画書作成": 80000,
     "創業融資|面談対策込み": 120000,
     "車庫証明": 10000,
+    "会社設立|株式会社": 90000,
+    "会社設立|合同会社": 70000,
+    "産業廃棄物収集運搬業許可|新規": 140000,
+    "在留資格関連|認定": 120000,
+    "在留資格関連|変更": 100000,
+    "在留資格関連|更新": 70000,
   };
 
   const OPTION_SETS = {
@@ -30,6 +36,9 @@
       "合同会社設立": ["設立"],
       "創業融資": ["事業計画書作成", "面談対策込み"],
       "車庫証明": ["新規", "変更", "代替"],
+      "会社設立": ["株式会社", "合同会社"],
+      "産業廃棄物収集運搬業許可": ["新規"],
+      "在留資格関連": ["認定", "変更", "更新"],
     },
   };
 
@@ -44,6 +53,9 @@
     "合同会社設立": ["officerCount", "documentLevel", "urgent", "visit", "agent"],
     "創業融資": ["documentLevel", "urgent", "keikan", "sengi", "zaisan", "visit", "agent"],
     "車庫証明": ["industryCount", "documentLevel", "urgent", "visit", "agent"],
+    "会社設立": ["officerCount", "documentLevel", "urgent", "visit", "agent"],
+    "産業廃棄物収集運搬業許可": ["corporateType", "industryCount", "officeCount", "documentLevel", "urgent", "visit", "agent"],
+    "在留資格関連": ["industryCount", "documentLevel", "urgent", "visit", "agent"],
   };
 
   const FIELD_LABELS = {
@@ -58,6 +70,9 @@
     "合同会社設立": { officerCount: "社員数", documentLevel: "設計・確認事項の多さ", visit: "許認可同時相談", agent: "定款・登記連携調整" },
     "創業融資": { documentLevel: "事業計画作成難易度", keikan: "資金繰り表作成", sengi: "面談対策", zaisan: "補助金・許認可併用確認", visit: "面談同席", agent: "追加資料作成" },
     "車庫証明": { industryCount: "台数", documentLevel: "図面・資料作成難易度", visit: "現地調査", agent: "使用承諾等の取得支援" },
+    "会社設立": { officerCount: "関係者数", documentLevel: "定款・機関設計難易度", visit: "面談対応", agent: "公証人・司法書士連携調整" },
+    "産業廃棄物収集運搬業許可": { industryCount: "運搬車両数", officeCount: "収集運搬先都道府県数", documentLevel: "許可要件整理難易度", visit: "現地確認", agent: "講習会・証明書取得支援" },
+    "在留資格関連": { industryCount: "対象人数", documentLevel: "疎明資料作成難易度", visit: "本人面談対応", agent: "受入機関調整・追加資料対応" },
   };
 
   function n(v) { const x = Number(v || 0); return Number.isFinite(x) ? x : 0; }
@@ -70,7 +85,7 @@
   async function waitForGyoseiApp(maxMs = 10000) { const start = Date.now(); while (Date.now() - start < maxMs) { if (window.GyoseiApp) return window.GyoseiApp; await new Promise(resolve => setTimeout(resolve, 100)); } return window.GyoseiApp || null; }
   async function waitForCurrentUser(app, maxMs = 10000) { const start = Date.now(); while (Date.now() - start < maxMs) { const u = app?.getCurrentUser?.(); if (u?.id) return u; await new Promise(resolve => setTimeout(resolve, 100)); } return app?.getCurrentUser?.() || null; }
 
-  function calculateBase(f) { const wt = f.workType.value; if (wt === "建設業許可") return BASE[`建設業許可|${f.corporateType.value}|${f.applicationType.value}|${f.governorType.value}`] || 0; if (wt === "宅建業免許") return BASE[`宅建業免許|${f.applicationType.value}`] || 0; if (wt === "創業融資") return BASE[`創業融資|${f.applicationType.value}`] || BASE["創業融資|事業計画書作成"] || 0; return BASE[wt] || 0; }
+  function calculateBase(f) { const wt = f.workType.value; if (wt === "建設業許可") return BASE[`建設業許可|${f.corporateType.value}|${f.applicationType.value}|${f.governorType.value}`] || 0; if (wt === "宅建業免許") return BASE[`宅建業免許|${f.applicationType.value}`] || 0; if (wt === "創業融資") return BASE[`創業融資|${f.applicationType.value}`] || BASE["創業融資|事業計画書作成"] || 0; if (wt === "会社設立") return BASE[`会社設立|${f.applicationType.value}`] || BASE["会社設立|株式会社"] || 0; if (wt === "産業廃棄物収集運搬業許可") return BASE[`産業廃棄物収集運搬業許可|${f.applicationType.value}`] || BASE["産業廃棄物収集運搬業許可|新規"] || 0; if (wt === "在留資格関連") return BASE[`在留資格関連|${f.applicationType.value}`] || BASE["在留資格関連|認定"] || 0; return BASE[wt] || 0; }
   function calculateAddons(f) {
     const wt = f.workType.value; const addons = []; const add = (name, amount) => { if (amount > 0) addons.push({ name, amount }); }; const doc = f.documentLevel.value; const docMidHigh = (mid, high) => doc === "中" ? mid : (doc === "高" ? high : 0);
     switch (wt) {
@@ -83,6 +98,9 @@
       case "合同会社設立": add("社員数加算", Math.max(0, n(f.officerCount.value) - 1) * 5000); add("設計・確認事項加算", docMidHigh(10000, 20000)); add("急ぎ対応", n(f.urgent.value) ? 15000 : 0); add("許認可同時相談", n(f.visit.value) ? 20000 : 0); add("定款・登記連携調整", n(f.agent.value) ? 10000 : 0); break;
       case "創業融資": add("事業計画難易度", docMidHigh(20000, 40000)); add("急ぎ対応", n(f.urgent.value) ? 20000 : 0); add("資金繰り表作成", f.keikan.value === "高" ? 20000 : 0); add("面談対策強化", f.sengi.value === "高" ? 20000 : 0); add("補助金・許認可併用確認", f.zaisan.value === "高" ? 20000 : 0); add("面談同席", n(f.visit.value) ? 30000 : 0); add("追加資料作成", n(f.agent.value) ? 15000 : 0); break;
       case "車庫証明": add("台数加算", Math.max(0, n(f.industryCount.value) - 1) * 5000); add("図面・資料作成", docMidHigh(3000, 8000)); add("急ぎ対応", n(f.urgent.value) ? 5000 : 0); add("現地調査", n(f.visit.value) ? 5000 : 0); add("使用承諾等の取得支援", n(f.agent.value) ? 5000 : 0); break;
+      case "会社設立": add("関係者加算", Math.max(0, n(f.officerCount.value) - 2) * 5000); add("定款・機関設計", docMidHigh(10000, 25000)); add("急ぎ対応", n(f.urgent.value) ? 20000 : 0); add("面談対応", n(f.visit.value) ? 10000 : 0); add("公証人・司法書士連携調整", n(f.agent.value) ? 15000 : 0); break;
+      case "産業廃棄物収集運搬業許可": add("車両台数加算", Math.max(0, n(f.industryCount.value) - 1) * 7000); add("都道府県加算", Math.max(0, n(f.officeCount.value) - 1) * 12000); add("要件整理", docMidHigh(20000, 40000)); add("急ぎ対応", n(f.urgent.value) ? 30000 : 0); add("現地確認", n(f.visit.value) ? 15000 : 0); add("講習会・証明書取得支援", n(f.agent.value) ? 15000 : 0); break;
+      case "在留資格関連": add("対象人数加算", Math.max(0, n(f.industryCount.value) - 1) * 15000); add("疎明資料作成", docMidHigh(15000, 30000)); add("急ぎ対応", n(f.urgent.value) ? 20000 : 0); add("本人面談対応", n(f.visit.value) ? 10000 : 0); add("受入機関調整・追加資料対応", n(f.agent.value) ? 15000 : 0); break;
       default: add("急ぎ対応", n(f.urgent.value) ? 10000 : 0); add("資料整理", docMidHigh(10000, 20000)); add("訪問対応", n(f.visit.value) ? 10000 : 0); add("代理取得", n(f.agent.value) ? 10000 : 0);
     }
     return addons;
@@ -92,7 +110,7 @@
 
   async function init() {
     const root = document.getElementById("estimate-calculator-root"); if (!root) return;
-    root.innerHTML = `<form id="estimate-calc-form" class="form"><div class="grid cols-2"><label data-field="clientId">顧客<select name="clientId"></select></label><label data-field="projectName">案件名<input name="projectName" /></label><label data-field="workType">業務種別<select name="workType"><option>建設業許可</option><option>業種追加</option><option>決算変更届</option><option>各種変更届</option><option>宅建業免許</option><option>株式会社設立</option><option>合同会社設立</option><option>創業融資</option><option>車庫証明</option></select></label><label data-field="applicationType">申請区分<select name="applicationType"></select></label><label data-field="corporateType">法人/個人<select name="corporateType"><option>法人</option><option>個人</option></select></label><label data-field="governorType">知事/大臣<select name="governorType"><option>知事</option><option>大臣</option></select></label><label data-field="generalSpecific">一般/特定<select name="generalSpecific"><option>一般</option><option>特定</option></select></label><label data-field="industryCount">業種数<input name="industryCount" type="number" value="1" min="1" /></label><label data-field="officerCount">役員数<input name="officerCount" type="number" value="2" min="0" /></label><label data-field="officeCount">営業所数<input name="officeCount" type="number" value="1" min="1" /></label><label data-field="documentLevel">書類不足レベル<select name="documentLevel"><option>低</option><option>中</option><option>高</option></select></label><label data-field="urgent">急ぎ対応<select name="urgent"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="keikan">経管確認難易度<select name="keikan"><option>低</option><option>高</option></select></label><label data-field="sengi">専技確認難易度<select name="sengi"><option>低</option><option>高</option></select></label><label data-field="zaisan">財産要件確認難易度<select name="zaisan"><option>低</option><option>高</option></select></label><label data-field="visit">訪問対応<select name="visit"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="agent">代理取得<select name="agent"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="expense">実費<input name="expense" type="number" value="0" min="0" /></label><label data-field="discount">値引き<input name="discount" type="number" value="0" min="0" /></label></div><label data-field="memo">メモ<textarea name="memo"></textarea></label><div class="row-actions"><button type="button" id="calc-run" class="secondary-btn">再計算</button><button type="button" id="calc-save">保存</button><button type="button" id="calc-apply">見積へ反映</button></div><div id="calc-result" class="panel"></div></form><section class="panel" id="calc-saved-list-wrap"><h3>保存済み概算見積</h3><div id="calc-saved-list"></div></section>`;
+    root.innerHTML = `<form id="estimate-calc-form" class="form"><div class="grid cols-2"><label data-field="clientId">顧客<select name="clientId"></select></label><label data-field="projectName">案件名<input name="projectName" /></label><label data-field="workType">業務種別<select name="workType"><option>建設業許可</option><option>業種追加</option><option>決算変更届</option><option>各種変更届</option><option>宅建業免許</option><option>株式会社設立</option><option>合同会社設立</option><option>創業融資</option><option>車庫証明</option><option>会社設立</option><option>産業廃棄物収集運搬業許可</option><option>在留資格関連</option></select></label><label data-field="applicationType">申請区分<select name="applicationType"></select></label><label data-field="corporateType">法人/個人<select name="corporateType"><option>法人</option><option>個人</option></select></label><label data-field="governorType">知事/大臣<select name="governorType"><option>知事</option><option>大臣</option></select></label><label data-field="generalSpecific">一般/特定<select name="generalSpecific"><option>一般</option><option>特定</option></select></label><label data-field="industryCount">業種数<input name="industryCount" type="number" value="1" min="1" /></label><label data-field="officerCount">役員数<input name="officerCount" type="number" value="2" min="0" /></label><label data-field="officeCount">営業所数<input name="officeCount" type="number" value="1" min="1" /></label><label data-field="documentLevel">書類不足レベル<select name="documentLevel"><option>低</option><option>中</option><option>高</option></select></label><label data-field="urgent">急ぎ対応<select name="urgent"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="keikan">経管確認難易度<select name="keikan"><option>低</option><option>高</option></select></label><label data-field="sengi">専技確認難易度<select name="sengi"><option>低</option><option>高</option></select></label><label data-field="zaisan">財産要件確認難易度<select name="zaisan"><option>低</option><option>高</option></select></label><label data-field="visit">訪問対応<select name="visit"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="agent">代理取得<select name="agent"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="expense">実費<input name="expense" type="number" value="0" min="0" /></label><label data-field="discount">値引き<input name="discount" type="number" value="0" min="0" /></label></div><label data-field="memo">メモ<textarea name="memo"></textarea></label><div class="row-actions"><button type="button" id="calc-run" class="secondary-btn">再計算</button><button type="button" id="calc-save">保存</button><button type="button" id="calc-apply">見積へ反映</button></div><div id="calc-result" class="panel"></div></form><section class="panel" id="calc-saved-list-wrap"><h3>保存済み概算見積</h3><div id="calc-saved-list"></div></section>`;
     const app = await waitForGyoseiApp(); if (!app) return;
     const form = root.querySelector('#estimate-calc-form'); const cs = form.elements.clientId; const savedList = root.querySelector('#calc-saved-list');
     (app?.getClients?.() || []).forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.name || c.companyName || c.contactName || '未設定'; cs.appendChild(o); });
