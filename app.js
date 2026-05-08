@@ -662,20 +662,6 @@ const SALES_MUTATION_COLUMNS = [
   "invoice_number",
 ];
 
-initialize();
-
-if (window.location.protocol === "file:") {
-  document.body.innerHTML = `
-    <main class="auth-container">
-      <section class="panel auth-panel">
-        <h1>このアプリは https:// で開いてください</h1>
-        <p class="auth-caption">GitHub Pages などの HTTPS 環境でのみ、Supabase Auth のログイン状態を正しく保持できます。</p>
-      </section>
-    </main>
-  `;
-  throw new Error("file:// では Supabase Auth を利用できません。HTTPS で配信してください。");
-}
-
 async function initialize() {
   setAuthControlsDisabled(true);
   try {
@@ -1000,6 +986,17 @@ const WORK_TYPE_FIELD_SCHEMA = {
     { name: "permitDeceasedName", label: "被相続人氏名", type: "text" },{ name: "permitHeirCount", label: "相続人人数", type: "number", min: 1, value: 1 },{ name: "permitKosekiCollectionStatus", label: "戸籍収集状況", type: "text" },{ name: "permitHasInheritanceAgreement", label: "遺産分割協議書の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },{ name: "permitAssetList", label: "財産一覧", type: "text" },{ name: "permitNeedFamilyChart", label: "相続人関係図", type: "select", options: [{ value: "要", label: "要" }, { value: "不要", label: "不要" }] }
   ],
 };
+const SCENARIO_WORK_TYPE_CONFIG = [
+  { key: "automobile", scenarios: ["shakoshomei_standard", "kei_hokan_todokede", "jidousha_transfer", "jidousha_change"] },
+  { key: "construction", scenarios: ["construction_corp", "construction_solo", "keiei_shinsa_bidding"] },
+  { key: "takken", scenarios: ["takken_corp", "takken_solo"] },
+  { key: "kobutsu", scenarios: ["kobutsu_corp", "kobutsu_solo"] },
+  { key: "company_establishment", scenarios: ["kk_teikan_ninsho", "gk_teikan_check"] },
+  { key: "startup_finance", scenarios: ["startup_finance_hearing"] },
+  { key: "sangyo_unpan", scenarios: ["sangyo_unpan_new"] },
+  { key: "zairyu", scenarios: ["zairyu_nintei", "zairyu_henko", "zairyu_koshin"] },
+  { key: "inheritance", scenarios: ["sozoku_initial", "isan_bunkatsu_prep", "kousei_yuigon_prep"] },
+];
 const WORK_TYPE_BASE_FIELDS = {
   default: ["permitApplicantType", "permitApplicationType", "permitApplicantName", "permitMemo"],
   construction: ["permitApplicantType", "permitApplicationType", "permitOfficeAddress", "permitOfficerCount", "permitQualifiedCount", "permitMemo"],
@@ -1012,17 +1009,6 @@ const WORK_TYPE_BASE_FIELDS = {
   inheritance: ["permitApplicantName", "permitMemo"],
   automobile: ["permitApplicationType", "permitApplicantName", "permitMemo"],
 };
-const SCENARIO_WORK_TYPE_CONFIG = [
-  { key: "automobile", scenarios: ["shakoshomei_standard", "kei_hokan_todokede", "jidousha_transfer", "jidousha_change"] },
-  { key: "construction", scenarios: ["construction_corp", "construction_solo", "keiei_shinsa_bidding"] },
-  { key: "takken", scenarios: ["takken_corp", "takken_solo"] },
-  { key: "kobutsu", scenarios: ["kobutsu_corp", "kobutsu_solo"] },
-  { key: "company_establishment", scenarios: ["kk_teikan_ninsho", "gk_teikan_check"] },
-  { key: "startup_finance", scenarios: ["startup_finance_hearing"] },
-  { key: "sangyo_unpan", scenarios: ["sangyo_unpan_new"] },
-  { key: "zairyu", scenarios: ["zairyu_nintei", "zairyu_henko", "zairyu_koshin"] },
-  { key: "inheritance", scenarios: ["sozoku_initial", "isan_bunkatsu_prep", "kousei_yuigon_prep"] },
-];
 const PERMIT_TASK_RULES = [
   { matcher: (key) => ["zairyu_nintei", "zairyu_henko", "zairyu_koshin"].includes(key), tasks: ["在留資格別必要書類確認", "申請取次資格確認", "本人・所属機関・代理人の提出可否確認"] },
   { matcher: (key) => ["sozoku_initial", "isan_bunkatsu_prep", "kousei_yuigon_prep"].includes(key), tasks: ["紛争性の有無確認", "相続登記の司法書士連携要否確認", "相続税申告の税理士連携要否確認"] },
@@ -1162,6 +1148,20 @@ function syncPermitBaseFieldsVisibility(explicitScenarioKey = "") {
     if (wrapper && wrapper !== label && wrapper.children.length === 1) wrapper.hidden = !isVisible;
   });
 }
+
+if (window.location.protocol === "file:") {
+  document.body.innerHTML = `
+    <main class="auth-container">
+      <section class="panel auth-panel">
+        <h1>このアプリは https:// で開いてください</h1>
+        <p class="auth-caption">GitHub Pages などの HTTPS 環境でのみ、Supabase Auth のログイン状態を正しく保持できます。</p>
+      </section>
+    </main>
+  `;
+  throw new Error("file:// では Supabase Auth を利用できません。HTTPS で配信してください。");
+}
+
+initialize();
 
 function buildPermitSummary(params) {
   const cityPart = params.jurisdictionCity === "（未入力）" ? "" : ` ${params.jurisdictionCity}`;
