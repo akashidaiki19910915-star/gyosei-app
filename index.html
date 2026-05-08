@@ -678,6 +678,11 @@
                 <h2>案件一覧（期限順）</h2>
                 <button id="clear-btn" type="button" class="danger-btn">全件削除</button>
               </div>
+              <div class="inline-actions">
+                <button type="button" class="secondary-btn" data-action="select_all_cases">全選択</button>
+                <button type="button" class="secondary-btn" data-action="clear_all_cases">全解除</button>
+                <button type="button" class="danger-btn" data-action="bulk_delete_cases">選択した案件を一括削除</button>
+              </div>
               <div class="search-filter-bar">
                 <label class="inline-field">
                   検索
@@ -924,7 +929,7 @@
                   </label>
                   <button id="permit-hearing-filter-clear-btn" type="button" class="secondary-btn">条件クリア</button>
                 </div>
-                <div class="row-actions"><button type="button" class="danger-btn" data-action="bulk_delete_permit_hearings">選択した履歴を一括削除</button></div>
+                <div class="row-actions"><button type="button" class="secondary-btn" data-action="select_all_permit_hearings">全選択</button><button type="button" class="secondary-btn" data-action="clear_all_permit_hearings">全解除</button><button type="button" class="danger-btn" data-action="bulk_delete_permit_hearings">選択した履歴を一括削除</button></div>
                 <p id="permit-hearing-filter-count" class="filter-count">表示中 0件 / 全0件</p>
                 <div id="permit-hearings-empty" class="empty">保存済みヒアリング履歴はまだありません。</div>
                 <div id="permit-hearings-list-wrap" class="table-wrap" hidden>
@@ -1252,6 +1257,11 @@
 
             <section class="panel subtab-panel" data-parent-tab="expenses" data-subtab="fixed" hidden>
               <h2>固定費一覧</h2>
+              <div class="inline-actions">
+                <button type="button" class="secondary-btn" data-action="select_all_fixed_expenses">全選択</button>
+                <button type="button" class="secondary-btn" data-action="clear_all_fixed_expenses">全解除</button>
+                <button type="button" class="danger-btn" data-action="bulk_delete_fixed_expenses">選択した固定費を一括削除</button>
+              </div>
               <div id="fixed-expenses-empty" class="empty">固定費データはまだありません。</div>
               <ul id="fixed-expenses-list" class="item-list"></ul>
             </section>

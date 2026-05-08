@@ -91,6 +91,7 @@ const state = {
   selectedSaleIds: [],
   selectedExpenseIds: [],
   selectedDailyReportIds: [],
+  selectedFixedExpenseIds: [],
 };
 const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
 
@@ -229,6 +230,10 @@ const CLICK_ACTION_HANDLERS = {
   select_all_daily_reports: ()=>{ setAllSelections('selectedDailyReportIds', state.dailyReports||[], true); renderDailyReports(); },
   clear_all_daily_reports: ()=>{ setAllSelections('selectedDailyReportIds', state.dailyReports||[], false); renderDailyReports(); },
   bulk_delete_daily_reports: ()=>handleGenericBulkDelete({label:'日報', table:'daily_reports', stateKey:'dailyReports', selectionKey:'selectedDailyReportIds', render:renderDailyReports}),
+  select_fixed_expense: (e,b)=>{const id=b?.dataset?.fixedExpenseId; if(!id)return; toggleSelectedId('selectedFixedExpenseIds',id); renderFixedExpenses();},
+  select_all_fixed_expenses: ()=>{ setAllSelections('selectedFixedExpenseIds', state.fixedExpenses||[], true); renderFixedExpenses(); },
+  clear_all_fixed_expenses: ()=>{ setAllSelections('selectedFixedExpenseIds', state.fixedExpenses||[], false); renderFixedExpenses(); },
+  bulk_delete_fixed_expenses: ()=>handleGenericBulkDelete({label:'固定費', table:'fixed_expenses', stateKey:'fixedExpenses', selectionKey:'selectedFixedExpenseIds', render:renderFixedExpenses}),
   select_permit_hearing: (e,b)=>{const id=b?.dataset?.permitHearingId; if(!id)return; toggleSelectedId('selectedPermitHearingIds',id); renderPermitHearings();},
   select_all_permit_hearings: ()=>{ setAllSelections('selectedPermitHearingIds', state.permitHearings||[], true); renderPermitHearings(); },
   clear_all_permit_hearings: ()=>{ setAllSelections('selectedPermitHearingIds', state.permitHearings||[], false); renderPermitHearings(); },
@@ -1062,8 +1067,15 @@ function buildPermitBranchingResult(baseDocs, baseTasks, conditions) {
 }
 
 function resolveWorkTypeSchema(scenarioKey) {
-  const config = SCENARIO_WORK_TYPE_CONFIG.find((entry) => entry.scenarios.includes(scenarioKey));
+  const normalizedScenarioKey = normalizePermitScenarioKey(scenarioKey);
+  const config = SCENARIO_WORK_TYPE_CONFIG.find((entry) => entry.scenarios.includes(normalizedScenarioKey));
   return WORK_TYPE_FIELD_SCHEMA[config?.key || "default"] || [];
+}
+function normalizePermitScenarioKey(rawScenarioKey) {
+  const key = String(rawScenarioKey || "").trim();
+  if (PERMIT_SCENARIO_MASTER[key]) return key;
+  const found = Object.entries(PERMIT_SCENARIO_MASTER).find(([, scenario]) => String(scenario?.label || "") === key);
+  return found ? found[0] : key;
 }
 
 function renderWorkTypeFields() {
@@ -1084,7 +1096,8 @@ function renderWorkTypeFields() {
 }
 
 function getPermitBaseFieldConfig(scenarioKey) {
-  const workTypeKey = SCENARIO_WORK_TYPE_CONFIG.find((entry) => entry.scenarios.includes(scenarioKey))?.key || "default";
+  const normalizedScenarioKey = normalizePermitScenarioKey(scenarioKey);
+  const workTypeKey = SCENARIO_WORK_TYPE_CONFIG.find((entry) => entry.scenarios.includes(normalizedScenarioKey))?.key || "default";
   const baseByWorkType = {
     construction: ["permitApplicantType", "permitApplicationType", "permitMemo"],
     takken: ["permitApplicantType", "permitApplicationType", "permitMemo"],
@@ -1094,7 +1107,7 @@ function getPermitBaseFieldConfig(scenarioKey) {
     startup_finance: ["permitApplicantType", "permitApplicationType", "permitMemo"],
     sangyo_unpan: ["permitApplicantType", "permitApplicationType", "permitMemo"],
     zairyu: ["permitApplicationType", "permitApplicantName", "permitMemo"],
-    inheritance: ["permitApplicantName", "permitMemo"],
+    inheritance: ["permitMemo"],
     automobile: ["permitApplicationType", "permitMemo"],
     default: ["permitApplicantType", "permitApplicationType", "permitApplicantName", "permitMemo"],
   };
@@ -7863,7 +7876,8 @@ function renderFixedExpenses() {
     const toggleBtn = node.querySelector(".toggle-btn");
 
     item.dataset.id = entry.id;
-    title.textContent = `${entry.content}｜${formatCurrency(entry.amount)}`;
+    const selected = new Set(getSelectedIdsByKey("selectedFixedExpenseIds"));
+    title.innerHTML = `<button type="button" class="secondary-btn" data-action="select_fixed_expense" data-fixed-expense-id="${escapeHtml(entry.id)}">${selected.has(String(entry.id)) ? "☑" : "☐"}</button> ${escapeHtml(entry.content)}｜${escapeHtml(formatCurrency(entry.amount))}`;
     meta.textContent = `毎月${entry.dayOfMonth}日 / 開始日: ${formatDate(entry.startDate)} / 状態: ${entry.active ? "有効" : "無効"}`;
     toggleBtn.textContent = entry.active ? "無効にする" : "有効にする";
     fixedExpensesList.appendChild(node);
