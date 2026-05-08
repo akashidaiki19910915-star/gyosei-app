@@ -711,6 +711,12 @@
             </section>
             <section class="panel subtab-panel" data-parent-tab="cases" data-subtab="tasks" hidden>
               <h2>案件タスク管理</h2>
+              <div class="inline-actions">
+                <button type="button" class="secondary-btn" data-action="select_all_case_tasks">全選択</button>
+                <button type="button" class="secondary-btn" data-action="clear_all_case_tasks">全解除</button>
+                <button type="button" class="secondary-btn" data-action="bulk_complete_case_tasks">選択を完了</button>
+                <button type="button" class="danger-btn" data-action="bulk_delete_case_tasks">選択を削除</button>
+              </div>
               <form id="case-task-form" class="form">
                 <label>
                   案件選択
@@ -742,6 +748,7 @@
                 <table class="daily-report-table">
                   <thead>
                     <tr>
+                      <th>選択</th>
                       <th>顧客名</th>
                       <th>案件名</th>
                       <th>タスク名</th>
@@ -759,6 +766,13 @@
             </section>
             <section class="panel subtab-panel" data-parent-tab="cases" data-subtab="documents" hidden>
               <h2>書類管理</h2>
+              <div class="inline-actions">
+                <button type="button" class="secondary-btn" data-action="select_all_case_documents">全選択</button>
+                <button type="button" class="secondary-btn" data-action="clear_all_case_documents">全解除</button>
+                <button type="button" class="secondary-btn" data-action="bulk_mark_case_documents_received">選択を回収済にする</button>
+                <button type="button" class="secondary-btn" data-action="bulk_mark_case_documents_checked">選択を確認済にする</button>
+                <button type="button" class="danger-btn" data-action="bulk_delete_case_documents">選択を削除</button>
+              </div>
               <form id="case-document-form" class="form">
                 <label>
                   案件選択
@@ -803,6 +817,7 @@
                 <table class="daily-report-table">
                   <thead>
                     <tr>
+                      <th>選択</th>
                       <th>顧客名</th>
                       <th>案件名</th>
                       <th>書類名</th>
