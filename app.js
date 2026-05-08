@@ -727,9 +727,10 @@ function bindEvents() {
   caseTaskForm?.addEventListener("submit", handleCaseTaskSubmit);
   caseDocumentForm?.addEventListener("submit", handleCaseDocumentSubmit);
   permitHearingForm?.addEventListener("submit", handlePermitHearingSubmit);
-  permitScenarioSelect?.addEventListener("change", () => {
-    renderWorkTypeFields();
-    syncPermitBaseFieldsVisibility();
+  permitScenarioSelect?.addEventListener("change", (event) => {
+    const scenarioKey = String(event?.target?.value || "");
+    renderWorkTypeFields(scenarioKey);
+    syncPermitBaseFieldsVisibility(scenarioKey);
   });
   permitHearingForm?.elements?.namedItem("permitCaseId")?.addEventListener?.("change", syncPermitBaseFieldsVisibility);
   permitDocumentsList?.addEventListener("input", syncPermitGeneratedFromInputs);
@@ -1095,7 +1096,9 @@ function buildPermitBranchingResult(baseDocs, baseTasks, conditions) {
   return { docs, tasks, addedDocs, addedTasks, estimateAdjustments };
 }
 
-function getCurrentPermitScenarioKey() {
+function getCurrentPermitScenarioKey(explicitScenarioKey = "") {
+  const direct = String(explicitScenarioKey || "").trim();
+  if (direct) return direct;
   if (!permitScenarioSelect) return "";
   const selected = String(permitScenarioSelect.value || "").trim();
   if (selected) return selected;
@@ -1111,9 +1114,9 @@ function resolveWorkTypeSchema(scenarioKey) {
   return WORK_TYPE_FIELD_SCHEMA[resolveWorkTypeCategory(scenarioKey)] || WORK_TYPE_FIELD_SCHEMA.default || [];
 }
 
-function renderWorkTypeFields() {
+function renderWorkTypeFields(explicitScenarioKey = "") {
   if (!permitWorkTypeFields || !permitScenarioSelect) return;
-  const scenarioKey = getCurrentPermitScenarioKey();
+  const scenarioKey = getCurrentPermitScenarioKey(explicitScenarioKey);
   const schema = resolveWorkTypeSchema(scenarioKey);
   const previous = permitHearingForm ? Object.fromEntries(new FormData(permitHearingForm).entries()) : {};
   permitWorkTypeFields.innerHTML = schema.map((field) => {
@@ -1133,9 +1136,9 @@ function getPermitBaseFieldConfig(scenarioKey) {
   return WORK_TYPE_BASE_FIELDS[resolveWorkTypeCategory(scenarioKey)] || WORK_TYPE_BASE_FIELDS.default;
 }
 
-function syncPermitBaseFieldsVisibility() {
+function syncPermitBaseFieldsVisibility(explicitScenarioKey = "") {
   if (!permitHearingForm || !permitScenarioSelect) return;
-  const scenarioKey = getCurrentPermitScenarioKey();
+  const scenarioKey = getCurrentPermitScenarioKey(explicitScenarioKey);
   const visibleFieldNames = new Set(getPermitBaseFieldConfig(scenarioKey));
   const baseFieldIdMap = {
     permitApplicantType: "permit-applicant-type",
