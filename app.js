@@ -1103,7 +1103,7 @@ function renderWorkTypeFields() {
 function getPermitBaseFieldConfig(scenarioKey) {
   const workTypeKey = SCENARIO_WORK_TYPE_CONFIG.find((entry) => entry.scenarios.includes(scenarioKey))?.key || "default";
   const baseByWorkType = {
-    construction: ["permitApplicantType", "permitApplicationType", "permitMemo"],
+    construction: ["permitApplicantType", "permitApplicationType", "permitOfficeAddress", "permitOfficerCount", "permitQualifiedCount", "permitMemo"],
     takken: ["permitApplicantType", "permitApplicationType", "permitMemo"],
     kobutsu: ["permitApplicantType", "permitMemo"],
     company_establishment: ["permitApplicationType", "permitApplicantName", "permitOfficeAddress", "permitMemo"],
@@ -1123,7 +1123,8 @@ function syncPermitBaseFieldsVisibility() {
   const fieldNames = ["permitApplicantType", "permitApplicationType", "permitJurisdictionPrefecture", "permitJurisdictionCity", "permitApplicantName", "permitOfficeAddress", "permitOfficerCount", "permitQualifiedCount", "permitOnlineApplication", "permitUrgency", "permitMemo"];
   fieldNames.forEach((name) => {
     const field = permitHearingForm.elements.namedItem(name);
-    const label = field?.closest?.("label");
+    const control = field instanceof RadioNodeList ? field[0] : field;
+    const label = control?.closest?.("label") || control?.parentElement;
     if (label) label.hidden = !visibleFieldNames.has(name);
   });
 }
