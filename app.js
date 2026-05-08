@@ -994,6 +994,18 @@ const WORK_TYPE_FIELD_SCHEMA = {
     { name: "permitDeceasedName", label: "被相続人氏名", type: "text" },{ name: "permitHeirCount", label: "相続人人数", type: "number", min: 1, value: 1 },{ name: "permitKosekiCollectionStatus", label: "戸籍収集状況", type: "text" },{ name: "permitHasInheritanceAgreement", label: "遺産分割協議書の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },{ name: "permitAssetList", label: "財産一覧", type: "text" },{ name: "permitNeedFamilyChart", label: "相続人関係図", type: "select", options: [{ value: "要", label: "要" }, { value: "不要", label: "不要" }] }
   ],
 };
+const WORK_TYPE_BASE_FIELDS = {
+  default: ["permitApplicantType", "permitApplicationType", "permitApplicantName", "permitMemo"],
+  construction: ["permitApplicantType", "permitApplicationType", "permitOfficeAddress", "permitOfficerCount", "permitQualifiedCount", "permitMemo"],
+  takken: ["permitApplicantType", "permitApplicationType", "permitMemo"],
+  kobutsu: ["permitApplicantType", "permitMemo"],
+  company_establishment: ["permitApplicationType", "permitApplicantName", "permitMemo"],
+  startup_finance: ["permitApplicantType", "permitApplicationType", "permitMemo"],
+  sangyo_unpan: ["permitApplicantType", "permitApplicationType", "permitMemo"],
+  zairyu: ["permitApplicationType", "permitApplicantName", "permitMemo"],
+  inheritance: ["permitApplicantName", "permitMemo"],
+  automobile: ["permitApplicationType", "permitApplicantName", "permitMemo"],
+};
 const SCENARIO_WORK_TYPE_CONFIG = [
   { key: "automobile", scenarios: ["shakoshomei_standard", "kei_hokan_todokede", "jidousha_transfer", "jidousha_change"] },
   { key: "construction", scenarios: ["construction_corp", "construction_solo", "keiei_shinsa_bidding"] },
@@ -1078,9 +1090,12 @@ function buildPermitBranchingResult(baseDocs, baseTasks, conditions) {
   return { docs, tasks, addedDocs, addedTasks, estimateAdjustments };
 }
 
+function resolveWorkTypeCategory(scenarioKey) {
+  return SCENARIO_WORK_TYPE_CONFIG.find((entry) => entry.scenarios.includes(scenarioKey))?.key || "default";
+}
+
 function resolveWorkTypeSchema(scenarioKey) {
-  const config = SCENARIO_WORK_TYPE_CONFIG.find((entry) => entry.scenarios.includes(scenarioKey));
-  return WORK_TYPE_FIELD_SCHEMA[config?.key || "default"] || [];
+  return WORK_TYPE_FIELD_SCHEMA[resolveWorkTypeCategory(scenarioKey)] || WORK_TYPE_FIELD_SCHEMA.default || [];
 }
 
 function renderWorkTypeFields() {
@@ -1101,20 +1116,7 @@ function renderWorkTypeFields() {
 }
 
 function getPermitBaseFieldConfig(scenarioKey) {
-  const workTypeKey = SCENARIO_WORK_TYPE_CONFIG.find((entry) => entry.scenarios.includes(scenarioKey))?.key || "default";
-  const baseByWorkType = {
-    construction: ["permitApplicantType", "permitApplicationType", "permitOfficeAddress", "permitOfficerCount", "permitQualifiedCount", "permitMemo"],
-    takken: ["permitApplicantType", "permitApplicationType", "permitMemo"],
-    kobutsu: ["permitApplicantType", "permitMemo"],
-    company_establishment: ["permitApplicationType", "permitApplicantName", "permitOfficeAddress", "permitMemo"],
-    startup_finance: ["permitApplicantType", "permitApplicationType", "permitMemo"],
-    sangyo_unpan: ["permitApplicantType", "permitApplicationType", "permitMemo"],
-    zairyu: ["permitApplicationType", "permitApplicantName", "permitMemo"],
-    inheritance: ["permitApplicantName", "permitMemo"],
-    automobile: ["permitApplicationType", "permitMemo"],
-    default: ["permitApplicantType", "permitApplicationType", "permitApplicantName", "permitMemo"],
-  };
-  return baseByWorkType[workTypeKey] || baseByWorkType.default;
+  return WORK_TYPE_BASE_FIELDS[resolveWorkTypeCategory(scenarioKey)] || WORK_TYPE_BASE_FIELDS.default;
 }
 
 function syncPermitBaseFieldsVisibility() {
