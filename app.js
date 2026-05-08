@@ -1235,6 +1235,12 @@ function resolvePermitEstimatePreset(hearing) {
   return { taxableItems, expenseItems };
 }
 
+function resolveValidCaseId(rawCaseId) {
+  if (rawCaseId === null || rawCaseId === undefined) return null;
+  const normalized = String(rawCaseId).trim();
+  return normalized ? normalized : null;
+}
+
 async function handleReflectPermitHearingToEstimate(event, button) {
   const targetHearingId = button?.dataset?.permitHearingId || selectedPermitHearingId;
   const hearing = (Array.isArray(state.permitHearings) ? state.permitHearings : []).find((entry) => String(entry.id) === String(targetHearingId))
@@ -1274,7 +1280,8 @@ async function handleReflectPermitHearingToEstimate(event, button) {
   const insertRows = rows.map((row, index) => ({ ...row, sort_order: index + 1, user_id: currentUser.id, estimate_id: data.id }));
   const itemRes = await sbClient.from("estimate_items").insert(insertRows);
   if (itemRes.error) return showAppMessage(`見積明細登録に失敗しました。${formatSupabaseError(itemRes.error)}`, true);
-  await reloadAllData();
+  await loadAllDataSafely();
+  renderAfterDataChanged();
   showAppMessage("ヒアリング結果を見積へ反映しました。");
 }
 
@@ -1468,14 +1475,19 @@ async function handleOverwritePermitHearing() {
   showAppMessage("ヒアリング履歴を更新しました。", false);
 }
 async function applyPermitDocumentsToCase() {
-  if (!currentUser || !lastPermitGenerated?.case_id) return;
+  const resolvedCaseId = resolveValidCaseId(lastPermitGenerated?.case_id ?? lastPermitGenerated?.caseId);
+  if (!currentUser) return;
+  if (!resolvedCaseId) {
+    showAppMessage("案件を選択してください。", true);
+    return;
+  }
   syncPermitGeneratedFromInputs();
   const existing = new Set(state.caseDocuments
-    .filter((d) => (d.case_id ?? d.caseId) === lastPermitGenerated.case_id)
+    .filter((d) => String(d.case_id ?? d.caseId ?? "") === resolvedCaseId)
     .map((d) => String((d.document_name ?? d.documentName) || "").trim()));
   const payload = lastPermitGenerated.docs.filter((name) => name && !existing.has(name)).map((name) => ({
     user_id: currentUser.id,
-    case_id: lastPermitGenerated.case_id,
+    case_id: resolvedCaseId,
     document_name: name,
     status: "未回収",
     received_date: null,
