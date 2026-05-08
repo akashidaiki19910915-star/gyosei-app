@@ -997,31 +997,31 @@ const SCENARIO_WORK_TYPE_CONFIG = [
   { key: "zairyu", scenarios: ["zairyu_nintei", "zairyu_henko", "zairyu_koshin"] },
   { key: "inheritance", scenarios: ["sozoku_initial", "isan_bunkatsu_prep", "kousei_yuigon_prep"] },
 ];
-const PERMIT_BASE_FIELD_ID_MAP = {
-  permitApplicantType: "permit-applicant-type",
-  permitApplicationType: "permit-application-type",
-  permitJurisdictionPrefecture: "permit-jurisdiction-prefecture",
-  permitJurisdictionCity: "permit-jurisdiction-city",
-  permitApplicantName: "permit-applicant-name",
-  permitOfficeAddress: "permit-office-address",
-  permitOfficerCount: "permit-officer-count",
-  permitQualifiedCount: "permit-qualified-count",
-  permitOnlineApplication: "permit-online-application",
-  permitUrgency: "permit-urgency",
-  permitMemo: "permit-memo",
+const PERMIT_BASE_FIELD_SCHEMA = {
+  permitApplicantType: { label: "法人/個人", type: "select", options: [{ value: "法人", label: "法人" }, { value: "個人", label: "個人" }] },
+  permitApplicationType: { label: "申請区分", type: "text", maxlength: 120, placeholder: "例: 新規" },
+  permitJurisdictionPrefecture: { label: "管轄都道府県", type: "text", maxlength: 40, placeholder: "例: 大阪府" },
+  permitJurisdictionCity: { label: "管轄市区町村", type: "text", maxlength: 80, placeholder: "例: 大阪市北区" },
+  permitApplicantName: { label: "申請者名", type: "text", maxlength: 120 },
+  permitOfficeAddress: { label: "事業所所在地", type: "text", maxlength: 200 },
+  permitOfficerCount: { label: "役員人数", type: "number", min: 0, value: 0 },
+  permitQualifiedCount: { label: "有資格者人数", type: "number", min: 0, value: 0 },
+  permitOnlineApplication: { label: "電子申請希望", type: "select", options: [{ value: "false", label: "希望しない" }, { value: "true", label: "希望する" }] },
+  permitUrgency: { label: "急ぎ度", type: "select", options: [{ value: "通常", label: "通常" }, { value: "急ぎ", label: "急ぎ" }] },
+  permitMemo: { label: "メモ", type: "textarea", rows: 3, maxlength: 2000 },
 };
 
 const WORK_TYPE_BASE_FIELDS = {
   default: ["permitApplicantType", "permitApplicationType", "permitApplicantName", "permitMemo"],
-  construction: ["permitApplicantType", "permitApplicationType", "permitOfficeAddress", "permitOfficerCount", "permitQualifiedCount", "permitMemo"],
-  takken: ["permitApplicantType", "permitApplicationType", "permitMemo"],
-  kobutsu: ["permitApplicantType", "permitMemo"],
-  company_establishment: ["permitApplicationType", "permitApplicantName", "permitMemo"],
-  startup_finance: ["permitApplicantType", "permitApplicationType", "permitMemo"],
-  sangyo_unpan: ["permitApplicantType", "permitApplicationType", "permitMemo"],
-  zairyu: ["permitApplicationType", "permitApplicantName", "permitMemo"],
-  inheritance: ["permitApplicantName", "permitMemo"],
-  automobile: ["permitApplicationType", "permitApplicantName", "permitMemo"],
+  construction: ["permitApplicantType", "permitApplicationType", "permitJurisdictionPrefecture", "permitJurisdictionCity", "permitApplicantName", "permitOfficeAddress", "permitOfficerCount", "permitQualifiedCount", "permitOnlineApplication", "permitUrgency", "permitMemo"],
+  takken: ["permitApplicantType", "permitApplicationType", "permitJurisdictionPrefecture", "permitJurisdictionCity", "permitApplicantName", "permitOnlineApplication", "permitUrgency", "permitMemo"],
+  kobutsu: ["permitApplicantType", "permitApplicationType", "permitJurisdictionPrefecture", "permitJurisdictionCity", "permitApplicantName", "permitOnlineApplication", "permitUrgency", "permitMemo"],
+  company_establishment: ["permitApplicantType", "permitApplicationType", "permitApplicantName", "permitOnlineApplication", "permitUrgency", "permitMemo"],
+  startup_finance: ["permitApplicantType", "permitApplicationType", "permitApplicantName", "permitOnlineApplication", "permitUrgency", "permitMemo"],
+  sangyo_unpan: ["permitApplicantType", "permitApplicationType", "permitApplicantName", "permitOnlineApplication", "permitUrgency", "permitMemo"],
+  zairyu: ["permitApplicantType", "permitApplicationType", "permitApplicantName", "permitOnlineApplication", "permitUrgency", "permitMemo"],
+  inheritance: ["permitApplicantType", "permitApplicantName", "permitOnlineApplication", "permitUrgency", "permitMemo"],
+  automobile: ["permitApplicantType", "permitApplicationType", "permitJurisdictionPrefecture", "permitJurisdictionCity", "permitApplicantName", "permitOnlineApplication", "permitUrgency", "permitMemo"],
 };
 
 const PERMIT_CATEGORY_CONFIG = Object.freeze(
@@ -1135,12 +1135,36 @@ function resolveWorkTypeSchema(scenarioKey) {
   return resolvePermitCategoryConfig(scenarioKey).dynamicSchema;
 }
 
+function renderPermitBaseFields(baseFieldNames, previousValues) {
+  const baseFieldsContainer = document.getElementById("permit-base-fields");
+  if (!baseFieldsContainer) return;
+  baseFieldsContainer.innerHTML = baseFieldNames.map((name) => {
+    const field = PERMIT_BASE_FIELD_SCHEMA[name];
+    if (!field) return "";
+    const value = previousValues[name] ?? field.value ?? "";
+    if (field.type === "select") {
+      const options = (field.options || []).map((option) => `<option value="${escapeHtml(String(option.value))}"${String(value) === String(option.value) ? " selected" : ""}>${escapeHtml(String(option.label))}</option>`).join("");
+      return `<label>${escapeHtml(field.label)}<select name="${escapeHtml(name)}">${options}</select></label>`;
+    }
+    if (field.type === "textarea") {
+      const rows = Number.isFinite(Number(field.rows)) ? ` rows="${Number(field.rows)}"` : "";
+      const maxlength = Number.isFinite(Number(field.maxlength)) ? ` maxlength="${Number(field.maxlength)}"` : "";
+      return `<label>${escapeHtml(field.label)}<textarea name="${escapeHtml(name)}"${rows}${maxlength}>${escapeHtml(String(value))}</textarea></label>`;
+    }
+    const min = Number.isFinite(Number(field.min)) ? ` min="${Number(field.min)}"` : "";
+    const maxlength = Number.isFinite(Number(field.maxlength)) ? ` maxlength="${Number(field.maxlength)}"` : "";
+    const placeholder = field.placeholder ? ` placeholder="${escapeHtml(field.placeholder)}"` : "";
+    return `<label>${escapeHtml(field.label)}<input name="${escapeHtml(name)}" type="${escapeHtml(field.type || "text")}"${min}${maxlength} value="${escapeHtml(String(value))}"${placeholder} /></label>`;
+  }).join("");
+}
+
 function renderWorkTypeFields(explicitScenarioKey = "") {
   if (!permitWorkTypeFields || !permitScenarioSelect) return;
   const scenarioKey = getCurrentPermitScenarioKey(explicitScenarioKey);
-  const schema = resolveWorkTypeSchema(scenarioKey);
+  const { baseFields, dynamicSchema } = resolvePermitCategoryConfig(scenarioKey);
   const previous = permitHearingForm ? Object.fromEntries(new FormData(permitHearingForm).entries()) : {};
-  permitWorkTypeFields.innerHTML = schema.map((field) => {
+  renderPermitBaseFields(baseFields, previous);
+  permitWorkTypeFields.innerHTML = dynamicSchema.map((field) => {
     const value = previous[field.name] ?? field.value ?? "";
     const min = Number.isFinite(Number(field.min)) ? ` min="${Number(field.min)}"` : "";
     const placeholder = field.placeholder ? ` placeholder="${escapeHtml(field.placeholder)}"` : "";
@@ -1150,7 +1174,6 @@ function renderWorkTypeFields(explicitScenarioKey = "") {
     }
     return `<label class="${field.fullWidth ? "full-width" : ""}">${escapeHtml(field.label)}<input name="${escapeHtml(field.name)}" type="${escapeHtml(field.type || "text")}"${min} value="${escapeHtml(String(value))}"${placeholder} /></label>`;
   }).join("");
-  syncPermitBaseFieldsVisibility();
 }
 
 function getPermitBaseFieldConfig(scenarioKey) {
@@ -1158,17 +1181,7 @@ function getPermitBaseFieldConfig(scenarioKey) {
 }
 
 function syncPermitBaseFieldsVisibility(explicitScenarioKey = "") {
-  if (!permitHearingForm || !permitScenarioSelect) return;
-  const scenarioKey = getCurrentPermitScenarioKey(explicitScenarioKey);
-  const visibleFieldNames = new Set(getPermitBaseFieldConfig(scenarioKey));
-  Object.entries(PERMIT_BASE_FIELD_ID_MAP).forEach(([name, id]) => {
-    const control = document.getElementById(id) || permitHearingForm.elements.namedItem(name);
-    const label = control?.closest?.("label") || permitHearingForm.querySelector(`label[for="${id}"]`) || control?.parentElement;
-    const wrapper = label?.closest?.(".form-row, .form-grid, .inline-field") || label;
-    const isVisible = visibleFieldNames.has(name);
-    if (label) label.hidden = !isVisible;
-    if (wrapper && wrapper !== label && wrapper.children.length === 1) wrapper.hidden = !isVisible;
-  });
+  renderWorkTypeFields(explicitScenarioKey);
 }
 
 if (window.location.protocol === "file:") {
