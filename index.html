@@ -705,6 +705,11 @@
                 </label>
                 <button id="case-filter-clear-btn" type="button" class="secondary-btn">条件クリア</button>
               </div>
+              <div class="inline-actions">
+                <button type="button" class="secondary-btn" data-action="select_all_cases">全選択</button>
+                <button type="button" class="secondary-btn" data-action="clear_all_cases">全解除</button>
+                <button type="button" class="danger-btn" data-action="bulk_delete_cases">選択を削除</button>
+              </div>
               <p id="case-filter-count" class="filter-count">表示中 0件 / 全0件</p>
               <div id="case-empty" class="empty">案件はまだ登録されていません。</div>
               <ul id="case-list" class="item-list"></ul>
@@ -924,7 +929,11 @@
                   </label>
                   <button id="permit-hearing-filter-clear-btn" type="button" class="secondary-btn">条件クリア</button>
                 </div>
-                <div class="row-actions"><button type="button" class="danger-btn" data-action="bulk_delete_permit_hearings">選択した履歴を一括削除</button></div>
+                <div class="row-actions">
+                  <button type="button" class="secondary-btn" data-action="select_all_permit_hearings">全選択</button>
+                  <button type="button" class="secondary-btn" data-action="clear_all_permit_hearings">全解除</button>
+                  <button type="button" class="danger-btn" data-action="bulk_delete_permit_hearings">選択した履歴を一括削除</button>
+                </div>
                 <p id="permit-hearing-filter-count" class="filter-count">表示中 0件 / 全0件</p>
                 <div id="permit-hearings-empty" class="empty">保存済みヒアリング履歴はまだありません。</div>
                 <div id="permit-hearings-list-wrap" class="table-wrap" hidden>
@@ -1039,6 +1048,11 @@
                 </label>
               </div>
               <div id="estimate-empty" class="empty">見積データはまだありません。</div>
+              <div class="inline-actions">
+                <button type="button" class="secondary-btn" data-action="select_all_estimates">全選択</button>
+                <button type="button" class="secondary-btn" data-action="clear_all_estimates">全解除</button>
+                <button type="button" class="danger-btn" data-action="bulk_delete_estimates">選択を削除</button>
+              </div>
               <ul id="estimate-list" class="item-list estimate-list-grid"></ul>
             </section>
             <section class="panel subtab-panel" data-parent-tab="estimates" data-subtab="export" hidden>
