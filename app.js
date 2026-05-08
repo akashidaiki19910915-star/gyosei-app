@@ -727,7 +727,12 @@ function bindEvents() {
   caseTaskForm?.addEventListener("submit", handleCaseTaskSubmit);
   caseDocumentForm?.addEventListener("submit", handleCaseDocumentSubmit);
   permitHearingForm?.addEventListener("submit", handlePermitHearingSubmit);
-  permitScenarioSelect?.addEventListener("change", renderWorkTypeFields);
+  permitScenarioSelect?.addEventListener("change", (event) => {
+    const scenarioKey = String(event?.target?.value || "");
+    renderWorkTypeFields(scenarioKey);
+    syncPermitBaseFieldsVisibility(scenarioKey);
+  });
+  permitHearingForm?.elements?.namedItem("permitCaseId")?.addEventListener?.("change", syncPermitBaseFieldsVisibility);
   permitDocumentsList?.addEventListener("input", syncPermitGeneratedFromInputs);
   permitTasksList?.addEventListener("input", syncPermitGeneratedFromInputs);
   permitDocumentsList?.addEventListener("click", handlePermitGeneratedListClick);
@@ -764,6 +769,7 @@ function bindEvents() {
   caseStatusFilterSelect?.addEventListener("change", handleCaseStatusFilterChange);
   caseDeadlineFilterSelect?.addEventListener("change", handleCaseDeadlineFilterChange);
   if (caseFilterClearBtn) caseFilterClearBtn.dataset.action = "clear_case_filters";
+  syncPermitBaseFieldsVisibility();
   salesSearchInput?.addEventListener("input", handleSalesSearchInput);
   if (salesFilterClearBtn) salesFilterClearBtn.dataset.action = "clear_sales_search";
   expensesSearchInput?.addEventListener("input", handleExpensesSearchInput);
@@ -1090,6 +1096,16 @@ function buildPermitBranchingResult(baseDocs, baseTasks, conditions) {
   return { docs, tasks, addedDocs, addedTasks, estimateAdjustments };
 }
 
+function getCurrentPermitScenarioKey(explicitScenarioKey = "") {
+  const direct = String(explicitScenarioKey || "").trim();
+  if (direct) return direct;
+  if (!permitScenarioSelect) return "";
+  const selected = String(permitScenarioSelect.value || "").trim();
+  if (selected) return selected;
+  const formSelected = String(permitHearingForm?.elements?.namedItem("permitScenario")?.value || "").trim();
+  return formSelected;
+}
+
 function resolveWorkTypeCategory(scenarioKey) {
   return SCENARIO_WORK_TYPE_CONFIG.find((entry) => entry.scenarios.includes(scenarioKey))?.key || "default";
 }
@@ -1098,9 +1114,10 @@ function resolveWorkTypeSchema(scenarioKey) {
   return WORK_TYPE_FIELD_SCHEMA[resolveWorkTypeCategory(scenarioKey)] || WORK_TYPE_FIELD_SCHEMA.default || [];
 }
 
-function renderWorkTypeFields() {
+function renderWorkTypeFields(explicitScenarioKey = "") {
   if (!permitWorkTypeFields || !permitScenarioSelect) return;
-  const schema = resolveWorkTypeSchema(String(permitScenarioSelect.value || ""));
+  const scenarioKey = getCurrentPermitScenarioKey(explicitScenarioKey);
+  const schema = resolveWorkTypeSchema(scenarioKey);
   const previous = permitHearingForm ? Object.fromEntries(new FormData(permitHearingForm).entries()) : {};
   permitWorkTypeFields.innerHTML = schema.map((field) => {
     const value = previous[field.name] ?? field.value ?? "";
@@ -1119,9 +1136,10 @@ function getPermitBaseFieldConfig(scenarioKey) {
   return WORK_TYPE_BASE_FIELDS[resolveWorkTypeCategory(scenarioKey)] || WORK_TYPE_BASE_FIELDS.default;
 }
 
-function syncPermitBaseFieldsVisibility() {
+function syncPermitBaseFieldsVisibility(explicitScenarioKey = "") {
   if (!permitHearingForm || !permitScenarioSelect) return;
-  const visibleFieldNames = new Set(getPermitBaseFieldConfig(String(permitScenarioSelect.value || "")));
+  const scenarioKey = getCurrentPermitScenarioKey(explicitScenarioKey);
+  const visibleFieldNames = new Set(getPermitBaseFieldConfig(scenarioKey));
   const baseFieldIdMap = {
     permitApplicantType: "permit-applicant-type",
     permitApplicationType: "permit-application-type",
@@ -1136,9 +1154,12 @@ function syncPermitBaseFieldsVisibility() {
     permitMemo: "permit-memo",
   };
   Object.entries(baseFieldIdMap).forEach(([name, id]) => {
-    const control = document.getElementById(id);
-    const label = control?.closest?.("label") || control?.parentElement;
-    if (label) label.hidden = !visibleFieldNames.has(name);
+    const control = document.getElementById(id) || permitHearingForm.elements.namedItem(name);
+    const label = control?.closest?.("label") || permitHearingForm.querySelector(`label[for="${id}"]`) || control?.parentElement;
+    const wrapper = label?.closest?.(".form-row, .form-grid, .inline-field") || label;
+    const isVisible = visibleFieldNames.has(name);
+    if (label) label.hidden = !isVisible;
+    if (wrapper && wrapper !== label && wrapper.children.length === 1) wrapper.hidden = !isVisible;
   });
 }
 
