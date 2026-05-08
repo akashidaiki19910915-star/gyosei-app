@@ -937,56 +937,41 @@ const PERMIT_SCENARIO_MASTER = {
 const PERMIT_COMMON_ADDITIONAL_TASKS = ["公式必要書類確認", "管轄提出先確認", "申請区分別の追加書類確認"];
 const WORK_TYPE_FIELD_SCHEMA = {
   default: [],
-  automobile: [
-    { name: "permitVehicleNumber", label: "車両番号", type: "text", placeholder: "例: 大阪500 あ 12-34" },
-    { name: "permitChassisNumber", label: "車台番号", type: "text", placeholder: "例: ABCD-1234567" },
-    { name: "permitVehicleUser", label: "使用者", type: "text", placeholder: "例: 山田 太郎" },
-    { name: "permitVehicleOwner", label: "所有者", type: "text", placeholder: "例: 株式会社サンプル" },
-    { name: "permitBaseLocation", label: "使用の本拠", type: "text", placeholder: "例: 大阪府大東市..." },
-    { name: "permitParkingLocation", label: "保管場所", type: "text", placeholder: "例: 大阪府大東市..." },
-    { name: "permitHasProxyLetter", label: "委任状有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },
-    { name: "permitHasVehicleInspection", label: "車検証有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },
-  ],
   construction: [
-    { name: "permitCapitalAmount", label: "資本金（円）", type: "number", min: 0, placeholder: "例: 5000000", affectsEstimate: true, estimateUnit: 5000000, estimateIncrement: 5000 },
-    { name: "permitBusinessTypes", label: "業種数", type: "number", min: 1, value: 1, affectsDocs: true, docThreshold: 3, doc: "業種ごとの専任技術者疎明資料" },
+    { name: "permitGovernorType", label: "知事/大臣", type: "select", options: [{ value: "知事", label: "知事" }, { value: "大臣", label: "大臣" }] },
+    { name: "permitBusinessTypes", label: "許可業種", type: "text" },
+    { name: "permitManagerCandidate", label: "経営業務管理責任者候補", type: "text" },
+    { name: "permitEngineerCandidate", label: "専任技術者候補", type: "text" },
+    { name: "permitOfficeCount", label: "営業所数", type: "number", min: 1, value: 1 },
+    { name: "permitFulltimeCheck", label: "常勤性確認", type: "select", options: [{ value: "済", label: "済" }, { value: "未", label: "未" }] },
+    { name: "permitAssetRequirement", label: "財産要件", type: "select", options: [{ value: "充足", label: "充足" }, { value: "未充足", label: "未充足" }] },
+    { name: "permitInsuranceStatus", label: "社会保険加入状況", type: "select", options: [{ value: "加入", label: "加入" }, { value: "未加入", label: "未加入" }] },
   ],
   takken: [
-    { name: "permitOfficeCount", label: "事務所数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 1, estimateIncrement: 10000 },
+    { name: "permitGovernorType", label: "知事/大臣", type: "select", options: [{ value: "知事", label: "知事" }, { value: "大臣", label: "大臣" }] },
+    { name: "permitOfficeCount", label: "事務所数", type: "number", min: 1, value: 1 },
+    { name: "permitQualifiedCount", label: "専任宅建士人数", type: "number", min: 0, value: 0 },
+    { name: "permitOfficerCount", label: "代表者/役員人数", type: "number", min: 0, value: 0 },
+    { name: "permitGuaranteeAssociation", label: "保証協会加入予定", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },
+    { name: "permitOfficeUseRight", label: "事務所使用権限", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },
+    { name: "permitGovUseEmployee", label: "政令使用人の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },
   ],
-  inheritance: [
-    { name: "permitDeceasedName", label: "被相続人", type: "text", placeholder: "例: 山田 花子" },
-    { name: "permitHeirCount", label: "相続人想定人数", type: "number", min: 1, value: 1, affectsDocs: true, docThreshold: 3, doc: "相続関係説明図（詳細版）" },
-    { name: "permitKosekiCollectionStatus", label: "戸籍収集状況", type: "select", options: [{ value: "未着手", label: "未着手" }, { value: "収集中", label: "収集中" }, { value: "収集済", label: "収集済" }] },
-    { name: "permitHasInheritanceAgreement", label: "遺産分割協議書の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },
+  kobutsu: [
+    { name: "permitOfficeAddress", label: "営業所所在地", type: "text" },{ name: "permitManager", label: "管理者", type: "text" },{ name: "permitHandledTypes", label: "取扱古物区分", type: "text" },{ name: "permitHasUrlNotify", label: "URL届出の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },{ name: "permitOfficerCount", label: "役員人数", type: "number", min: 0, value: 0 },{ name: "permitCareerDocCount", label: "略歴書対象人数", type: "number", min: 0, value: 0 }
   ],
-  shakoshomei: [
-    { name: "permitVehicleCount", label: "対象車両台数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 1, estimateIncrement: 4000, affectsDocs: true, docThreshold: 2, doc: "車両ごとの保管場所図面" },
-    { name: "permitParkingType", label: "保管場所区分", type: "select", options: [{ value: "自己所有", label: "自己所有" }, { value: "賃貸", label: "賃貸" }, { value: "親族所有", label: "親族所有" }] },
-  ],
-  company_establishment: [
-    { name: "permitFounderCount", label: "発起人/社員数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 1, estimateIncrement: 5000, affectsDocs: true, docThreshold: 2, doc: "発起人全員の本人確認資料" },
-    { name: "permitDirectorsCount", label: "役員予定者数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 2, estimateIncrement: 5000 },
-    { name: "permitNeedNotary", label: "公証人認証", type: "select", options: [{ value: "あり", label: "あり（株式会社）" }, { value: "なし", label: "なし（合同会社）" }] },
-  ],
-  startup_finance: [
-    { name: "permitLoanAmount", label: "希望融資額（万円）", type: "number", min: 100, value: 500, affectsEstimate: true, estimateUnit: 500, estimateIncrement: 10000 },
-    { name: "permitInterviewSupport", label: "面談同席支援", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },
-  ],
-  sangyo_unpan: [
-    { name: "permitVehicleUnits", label: "運搬車両台数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 1, estimateIncrement: 7000, affectsDocs: true, docThreshold: 3, doc: "車両別写真・車検証写し一式" },
-    { name: "permitPrefectureCount", label: "収集運搬先都道府県数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 1, estimateIncrement: 12000 },
-  ],
-  zairyu: [
-    { name: "permitTargetPersons", label: "対象人数", type: "number", min: 1, value: 1, affectsEstimate: true, estimateUnit: 1, estimateIncrement: 15000, affectsDocs: true, docThreshold: 2, doc: "対象者ごとの身分関係資料一式" },
-    { name: "permitSponsorType", label: "受入機関区分", type: "select", options: [{ value: "法人", label: "法人" }, { value: "個人", label: "個人事業主" }, { value: "なし", label: "該当なし" }] },
-  ],
+  shakoshomei: [{ name: "permitVehicleType", label: "普通車/軽自動車", type: "select", options: [{ value: "普通車", label: "普通車" }, { value: "軽自動車", label: "軽自動車" }] },{ name: "permitCarName", label: "車名", type: "text" },{ name: "permitModel", label: "型式", type: "text" },{ name: "permitChassisNumber", label: "車台番号", type: "text" },{ name: "permitVehicleUser", label: "使用者", type: "text" },{ name: "permitVehicleOwner", label: "所有者", type: "text" },{ name: "permitBaseLocation", label: "使用の本拠", type: "text" },{ name: "permitParkingLocation", label: "保管場所", type: "text" },{ name: "permitSelfOrConsent", label: "自認書/使用承諾書", type: "select", options: [{ value: "自認書", label: "自認書" }, { value: "使用承諾書", label: "使用承諾書" }] },{ name: "permitMapNeeded", label: "所在図・配置図要否", type: "select", options: [{ value: "要", label: "要" }, { value: "不要", label: "不要" }] }],
+  company_establishment: [{ name: "permitCompanyType", label: "株式会社/合同会社", type: "select", options: [{ value: "株式会社", label: "株式会社" }, { value: "合同会社", label: "合同会社" }] },{ name: "permitTradeName", label: "商号", type: "text" },{ name: "permitPurpose", label: "目的", type: "text" },{ name: "permitCapitalAmount", label: "資本金", type: "number", min: 0 },{ name: "permitDirectorStructure", label: "役員構成", type: "text" },{ name: "permitInvestors", label: "出資者", type: "text" },{ name: "permitFiscalYear", label: "事業年度", type: "text" },{ name: "permitNeedNotary", label: "公証役場対応の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] }],
+  startup_finance: [{ name: "permitStartupPhase", label: "創業前/創業後", type: "select", options: [{ value: "創業前", label: "創業前" }, { value: "創業後", label: "創業後" }] },{ name: "permitLoanAmount", label: "希望融資額", type: "number", min: 0 },{ name: "permitOwnFund", label: "自己資金", type: "number", min: 0 },{ name: "permitFundUse", label: "資金使途", type: "text" },{ name: "permitHasQuote", label: "見積書の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },{ name: "permitStartupPlanStatus", label: "創業計画書作成状況", type: "text" },{ name: "permitTaxReturnStatus", label: "確定申告書/決算書の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },{ name: "permitNeedLicense", label: "許認可要否", type: "select", options: [{ value: "要", label: "要" }, { value: "不要", label: "不要" }] }],
+  sangyo_unpan: [{ name: "permitTransferStorage", label: "積替保管の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },{ name: "permitTransportItems", label: "収集運搬品目", type: "text" },{ name: "permitCourseCertificate", label: "講習会修了証の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },{ name: "permitVehicleUnits", label: "車両台数", type: "number", min: 0, value: 0 },{ name: "permitOfficerCount", label: "役員人数", type: "number", min: 0, value: 0 },{ name: "permitFinancialStatus", label: "財務状況", type: "text" },{ name: "permitDisqualificationCheck", label: "欠格要件確認", type: "select", options: [{ value: "済", label: "済" }, { value: "未", label: "未" }] }],
+  zairyu: [{ name: "permitResidenceType", label: "在留資格", type: "text" },{ name: "permitNationality", label: "申請人国籍", type: "text" },{ name: "permitHostOrg", label: "受入機関", type: "text" },{ name: "permitActivity", label: "活動内容", type: "text" },{ name: "permitContractRelation", label: "雇用契約/身分関係", type: "text" },{ name: "permitAgent", label: "代理人/申請取次者", type: "text" },{ name: "permitOnlineAvailable", label: "オンライン申請可否", type: "select", options: [{ value: "可", label: "可" }, { value: "不可", label: "不可" }] },{ name: "permitPhotoEnvelope", label: "写真・返信用封筒要否", type: "select", options: [{ value: "要", label: "要" }, { value: "不要", label: "不要" }] }],
+  inheritance: [{ name: "permitDeceasedDate", label: "死亡日", type: "date" },{ name: "permitLastAddress", label: "最後の住所", type: "text" },{ name: "permitHeirCount", label: "相続人予定人数", type: "number", min: 1, value: 1 },{ name: "permitKosekiCollectionStatus", label: "戸籍収集状況", type: "text" },{ name: "permitHasWill", label: "遺言書の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },{ name: "permitHasInheritanceAgreement", label: "遺産分割協議の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },{ name: "permitHasRealEstate", label: "不動産の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },{ name: "permitHasDeposits", label: "預貯金の有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },{ name: "permitNeedFamilyChart", label: "相続関係説明図の要否", type: "select", options: [{ value: "要", label: "要" }, { value: "不要", label: "不要" }] },{ name: "permitNeedLegalList", label: "法定相続情報一覧図の要否", type: "select", options: [{ value: "要", label: "要" }, { value: "不要", label: "不要" }] }],
 };
 const SCENARIO_WORK_TYPE_CONFIG = [
   { key: "automobile", scenarios: ["kei_hokan_todokede", "jidousha_transfer", "jidousha_change"] },
   { key: "shakoshomei", scenarios: ["shakoshomei_standard"] },
   { key: "construction", scenarios: ["construction_corp", "construction_solo", "keiei_shinsa_bidding"] },
   { key: "takken", scenarios: ["takken_corp", "takken_solo"] },
+  { key: "kobutsu", scenarios: ["kobutsu_corp", "kobutsu_solo"] },
   { key: "company_establishment", scenarios: ["kk_teikan_ninsho", "gk_teikan_check"] },
   { key: "startup_finance", scenarios: ["startup_finance_hearing"] },
   { key: "sangyo_unpan", scenarios: ["sangyo_unpan_new"] },
@@ -1090,9 +1075,20 @@ function renderWorkTypeFields() {
 
 function getPermitBaseFieldConfig(scenarioKey) {
   const workTypeKey = SCENARIO_WORK_TYPE_CONFIG.find((entry) => entry.scenarios.includes(scenarioKey))?.key || "default";
-  const common = ["permitApplicantType", "permitApplicationType", "permitJurisdictionPrefecture", "permitJurisdictionCity", "permitApplicantName", "permitOnlineApplication", "permitUrgency", "permitMemo"];
-  if (workTypeKey === "construction" || workTypeKey === "takken") return [...common, "permitOfficeAddress", "permitOfficerCount", "permitQualifiedCount"];
-  return common;
+  const baseByWorkType = {
+    construction: ["permitApplicantType", "permitApplicationType", "permitMemo"],
+    takken: ["permitApplicantType", "permitApplicationType", "permitMemo"],
+    kobutsu: ["permitApplicantType", "permitMemo"],
+    shakoshomei: ["permitApplicationType", "permitMemo"],
+    company_establishment: ["permitApplicationType", "permitApplicantName", "permitOfficeAddress", "permitMemo"],
+    startup_finance: ["permitApplicantType", "permitApplicationType", "permitMemo"],
+    sangyo_unpan: ["permitApplicantType", "permitApplicationType", "permitMemo"],
+    zairyu: ["permitApplicationType", "permitApplicantName", "permitMemo"],
+    inheritance: ["permitApplicantName", "permitMemo"],
+    automobile: ["permitApplicationType", "permitMemo"],
+    default: ["permitApplicantType", "permitApplicationType", "permitApplicantName", "permitMemo"],
+  };
+  return baseByWorkType[workTypeKey] || baseByWorkType.default;
 }
 
 function syncPermitBaseFieldsVisibility() {
