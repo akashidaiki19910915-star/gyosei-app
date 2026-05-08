@@ -1398,56 +1398,56 @@ function resolveValidCaseId(rawCaseId) {
   return normalized ? normalized : null;
 }
 
+function mapPermitCategoryToEstimateWorkType(category) {
+  const text = String(category || "");
+  if (text.includes("建設")) return "建設業許可";
+  if (text.includes("宅建")) return "宅建業免許";
+  if (text.includes("産業廃棄物")) return "産業廃棄物収集運搬業許可";
+  if (text.includes("車庫証明") || text.includes("自動車")) return "車庫証明";
+  return "建設業許可";
+}
+
+function buildEstimateCalculatorBridgePayload(hearing, linkedCase) {
+  const dynamic = hearing?.answers?.permitDynamicAnswers || {};
+  const workType = mapPermitCategoryToEstimateWorkType(hearing.permit_category);
+  return {
+    source: "permit_hearing",
+    source_hearing_id: hearing.id || null,
+    client_id: hearing.client_id || linkedCase?.client_id || linkedCase?.clientId || "",
+    project_name: hearing.case_name || linkedCase?.case_name || linkedCase?.caseName || `${hearing.permit_category || "許認可"} / ${hearing.application_type || "新規"}`,
+    work_type: workType,
+    application_type: hearing.application_type || "新規",
+    corporate_type: hearing.applicant_type === "個人" ? "個人" : "法人",
+    governor_type: String(dynamic.permitGovernorType || "").includes("大臣") ? "大臣" : "知事",
+    general_specific: String(dynamic.permitGeneralSpecific || "").includes("特定") ? "特定" : "一般",
+    industry_count: Number(dynamic.permitBusinessTypes || 1),
+    officer_count: Number(dynamic.permitOfficerCount || hearing.officer_count || 2),
+    office_count: Number(dynamic.permitOfficeCount || 1),
+    document_level: "低",
+    urgent: hearing.urgency === "急ぎ",
+    keikan_level: "低",
+    sengi_level: "低",
+    zaisan_level: "低",
+    visit_required: false,
+    agent_required: false,
+    expense_amount: 0,
+    discount_amount: 0,
+    memo: hearing.memo || "",
+    permit_dynamic_answers: dynamic,
+  };
+}
+
 async function handleReflectPermitHearingToEstimate(event, button) {
   const targetHearingId = button?.dataset?.permitHearingId || selectedPermitHearingId;
   const hearing = (Array.isArray(state.permitHearings) ? state.permitHearings : []).find((entry) => String(entry.id) === String(targetHearingId))
     || (lastPermitGenerated ? { ...lastPermitGenerated, answers: { permitDynamicAnswers: {} } } : null);
   if (!currentUser || !hearing) return showAppMessage("反映対象のヒアリング結果がありません。", true);
   const linkedCase = state.cases.find((entry) => String(entry.id) === String(hearing.case_id || hearing.caseId || ""));
-  const customerName = hearing.customer_name || linkedCase?.customer_name || linkedCase?.customerName || hearing.applicant_name || "顧客未設定";
-  const estimateTitle = `${hearing.permit_category || "許認可"} / ${hearing.application_type || "新規"}`;
-  const preset = resolvePermitEstimatePreset(hearing);
-  const taxableRows = Array.isArray(preset?.taxableItems) ? preset.taxableItems : [];
-  const expenseRows = Array.isArray(preset?.expenseItems) ? preset.expenseItems : [];
-  const rows = [...taxableRows, ...expenseRows];
-  if (!rows.length) return showAppMessage("見積明細の自動生成に失敗しました。", true);
-  const taxableSubtotal = taxableRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
-  const expenseSubtotal = expenseRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
-  const subtotal = taxableSubtotal + expenseSubtotal;
-  const taxRate = getCurrentTaxRate();
-  const tax = Math.floor(taxableSubtotal * taxRate);
-  const total = taxableSubtotal + tax + expenseSubtotal;
-  const expenseNotice = "実費・法定費用は申請先確認後に別途精算";
-  const mergedMemo = [String(hearing.memo || "").trim(), expenseNotice].filter(Boolean).join("\n");
-  const estimatePayload = {
-    user_id: currentUser.id,
-    client_id: hearing.client_id || linkedCase?.client_id || linkedCase?.clientId || null,
-    customer_name: customerName,
-    estimate_title: estimateTitle,
-    estimate_date: new Date().toISOString().slice(0, 10),
-    status: "未回答",
-    memo: mergedMemo || null,
-    subtotal,
-    tax,
-    total,
-    estimate_number: await getNextMonthlyNumber("estimates", "estimate_number", "M", new Date().toISOString().slice(0, 10)),
-    estimate_source: "permit_hearing",
-  };
-  const { data, error } = await sbClient.from("estimates").insert(estimatePayload).select("*").single();
-  if (error || !data?.id) return showAppMessage(`見積登録に失敗しました。${formatSupabaseError(error)}`, true);
-  const insertRows = rows.map((row, index) => ({ ...row, sort_order: index + 1, user_id: currentUser.id, estimate_id: data.id }));
-  const itemRes = await sbClient.from("estimate_items").insert(insertRows).select("*");
-  if (itemRes.error) return showAppMessage(`見積明細登録に失敗しました。${formatSupabaseError(itemRes.error)}`, true);
-  addEstimateToState(mapEstimateFromDb(data));
-  addEstimateItemsToState((itemRes.data || []).map(mapEstimateItemFromDb));
-  const reflectedAt = new Date().toISOString();
-  const reflectedRes = await sbClient.from("permit_hearings").update({ reflected_estimate_id: data.id, reflected_at: reflectedAt }).eq("id", hearing.id).eq("user_id", currentUser.id);
-  if (reflectedRes.error) return showAppMessage(`ヒアリング反映状態の更新に失敗しました。${formatSupabaseError(reflectedRes.error)}`, true);
-  markPermitHearingAsReflected(hearing.id, data.id, reflectedAt);
-  await refreshEstimateListData();
-  renderAfterDataChanged();
-  safeRender("estimates", renderEstimates);
-  showAppMessage("ヒアリング結果を見積へ反映しました。");
+  window.__estimateCalculatorBridgeData = buildEstimateCalculatorBridgePayload(hearing, linkedCase);
+  activateTab("estimates");
+  activateSubtab("estimates", "calculator");
+  window.dispatchEvent(new CustomEvent("estimate-calculator-bridge-updated"));
+  showAppMessage("ヒアリング結果を見積自動算出へ反映しました。保存・見積反映は見積自動算出画面で実行してください。");
 }
 
 function openPermitPrintPreview() {
@@ -6689,7 +6689,7 @@ function renderPermitHearings() {
         ${isReflected ? `<div class="meta">✅ ${escapeHtml(reflectedText)}</div>` : ""}
         <div class="btn-inline-group">
           <button type="button" class="secondary-btn" data-action="view_saved_permit_hearing" data-permit-hearing-id="${entry.id}">表示</button>
-          <button type="button" class="secondary-btn" data-action="reflect_permit_hearing_to_estimate" data-permit-hearing-id="${entry.id}">${isReflected ? "再反映" : "見積へ反映"}</button>
+          <button type="button" class="secondary-btn" data-action="reflect_permit_hearing_to_estimate" data-permit-hearing-id="${entry.id}">${isReflected ? "再反映" : "見積自動算出へ反映"}</button>
           <button type="button" class="danger-btn" data-action="delete_saved_permit_hearing" data-permit-hearing-id="${entry.id}">削除</button>
         </div>
       </td>
@@ -7264,7 +7264,7 @@ function markPermitHearingAsReflected(hearingId, estimateId, reflectedAt) {
 
 
 const ESTIMATE_SOURCE_LABELS = {
-  permit_hearing: "許認可ヒアリング反映",
+  permit_hearing: "（旧）許認可ヒアリング反映",
   auto_calculation: "見積自動算出反映",
   manual: "直接作成",
 };
@@ -10755,4 +10755,6 @@ window.GyoseiApp = {
     safeRender("estimates", renderEstimates);
   },
   showMessage: (text, isError = false) => showAppMessage(text, isError),
+  getEstimateCalculatorBridgeData: () => window.__estimateCalculatorBridgeData ? { ...window.__estimateCalculatorBridgeData } : null,
+  clearEstimateCalculatorBridgeData: () => { window.__estimateCalculatorBridgeData = null; },
 };
