@@ -472,3 +472,16 @@ with check (auth.uid() = user_id);
 
 
 
+
+## permit_hearings に `reflected_estimate_id` / `reflected_at` がない場合
+
+以下を Supabase SQL Editor で実行してください。
+
+```sql
+alter table public.permit_hearings
+  add column if not exists reflected_estimate_id uuid,
+  add column if not exists reflected_at timestamptz;
+
+create index if not exists idx_permit_hearings_reflected_estimate_id
+  on public.permit_hearings(reflected_estimate_id);
+```

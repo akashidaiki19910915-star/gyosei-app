@@ -84,6 +84,13 @@ const state = {
   pendingAlertSelections: {},
   selectedCaseTaskIds: [],
   selectedCaseDocumentIds: [],
+  selectedEstimateIds: [],
+  selectedPermitHearingIds: [],
+  selectedClientIds: [],
+  selectedCaseIds: [],
+  selectedSaleIds: [],
+  selectedExpenseIds: [],
+  selectedDailyReportIds: [],
 };
 const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
 
@@ -198,6 +205,34 @@ const CLICK_ACTION_HANDLERS = {
   bulk_mark_case_documents_received: () => handleBulkCaseDocumentStatusUpdate("回収済"),
   bulk_mark_case_documents_checked: () => handleBulkCaseDocumentStatusUpdate("確認済"),
   bulk_delete_case_documents: handleBulkDeleteCaseDocuments,
+  select_estimate: (e,b)=>{ const id=b?.dataset?.estimateId; if(!id) return; toggleSelectedId('selectedEstimateIds',id); renderEstimates(); },
+  select_all_estimates: ()=>{ setAllSelections('selectedEstimateIds', state.estimates||[], true); renderEstimates(); },
+  clear_all_estimates: ()=>{ setAllSelections('selectedEstimateIds', state.estimates||[], false); renderEstimates(); },
+  bulk_delete_estimates: ()=>handleGenericBulkDelete({label:'見積', table:'estimates', stateKey:'estimates', selectionKey:'selectedEstimateIds', render:renderEstimates}),
+  select_client: (e,b)=>{const id=b?.dataset?.clientId; if(!id)return; toggleSelectedId('selectedClientIds',id); renderClients();},
+  select_all_clients: ()=>{ setAllSelections('selectedClientIds', state.clients||[], true); renderClients(); },
+  clear_all_clients: ()=>{ setAllSelections('selectedClientIds', state.clients||[], false); renderClients(); },
+  bulk_delete_clients: ()=>handleGenericBulkDelete({label:'顧客', table:'clients', stateKey:'clients', selectionKey:'selectedClientIds', render:renderClients}),
+  select_case: (e,b)=>{const id=b?.dataset?.caseId; if(!id)return; toggleSelectedId('selectedCaseIds',id); renderCases();},
+  select_all_cases: ()=>{ setAllSelections('selectedCaseIds', state.cases||[], true); renderCases(); },
+  clear_all_cases: ()=>{ setAllSelections('selectedCaseIds', state.cases||[], false); renderCases(); },
+  bulk_delete_cases: ()=>handleGenericBulkDelete({label:'案件', table:'cases', stateKey:'cases', selectionKey:'selectedCaseIds', render:renderCases}),
+  select_sale: (e,b)=>{const id=b?.dataset?.saleId; if(!id)return; toggleSelectedId('selectedSaleIds',id); renderSales();},
+  select_all_sales: ()=>{ setAllSelections('selectedSaleIds', state.sales||[], true); renderSales(); },
+  clear_all_sales: ()=>{ setAllSelections('selectedSaleIds', state.sales||[], false); renderSales(); },
+  bulk_delete_sales: ()=>handleGenericBulkDelete({label:'売上', table:'sales', stateKey:'sales', selectionKey:'selectedSaleIds', render:renderSales}),
+  select_expense: (e,b)=>{const id=b?.dataset?.expenseId; if(!id)return; toggleSelectedId('selectedExpenseIds',id); renderExpenses();},
+  select_all_expenses: ()=>{ setAllSelections('selectedExpenseIds', state.expenses||[], true); renderExpenses(); },
+  clear_all_expenses: ()=>{ setAllSelections('selectedExpenseIds', state.expenses||[], false); renderExpenses(); },
+  bulk_delete_expenses: ()=>handleGenericBulkDelete({label:'経費', table:'expenses', stateKey:'expenses', selectionKey:'selectedExpenseIds', render:renderExpenses}),
+  select_daily_report: (e,b)=>{const id=b?.dataset?.dailyReportId; if(!id)return; toggleSelectedId('selectedDailyReportIds',id); renderDailyReports();},
+  select_all_daily_reports: ()=>{ setAllSelections('selectedDailyReportIds', state.dailyReports||[], true); renderDailyReports(); },
+  clear_all_daily_reports: ()=>{ setAllSelections('selectedDailyReportIds', state.dailyReports||[], false); renderDailyReports(); },
+  bulk_delete_daily_reports: ()=>handleGenericBulkDelete({label:'日報', table:'daily_reports', stateKey:'dailyReports', selectionKey:'selectedDailyReportIds', render:renderDailyReports}),
+  select_permit_hearing: (e,b)=>{const id=b?.dataset?.permitHearingId; if(!id)return; toggleSelectedId('selectedPermitHearingIds',id); renderPermitHearings();},
+  select_all_permit_hearings: ()=>{ setAllSelections('selectedPermitHearingIds', state.permitHearings||[], true); renderPermitHearings(); },
+  clear_all_permit_hearings: ()=>{ setAllSelections('selectedPermitHearingIds', state.permitHearings||[], false); renderPermitHearings(); },
+  bulk_delete_permit_hearings: ()=>handleGenericBulkDelete({label:'ヒアリング履歴', table:'permit_hearings', stateKey:'permitHearings', selectionKey:'selectedPermitHearingIds', render:renderPermitHearings}),
   select_integrity_check: handleDataIntegrityAction,
   pending_alert_bulk_clear_next_action_date: () => handlePendingAlertBulkAction("clear_next_action_date"),
   pending_alert_bulk_complete_cases: () => handlePendingAlertBulkAction("complete_cases"),
@@ -455,6 +490,35 @@ async function handleBulkDeleteCaseDocuments() {
     if (error) throw error;
     return data;
   }, { successMessage: "選択した書類を削除しました。", afterSuccess: () => { state.selectedCaseDocumentIds = []; } });
+}
+
+function getSelectedIdsByKey(key) {
+  const list = Array.isArray(state[key]) ? state[key] : [];
+  return [...new Set(list.map((id) => String(id)).filter(Boolean))];
+}
+function toggleSelectedId(key, id) {
+  const selected = new Set(getSelectedIdsByKey(key));
+  if (selected.has(String(id))) selected.delete(String(id)); else selected.add(String(id));
+  state[key] = Array.from(selected);
+}
+function setAllSelections(key, rows, checked) {
+  state[key] = checked ? rows.map((r) => String(r.id)) : [];
+}
+async function handleGenericBulkDelete(config) {
+  if (!currentUser) return;
+  const ids = getSelectedIdsByKey(config.selectionKey);
+  if (!ids.length) return showAppMessage(`対象${config.label}を選択してください。`, true);
+  if (!window.confirm(`選択した${config.label}${ids.length}件を削除しますか？`)) return;
+  await runMutation(`${config.label}一括削除`, async () => {
+    const { data, error } = await sbClient.from(config.table).delete().in('id', ids).eq('user_id', currentUser.id).select('id');
+    if (error) throw error;
+    return data;
+  }, { successMessage: `選択した${config.label}を削除しました。`, afterSuccess: () => {
+    const deleted = new Set(ids);
+    state[config.stateKey] = (state[config.stateKey] || []).filter((r) => !deleted.has(String(r.id)));
+    state[config.selectionKey] = [];
+    config.render();
+  } });
 }
 const permitHearingForm = document.getElementById("permit-hearing-form");
 const permitCaseSelect = document.getElementById("permit-case-id");
@@ -6616,7 +6680,7 @@ function renderPermitHearings() {
     const reflectedText = entry.reflected_at ? `反映済み (${formatDate(entry.reflected_at)})` : "反映済み";
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${formatDate(entry.created_at || entry.createdAt)}</td>
+      <td><button type="button" class="secondary-btn" data-action="select_permit_hearing" data-permit-hearing-id="${entry.id}">${new Set(getSelectedIdsByKey('selectedPermitHearingIds')).has(String(entry.id))?"☑":"☐"}</button></td><td>${formatDate(entry.created_at || entry.createdAt)}</td>
       <td>${escapeHtml(caseName)}</td>
       <td>${escapeHtml(entry.applicant_name || "（未入力）")}</td>
       <td>${escapeHtml(entry.permit_category || "未設定")}</td>
@@ -6729,7 +6793,7 @@ function renderClients() {
         <p class="meta">紹介元: ${escapeHtml(client.referralSource || "未設定")} / メモ: ${escapeHtml(truncateText(client.memo || "未設定", 60))}</p>
         <p class="meta">最終対応日: ${lastInteraction ? formatDate(lastInteraction) : "未設定"} / 次回対応日: ${nextInteraction ? formatDate(nextInteraction) : "未設定"} / 対応履歴件数: ${related.length}件</p>
       </div>
-      <div class="row-actions"><button type="button" class="secondary-btn edit-client-btn" data-action="edit_client" data-list-action="edit_client">編集</button><button type="button" class="danger-btn delete-client-btn" data-action="delete_client" data-list-action="delete_client">削除</button></div>
+      <div class="row-actions"><button type="button" class="secondary-btn" data-action="select_client" data-client-id="${client.id}">${new Set(getSelectedIdsByKey('selectedClientIds')).has(String(client.id))?"☑":"☐"}</button><button type="button" class="secondary-btn edit-client-btn" data-action="edit_client" data-list-action="edit_client">編集</button><button type="button" class="danger-btn delete-client-btn" data-action="delete_client" data-list-action="delete_client">削除</button></div>
     `;
     clientsList.appendChild(li);
   });
@@ -7151,7 +7215,7 @@ function renderEstimates() {
       </div>
       <div class="row-actions estimate-card-actions">
         <button type="button" class="secondary-btn estimate-edit-btn" data-action="edit_estimate" data-list-action="edit_estimate">編集</button>
-        <button type="button" class="danger-btn estimate-delete-btn" data-action="delete_estimate" data-list-action="delete_estimate">削除</button>
+        <button type="button" class="secondary-btn" data-action="select_estimate" data-estimate-id="${entry.id}">${new Set(getSelectedIdsByKey('selectedEstimateIds')).has(String(entry.id))?"☑":"☐"}</button><button type="button" class="danger-btn estimate-delete-btn" data-action="delete_estimate" data-list-action="delete_estimate">削除</button>
         <button type="button" class="secondary-btn create-case-btn" data-action="create_case_from_estimate" data-list-action="create_case_from_estimate" ${isCaseCreated ? "disabled" : ""}>${isCaseCreated ? "案件化済み" : "案件化"}</button>
         <button type="button" class="secondary-btn estimate-estimate-print-btn" data-action="print_estimate" data-list-action="print_estimate">見積書出力</button>
         <button type="button" class="secondary-btn estimate-print-btn" data-action="print_invoice_from_estimate" data-list-action="print_invoice_from_estimate">請求書出力</button>
