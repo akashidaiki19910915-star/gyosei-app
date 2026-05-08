@@ -82,6 +82,8 @@ const state = {
   changeLogs: [],
   isInitialDataReady: false,
   pendingAlertSelections: {},
+  selectedCaseTaskIds: [],
+  selectedCaseDocumentIds: [],
 };
 const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
 
@@ -181,10 +183,21 @@ const CLICK_ACTION_HANDLERS = {
   edit_case_task: handleCaseTaskListAction,
   complete_case_task: handleCaseTaskListAction,
   delete_case_task: handleCaseTaskListAction,
+  select_case_task: handleCaseTaskSelectionAction,
+  select_all_case_tasks: () => setAllCaseTaskSelections(true),
+  clear_all_case_tasks: () => setAllCaseTaskSelections(false),
+  bulk_complete_case_tasks: () => handleBulkCaseTaskUpdateStatus("完了"),
+  bulk_delete_case_tasks: handleBulkDeleteCaseTasks,
   register_sale: handleBillingLeakAlertAction,
   edit_pending_estimate: handlePendingEstimateAction,
   edit_case_document: handleCaseDocumentsListAction,
   delete_case_document: handleCaseDocumentsListAction,
+  select_case_document: handleCaseDocumentSelectionAction,
+  select_all_case_documents: () => setAllCaseDocumentSelections(true),
+  clear_all_case_documents: () => setAllCaseDocumentSelections(false),
+  bulk_mark_case_documents_received: () => handleBulkCaseDocumentStatusUpdate("回収済"),
+  bulk_mark_case_documents_checked: () => handleBulkCaseDocumentStatusUpdate("確認済"),
+  bulk_delete_case_documents: handleBulkDeleteCaseDocuments,
   select_integrity_check: handleDataIntegrityAction,
   pending_alert_bulk_clear_next_action_date: () => handlePendingAlertBulkAction("clear_next_action_date"),
   pending_alert_bulk_complete_cases: () => handlePendingAlertBulkAction("complete_cases"),
@@ -363,6 +376,86 @@ const caseDocumentSubmitBtn = document.getElementById("case-document-submit-btn"
 const caseDocumentsBody = document.getElementById("case-documents-body");
 const caseDocumentsEmpty = document.getElementById("case-documents-empty");
 const caseDocumentsListWrap = document.getElementById("case-documents-list-wrap");
+
+function getSelectedCaseTaskIds() {
+  return [...new Set((Array.isArray(state.selectedCaseTaskIds) ? state.selectedCaseTaskIds : []).map((id) => String(id)).filter(Boolean))];
+}
+function getSelectedCaseDocumentIds() {
+  return [...new Set((Array.isArray(state.selectedCaseDocumentIds) ? state.selectedCaseDocumentIds : []).map((id) => String(id)).filter(Boolean))];
+}
+function setAllCaseTaskSelections(checked) {
+  state.selectedCaseTaskIds = checked ? state.caseTasks.map((entry) => String(entry.id)) : [];
+  renderCaseTasksTable();
+}
+function setAllCaseDocumentSelections(checked) {
+  state.selectedCaseDocumentIds = checked ? state.caseDocuments.map((entry) => String(entry.id)) : [];
+  renderCaseDocuments();
+}
+function handleCaseTaskSelectionAction(event) {
+  const button = event.target.closest("button");
+  const taskId = button?.dataset?.taskId;
+  if (!taskId) return;
+  const selected = new Set(getSelectedCaseTaskIds());
+  if (selected.has(String(taskId))) selected.delete(String(taskId)); else selected.add(String(taskId));
+  state.selectedCaseTaskIds = Array.from(selected);
+  renderCaseTasksTable();
+}
+function handleCaseDocumentSelectionAction(event) {
+  const button = event.target.closest("button");
+  const caseDocumentId = button?.dataset?.caseDocumentId;
+  if (!caseDocumentId) return;
+  const selected = new Set(getSelectedCaseDocumentIds());
+  if (selected.has(String(caseDocumentId))) selected.delete(String(caseDocumentId)); else selected.add(String(caseDocumentId));
+  state.selectedCaseDocumentIds = Array.from(selected);
+  renderCaseDocuments();
+}
+
+async function handleBulkCaseTaskUpdateStatus(status) {
+  if (!currentUser) return;
+  const ids = getSelectedCaseTaskIds();
+  if (!ids.length) return showAppMessage("対象タスクを選択してください。", true);
+  await runMutation("案件タスク一括更新", async () => {
+    const payload = status === "完了" ? { status, completed_at: toDateString(new Date()) } : { status };
+    const { data, error } = await sbClient.from("case_tasks").update(payload).in("id", ids).eq("user_id", currentUser.id).select("id");
+    if (error) throw error;
+    return data;
+  }, { successMessage: `選択したタスクを「${status}」に更新しました。`, afterSuccess: () => { state.selectedCaseTaskIds = []; } });
+}
+async function handleBulkDeleteCaseTasks() {
+  if (!currentUser) return;
+  const ids = getSelectedCaseTaskIds();
+  if (!ids.length) return showAppMessage("対象タスクを選択してください。", true);
+  if (!window.confirm(`選択したタスク${ids.length}件を削除しますか？`)) return;
+  await runMutation("案件タスク一括削除", async () => {
+    const { data, error } = await sbClient.from("case_tasks").delete().in("id", ids).eq("user_id", currentUser.id).select("id");
+    if (error) throw error;
+    return data;
+  }, { successMessage: "選択したタスクを削除しました。", afterSuccess: () => { state.selectedCaseTaskIds = []; } });
+}
+async function handleBulkCaseDocumentStatusUpdate(status) {
+  if (!currentUser) return;
+  const ids = getSelectedCaseDocumentIds();
+  if (!ids.length) return showAppMessage("対象書類を選択してください。", true);
+  const payload = { status };
+  if (status === "回収済") payload.received_date = toDateString(new Date());
+  if (status === "確認済") payload.checked_date = toDateString(new Date());
+  await runMutation("書類一括更新", async () => {
+    const { data, error } = await sbClient.from("case_documents").update(payload).in("id", ids).eq("user_id", currentUser.id).select("id");
+    if (error) throw error;
+    return data;
+  }, { successMessage: `選択した書類を「${status}」に更新しました。`, afterSuccess: () => { state.selectedCaseDocumentIds = []; } });
+}
+async function handleBulkDeleteCaseDocuments() {
+  if (!currentUser) return;
+  const ids = getSelectedCaseDocumentIds();
+  if (!ids.length) return showAppMessage("対象書類を選択してください。", true);
+  if (!window.confirm(`選択した書類${ids.length}件を削除しますか？`)) return;
+  await runMutation("書類一括削除", async () => {
+    const { data, error } = await sbClient.from("case_documents").delete().in("id", ids).eq("user_id", currentUser.id).select("id");
+    if (error) throw error;
+    return data;
+  }, { successMessage: "選択した書類を削除しました。", afterSuccess: () => { state.selectedCaseDocumentIds = []; } });
+}
 const permitHearingForm = document.getElementById("permit-hearing-form");
 const permitCaseSelect = document.getElementById("permit-case-id");
 const permitScenarioSelect = document.getElementById("permit-scenario");
@@ -6403,6 +6496,7 @@ function renderCaseTasksTable() {
   if (!caseTasksBody || !caseTasksEmpty || !caseTasksListWrap) return;
   caseTasksBody.innerHTML = "";
   const rows = state.caseTasks.slice().sort((a, b) => toSortTimestamp(a.dueDate) - toSortTimestamp(b.dueDate));
+  const selectedIds = new Set(getSelectedCaseTaskIds());
   caseTasksEmpty.hidden = rows.length > 0;
   caseTasksListWrap.hidden = rows.length === 0;
   rows.forEach((entry) => {
@@ -6413,6 +6507,7 @@ function renderCaseTasksTable() {
     tr.className = getCaseTaskUrgencyClass(entry);
     tr.dataset.id = entry.id;
     tr.innerHTML = `
+      <td><button type="button" class="secondary-btn" data-action="select_case_task" data-task-id="${entry.id}">${selectedIds.has(String(entry.id)) ? "☑" : "☐"}</button></td>
       <td>${escapeHtml(customerName)}</td>
       <td>${escapeHtml(caseName)}</td>
       <td>${escapeHtml(entry.taskTitle || "未設定")}</td>
@@ -6433,6 +6528,7 @@ function renderCaseDocuments() {
   const rows = (Array.isArray(state.caseDocuments) ? state.caseDocuments : [])
     .slice()
     .sort((a, b) => toSortTimestamp(a.receivedDate || a.createdAt) - toSortTimestamp(b.receivedDate || b.createdAt));
+  const selectedIds = new Set(getSelectedCaseDocumentIds());
   caseDocumentsEmpty.hidden = rows.length > 0;
   caseDocumentsListWrap.hidden = rows.length === 0;
   rows.forEach((entry) => {
@@ -6442,6 +6538,7 @@ function renderCaseDocuments() {
     const tr = document.createElement("tr");
     tr.dataset.id = entry.id;
     tr.innerHTML = `
+      <td><button type="button" class="secondary-btn" data-action="select_case_document" data-case-document-id="${entry.id}">${selectedIds.has(String(entry.id)) ? "☑" : "☐"}</button></td>
       <td>${escapeHtml(customerName)}</td>
       <td>${escapeHtml(caseName)}</td>
       <td>${escapeHtml(entry.documentName || "未設定")}</td>
