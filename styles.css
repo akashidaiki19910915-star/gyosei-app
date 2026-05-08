@@ -1196,3 +1196,7 @@ input[type="number"] {
   grid-column: 1 / -1;
 }
 .compact-list li { margin: 4px 0; }
+
+.card-select-btn { min-width: 2.2rem; font-weight: 700; }
+.item { position: relative; }
+.item > .row-actions { align-self: flex-start; }
