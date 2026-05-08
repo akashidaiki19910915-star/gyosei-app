@@ -8126,12 +8126,15 @@ function buildEstimateDocumentFromEstimate(estimate) {
       amount: Number(row.amount || 0) || 0,
     }));
 
-  const baseRows = rawRows.filter((row) => row.amount > 0 && !row.itemName.includes("加算") && !row.itemName.includes("実費"));
-  const addonTotal = rawRows.filter((row) => row.itemName.includes("加算")).reduce((sum, row) => sum + row.amount, 0);
-  const expenseTotal = rawRows.filter((row) => row.itemName.includes("実費")).reduce((sum, row) => sum + row.amount, 0);
-  const discountTotal = rawRows.filter((row) => row.amount < 0 || row.itemName.includes("値引き")).reduce((sum, row) => sum + row.amount, 0);
+  const discountRows = rawRows.filter((row) => row.amount < 0 || row.itemName.includes("値引き"));
+  const expenseRows = rawRows.filter((row) => row.itemName.includes("実費"));
+  const addonRows = rawRows.filter((row) => row.itemName.includes("加算"));
+  const baseRows = rawRows.filter((row) => row.amount > 0 && !row.itemName.includes("加算") && !row.itemName.includes("実費") && !row.itemName.includes("値引き"));
+  const addonTotal = addonRows.reduce((sum, row) => sum + row.amount, 0);
+  const expenseTotal = expenseRows.reduce((sum, row) => sum + row.amount, 0);
+  const discountTotal = discountRows.reduce((sum, row) => sum + row.amount, 0);
   const baseTotal = baseRows.reduce((sum, row) => sum + row.amount, 0);
-  const gyoseiReward = baseTotal + addonTotal + discountTotal;
+  const gyoseiReward = baseTotal + addonTotal;
 
   const displayRows = [];
   if (gyoseiReward !== 0) {
