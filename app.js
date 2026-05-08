@@ -1120,10 +1120,21 @@ function getPermitBaseFieldConfig(scenarioKey) {
 function syncPermitBaseFieldsVisibility() {
   if (!permitHearingForm || !permitScenarioSelect) return;
   const visibleFieldNames = new Set(getPermitBaseFieldConfig(String(permitScenarioSelect.value || "")));
-  const fieldNames = ["permitApplicantType", "permitApplicationType", "permitJurisdictionPrefecture", "permitJurisdictionCity", "permitApplicantName", "permitOfficeAddress", "permitOfficerCount", "permitQualifiedCount", "permitOnlineApplication", "permitUrgency", "permitMemo"];
-  fieldNames.forEach((name) => {
-    const field = permitHearingForm.elements.namedItem(name);
-    const control = field instanceof RadioNodeList ? field[0] : field;
+  const baseFieldIdMap = {
+    permitApplicantType: "permit-applicant-type",
+    permitApplicationType: "permit-application-type",
+    permitJurisdictionPrefecture: "permit-jurisdiction-prefecture",
+    permitJurisdictionCity: "permit-jurisdiction-city",
+    permitApplicantName: "permit-applicant-name",
+    permitOfficeAddress: "permit-office-address",
+    permitOfficerCount: "permit-officer-count",
+    permitQualifiedCount: "permit-qualified-count",
+    permitOnlineApplication: "permit-online-application",
+    permitUrgency: "permit-urgency",
+    permitMemo: "permit-memo",
+  };
+  Object.entries(baseFieldIdMap).forEach(([name, id]) => {
+    const control = document.getElementById(id);
     const label = control?.closest?.("label") || control?.parentElement;
     if (label) label.hidden = !visibleFieldNames.has(name);
   });
