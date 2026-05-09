@@ -663,6 +663,30 @@ const SALES_MUTATION_COLUMNS = [
   "is_unpaid",
   "invoice_number",
 ];
+const CLIENT_MUTATION_COLUMNS = ["user_id", "name", "client_type", "address", "tel", "email", "referral_source", "memo"];
+const EXPENSE_MUTATION_COLUMNS = ["user_id", "case_id", "date", "content", "amount", "payee", "payment_method", "receipt_url"];
+const PAYMENT_MUTATION_COLUMNS = ["user_id", "sale_id", "payment_date", "amount", "method", "memo"];
+const FIXED_EXPENSE_MUTATION_COLUMNS = ["user_id", "content", "amount", "day_of_month", "start_date", "active"];
+const CASE_TASK_MUTATION_COLUMNS = ["user_id", "case_id", "task_title", "task_memo", "due_date", "status", "completed_at"];
+const CASE_DOCUMENT_MUTATION_COLUMNS = ["user_id", "case_id", "document_name", "status", "received_date", "checked_date", "memo", "file_url"];
+const CLIENT_INTERACTION_MUTATION_COLUMNS = ["user_id", "client_id", "interaction_date", "interaction_type", "summary", "next_action", "next_action_date", "memo"];
+const RESTORE_MUTATION_COLUMNS = {
+  clients: CLIENT_MUTATION_COLUMNS,
+  cases: CASE_MUTATION_COLUMNS,
+  sales: SALES_MUTATION_COLUMNS,
+  payments: PAYMENT_MUTATION_COLUMNS,
+  expenses: EXPENSE_MUTATION_COLUMNS,
+  fixed_expenses: FIXED_EXPENSE_MUTATION_COLUMNS,
+  case_tasks: CASE_TASK_MUTATION_COLUMNS,
+  case_documents: CASE_DOCUMENT_MUTATION_COLUMNS,
+  client_interactions: CLIENT_INTERACTION_MUTATION_COLUMNS,
+  work_templates: ["user_id", "name", "items", "memo"],
+  permit_hearings: ["id", "user_id", "case_id", "scenario_key", "scenario_label", "industry_primary", "industry_secondary", "industry_notes", "preparation_status", "application_route", "corporation_plan", "applicant_name", "applicant_kana", "contact_name", "contact_tel", "contact_email", "office_name", "office_address", "office_postal_code", "business_type", "capital", "employees_count", "officers_count", "years_in_business", "fiscal_month", "insurance_joined", "construction_career_system", "social_insurance_notes", "requested_permissions", "existing_permits", "past_admin_dispositions", "documents", "tasks", "hearing_notes", "next_actions", "status", "updated_at"],
+  estimates: ["user_id", "client_id", "title", "status", "issue_date", "expiry_date", "tax_rate", "subtotal", "tax", "total", "memo", "case_id"],
+  estimate_items: ["user_id", "estimate_id", "name", "quantity", "unit_price", "amount", "memo", "sort_order"],
+  daily_reports: ["user_id", "client_id", "case_id", "report_date", "interaction_type", "work_content", "work_minutes", "next_action", "next_action_date", "memo"],
+  app_settings: ["user_id", "office_name", "postal_code", "address", "tel", "email", "invoice_registration_number", "bank_info", "default_invoice_due_days", "tax_rate", "estimate_note", "invoice_note"],
+};
 
 async function initialize() {
   setAuthControlsDisabled(true);
@@ -3967,10 +3991,14 @@ async function runMutation(actionName, mutationFn, options = {}) {
     return result;
   } catch (error) {
     console.error(`${actionName} failed`, error);
-    showAppMessage(
-      `${actionName}に失敗しました。${error.message || ""} ${error.details || ""} ${error.hint || ""} ${error.code || ""}`,
-      true
-    );
+    if (typeof options.onError === "function") {
+      options.onError(error);
+    } else {
+      showAppMessage(
+        `${actionName}に失敗しました。${error.message || ""} ${error.details || ""} ${error.hint || ""} ${error.code || ""}`,
+        true
+      );
+    }
     return null;
   } finally {
     forceHideLoading();
@@ -4572,9 +4600,9 @@ async function handleCsvImportSubmit(event) {
       resetForm: () => csvImportForm.reset(),
       afterSuccess: (result) => {
         if (!result) return;
-        const message = `CSV取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`;
-        showAppMessage(message, result.errorCount > 0);
+        showAppMessage(buildDataSafetyWarningMessage(importTypeToLabel(importType), result), result.errorCount > 0);
       },
+      onError: (error) => showAppMessage(buildDataSafetyWarningMessage(importTypeToLabel(importType), {}, error), true),
     });
 }
 
@@ -4817,9 +4845,9 @@ async function handleExcelImportSubmit(event) {
       resetForm: () => excelImportForm.reset(),
       afterSuccess: (result) => {
         if (!result) return;
-        const message = `Excel取込完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`;
-        showAppMessage(message, result.errorCount > 0);
+        showAppMessage(buildDataSafetyWarningMessage("Excel取込", result), result.errorCount > 0);
       },
+      onError: (error) => showAppMessage(buildDataSafetyWarningMessage("Excel取込", {}, error), true),
     });
 }
 
@@ -4884,9 +4912,9 @@ async function handleBackupRestoreSubmit(event) {
       resetForm: () => backupRestoreForm.reset(),
       afterSuccess: (result) => {
         if (!result) return;
-        const message = `復元完了: 登録件数 ${result.insertedCount}件 / スキップ件数 ${result.skippedCount}件 / エラー件数 ${result.errorCount}件`;
-        showAppMessage(message, result.errorCount > 0);
+        showAppMessage(buildDataSafetyWarningMessage("バックアップ復元", result), result.errorCount > 0);
       },
+      onError: (error) => showAppMessage(buildDataSafetyWarningMessage("バックアップ復元", {}, error), true),
     });
 }
 
@@ -4971,7 +4999,9 @@ async function restoreBackupData(rawData, mode) {
         result.skippedCount += 1;
         continue;
       }
-      const payload = { ...row, user_id: currentUser.id };
+      const rawPayload = { ...row, user_id: currentUser.id };
+      const allowedColumns = RESTORE_MUTATION_COLUMNS[tableName] || ["user_id"];
+      const payload = pickObjectKeys(rawPayload, allowedColumns);
       const { error } = await sbClient.from(tableName).insert(payload);
       if (error) {
         result.errorCount += 1;
@@ -9705,6 +9735,7 @@ function normalizeCaseDocumentStatus(raw) {
 }
 
 function importTypeToLabel(type) {
+  if (type === "clients") return "顧客CSV";
   if (type === "cases") return "案件CSV";
   if (type === "sales") return "売上CSV";
   if (type === "payments") return "入金CSV";
@@ -9993,6 +10024,11 @@ async function importWorkbookBySheet(workbook) {
     return parseSheetToObjects(sheet);
   };
 
+  const clientData = getSheetRows("顧客");
+  if (clientData.rows.length) {
+    mergeResult(await importRowsByType("clients", clientData));
+  }
+
   const caseData = getSheetRows("案件");
   if (caseData.rows.length) {
     mergeResult(await importRowsByType("cases", caseData));
@@ -10066,6 +10102,35 @@ async function importRowsByType(importType, tableData) {
   const rows = (tableData?.rows || []).filter((row) => row && typeof row === "object");
   if (!rows.length) return result;
 
+  if (importType === "clients") {
+    validateRequiredHeaders(headers, ["name"]);
+    const payloads = [];
+    rows.forEach((row) => {
+      const name = asTrimmedText(row.name);
+      if (!name) {
+        result.skippedCount += 1;
+        return;
+      }
+      const rawPayload = {
+        user_id: currentUser.id,
+        name,
+        client_type: asTrimmedText(row.client_type) || null,
+        address: asTrimmedText(row.address) || null,
+        tel: asTrimmedText(row.tel) || null,
+        email: asTrimmedText(row.email) || null,
+        referral_source: asTrimmedText(row.referral_source) || null,
+        memo: asTrimmedText(row.memo) || null,
+      };
+      payloads.push(pickObjectKeys(rawPayload, CLIENT_MUTATION_COLUMNS));
+    });
+    if (payloads.length) {
+      const { error } = await sbClient.from("clients").insert(payloads);
+      if (error) throw error;
+      result.insertedCount += payloads.length;
+    }
+    return result;
+  }
+
   if (importType === "cases") {
     validateRequiredHeaders(headers, ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status"]);
     const payloads = [];
@@ -10077,7 +10142,7 @@ async function importRowsByType(importType, tableData) {
           result.skippedCount += 1;
           return;
         }
-        payloads.push({
+        payloads.push(pickObjectKeys({
           user_id: currentUser.id,
           client_id: asTrimmedText(row.client_id) || null,
           template_id: asTrimmedText(row.template_id) || null,
@@ -10095,7 +10160,7 @@ async function importRowsByType(importType, tableData) {
           document_url: asTrimmedText(row.document_url) || null,
           invoice_url: asTrimmedText(row.invoice_url) || null,
           receipt_url: asTrimmedText(row.receipt_url) || null,
-        });
+        }, CASE_MUTATION_COLUMNS));
       } catch (_error) {
         result.errorCount += 1;
       }
@@ -10175,7 +10240,7 @@ async function importRowsByType(importType, tableData) {
         }
         const caseName = asTrimmedText(row.case_name);
         const caseId = caseName ? (caseMap.get(caseName) || null) : null;
-        payloads.push({
+        payloads.push(pickObjectKeys({
           user_id: currentUser.id,
           case_id: caseId,
           date,
@@ -10184,7 +10249,7 @@ async function importRowsByType(importType, tableData) {
           payee: asTrimmedText(row.payee) || null,
           payment_method: normalizeExpensePaymentMethod(row.payment_method),
           receipt_url: asTrimmedText(row.receipt_url) || null,
-        });
+        }, EXPENSE_MUTATION_COLUMNS));
       } catch (_error) {
         result.errorCount += 1;
       }
@@ -10215,14 +10280,14 @@ async function importRowsByType(importType, tableData) {
           result.errorCount += 1;
           return;
         }
-        payloads.push({
+        payloads.push(pickObjectKeys({
           user_id: currentUser.id,
           sale_id: saleId,
           payment_date: paymentDate,
           amount,
           method: normalizePaymentMethod(row.method || row.payment_method),
           memo: asTrimmedText(row.memo || row.payment_memo) || null,
-        });
+        }, PAYMENT_MUTATION_COLUMNS));
       } catch (_error) {
         result.errorCount += 1;
       }
@@ -10257,14 +10322,14 @@ async function importRowsByType(importType, tableData) {
           return;
         }
         existing.add(dupKey);
-        payloads.push({
+        payloads.push(pickObjectKeys({
           user_id: currentUser.id,
           content,
           amount,
           day_of_month: dayOfMonth,
           start_date: startDate,
           active: parseBooleanLike(row.active),
-        });
+        }, FIXED_EXPENSE_MUTATION_COLUMNS));
       } catch (_error) {
         result.errorCount += 1;
       }
@@ -10290,7 +10355,7 @@ async function importRowsByType(importType, tableData) {
         const caseName = asTrimmedText(row.case_name);
         const linkedCase = state.cases.find((entry) => entry.caseName === caseName && (!row.customer_name || entry.customerName === asTrimmedText(row.customer_name)));
         const status = asTrimmedText(row.status) === "完了" ? "完了" : "未完了";
-        payloads.push({
+        payloads.push(pickObjectKeys({
           user_id: currentUser.id,
           case_id: linkedCase?.id || null,
           task_title: taskTitle,
@@ -10298,7 +10363,7 @@ async function importRowsByType(importType, tableData) {
           due_date: parseFlexibleDate(row.due_date),
           status,
           completed_at: status === "完了" ? parseFlexibleDate(row.completed_at) || toDateString(new Date()) : null,
-        });
+        }, CASE_TASK_MUTATION_COLUMNS));
       } catch (_error) {
         result.errorCount += 1;
       }
@@ -10323,7 +10388,7 @@ async function importRowsByType(importType, tableData) {
         }
         const caseName = asTrimmedText(row.case_name);
         const linkedCase = state.cases.find((entry) => entry.caseName === caseName && (!row.customer_name || entry.customerName === asTrimmedText(row.customer_name)));
-        payloads.push({
+        payloads.push(pickObjectKeys({
           user_id: currentUser.id,
           case_id: linkedCase?.id || null,
           document_name: documentName,
@@ -10332,7 +10397,7 @@ async function importRowsByType(importType, tableData) {
           checked_date: parseFlexibleDate(row.checked_date),
           memo: asTrimmedText(row.memo) || null,
           file_url: asTrimmedText(row.file_url) || null,
-        });
+        }, CASE_DOCUMENT_MUTATION_COLUMNS));
       } catch (_error) {
         result.errorCount += 1;
       }
@@ -10356,7 +10421,7 @@ async function importRowsByType(importType, tableData) {
           result.errorCount += 1;
           return;
         }
-        payloads.push({
+        payloads.push(pickObjectKeys({
           user_id: currentUser.id,
           client_id: asTrimmedText(row.client_id) || null,
           interaction_date: interactionDate,
@@ -10365,7 +10430,7 @@ async function importRowsByType(importType, tableData) {
           next_action: asTrimmedText(row.next_action || row.interaction_next_action) || null,
           next_action_date: parseFlexibleDate(row.next_action_date || row.interaction_next_action_date),
           memo: asTrimmedText(row.memo || row.interaction_memo) || null,
-        });
+        }, CLIENT_INTERACTION_MUTATION_COLUMNS));
       } catch (_error) {
         result.errorCount += 1;
       }
@@ -10381,6 +10446,14 @@ async function importRowsByType(importType, tableData) {
   throw new Error("未対応のCSV取込種別です。");
 }
 
+
+function buildDataSafetyWarningMessage(kindLabel, stats = {}, error = null) {
+  const inserted = Number(stats.insertedCount || 0);
+  const skipped = Number(stats.skippedCount || 0);
+  const errored = Number(stats.errorCount || 0);
+  const supabaseMessage = error?.message ? ` / 詳細: ${error.message}` : "";
+  return `${kindLabel}: 成功件数 ${inserted}件 / スキップ件数 ${skipped}件 / エラー件数 ${errored}件${supabaseMessage}。未定義カラムや形式不正が含まれている可能性があります。`;
+}
 function escapeHtml(text) {
   return String(text)
     .replaceAll("&", "&amp;")
