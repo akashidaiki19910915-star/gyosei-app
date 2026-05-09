@@ -907,21 +907,29 @@ function clearCaseFilters() {
 
 const PERMIT_HEARING_NOTICE = "この一覧は初回ヒアリング用の標準リストです。正式な必要書類は、管轄官公署・申請区分・法人/個人・個別事情により異なります。申請前に必ず最新の公式案内で確認してください。";
 
+const PERMIT_PRACTICAL_MEMOS = {
+  construction: ["経管、営業所技術者等、財産要件は初回面談で早めに確認する。", "要件が崩れると申請書作成前に案件停止となる。"],
+  takken: ["事務所要件と専任宅建士要件の確認を先に行う。", "正本副本の部数確認を行う。"],
+  kobutsu: ["管理者、営業所、URL届出の有無を先に確認する。", "不備があると標準処理期間が延びる。"],
+  automobile: ["配置図は省略不可。", "使用権原資料の種類を最初に確認する。", "管轄警察署を誤ると手戻りになる。"],
+  company_establishment: ["登記申請は司法書士業務のため、行政書士側では定款・許認可・創業支援との連携を明確にする。"],
+};
+
 const PERMIT_SCENARIO_MASTER = {
-  construction_corp: { label: "大阪府 建設業許可 知事許可 新規 法人", docs: ["定款", "履歴事項全部証明書", "役員全員の住民票", "営業所写真", "専任技術者の資格証"], tasks: ["要件確認", "必要書類案内", "役員・技術者情報の確認", "申請書作成", "提出・補正対応"] },
-  construction_solo: { label: "大阪府 建設業許可 知事許可 新規 個人", docs: ["本人住民票", "身分証明書", "営業所写真", "専任技術者の資格証", "確定申告書控え"], tasks: ["本人要件確認", "必要書類案内", "技術者要件確認", "申請書作成", "提出・補正対応"] },
-  takken_corp: { label: "大阪府 宅建業免許 新規 法人", docs: ["定款", "履歴事項全部証明書", "専任宅建士の登録証", "事務所使用権限書類", "役員の略歴書"], tasks: ["免許要件確認", "専任宅建士の確認", "必要書類回収", "申請書作成", "提出・審査対応"] },
-  takken_solo: { label: "大阪府 宅建業免許 新規 個人", docs: ["本人住民票", "身分証明書", "専任宅建士の登録証", "事務所使用権限書類", "略歴書"], tasks: ["免許要件確認", "専任宅建士の確認", "必要書類回収", "申請書作成", "提出・審査対応"] },
-  kobutsu_corp: { label: "大阪府警 古物商許可 新規 法人", docs: ["履歴事項全部証明書", "定款", "役員全員の住民票", "URL使用権限疎明資料（該当時）", "営業所の賃貸借契約書"], tasks: ["欠格要件確認", "営業所情報確認", "必要書類回収", "申請書作成", "警察署へ提出"] },
-  kobutsu_solo: { label: "大阪府警 古物商許可 新規 個人", docs: ["本人住民票", "身分証明書", "URL使用権限疎明資料（該当時）", "営業所の賃貸借契約書", "略歴書"], tasks: ["欠格要件確認", "営業所情報確認", "必要書類回収", "申請書作成", "警察署へ提出"] },
+  construction_corp: { label: "大阪府 建設業許可 知事許可 新規 法人", docs: ["建設業許可申請書", "役員等の一覧表", "営業所一覧表", "専任技術者一覧表", "工事経歴書", "直前3年の各事業年度における工事施工金額", "使用人数", "誓約書", "常勤役員等証明書または経営業務管理責任者関連資料", "常勤役員等の略歴書", "営業所技術者等証明書", "技術者の資格証明書または実務経験証明書", "健康保険等の加入状況", "財産的基礎確認資料", "残高証明書または財務諸表", "登記事項証明書", "定款", "納税証明書", "身分証明書", "登記されていないことの証明書", "営業所の写真", "営業所の使用権原確認資料", "委任状"], tasks: ["申請区分確認", "知事/大臣確認", "一般/特定確認", "業種確認", "経営業務管理責任者要件確認", "営業所技術者等要件確認", "財産的基礎確認", "欠格要件確認", "社会保険加入状況確認", "営業所実態確認", "必要書類回収", "申請書作成", "申請先確認", "提出予約または電子申請確認", "申請", "補正対応", "許可通知確認", "許可後の標識・帳簿・変更届案内"] },
+  construction_solo: { label: "大阪府 建設業許可 知事許可 新規 個人", docs: ["建設業許可申請書", "役員等の一覧表", "営業所一覧表", "専任技術者一覧表", "工事経歴書", "直前3年の各事業年度における工事施工金額", "使用人数", "誓約書", "常勤役員等証明書または経営業務管理責任者関連資料", "常勤役員等の略歴書", "営業所技術者等証明書", "技術者の資格証明書または実務経験証明書", "健康保険等の加入状況", "財産的基礎確認資料", "残高証明書または財務諸表", "納税証明書", "身分証明書", "登記されていないことの証明書", "営業所の写真", "営業所の使用権原確認資料", "委任状"], tasks: ["申請区分確認", "知事/大臣確認", "一般/特定確認", "業種確認", "経営業務管理責任者要件確認", "営業所技術者等要件確認", "財産的基礎確認", "欠格要件確認", "社会保険加入状況確認", "営業所実態確認", "必要書類回収", "申請書作成", "申請先確認", "提出予約または電子申請確認", "申請", "補正対応", "許可通知確認", "許可後の標識・帳簿・変更届案内"] },
+  takken_corp: { label: "大阪府 宅建業免許 新規 法人", docs: ["宅地建物取引業免許申請書", "相談役及び顧問、5%以上の株主等の名簿", "身分証明書", "登記されていないことの証明書", "代表者、役員、政令使用人、専任宅建士の略歴書", "専任宅建士設置証明書", "宅建士証の写し", "事務所付近の地図", "事務所の写真", "事務所使用権原確認資料", "登記事項証明書", "定款", "納税証明書", "決算書類", "誓約書", "委任状", "正本1部", "副本1部"], tasks: ["法人/個人確認", "知事/大臣確認", "事務所要件確認", "専任宅建士要件確認", "欠格要件確認", "役員・政令使用人確認", "営業保証金または保証協会の方針確認", "必要書類回収", "写真撮影", "申請書作成", "正本副本作成", "申請", "補正対応", "免許通知確認", "免許後の保証協会/供託/営業開始手続案内"] },
+  takken_solo: { label: "大阪府 宅建業免許 新規 個人", docs: ["宅地建物取引業免許申請書", "身分証明書", "登記されていないことの証明書", "代表者、役員、政令使用人、専任宅建士の略歴書", "専任宅建士設置証明書", "宅建士証の写し", "事務所付近の地図", "事務所の写真", "事務所使用権原確認資料", "納税証明書", "誓約書", "委任状", "正本1部", "副本1部"], tasks: ["法人/個人確認", "知事/大臣確認", "事務所要件確認", "専任宅建士要件確認", "欠格要件確認", "役員・政令使用人確認", "営業保証金または保証協会の方針確認", "必要書類回収", "写真撮影", "申請書作成", "正本副本作成", "申請", "補正対応", "免許通知確認", "免許後の保証協会/供託/営業開始手続案内"] },
+  kobutsu_corp: { label: "大阪府警 古物商許可 新規 法人", docs: ["古物商許可申請書", "別記様式第1号その1", "役員用継続用紙", "主たる営業所に関する記載事項", "ウェブサイト利用有無の記載事項", "略歴書", "誓約書", "住民票", "身分証明書", "法人登記事項証明書", "定款", "営業所使用権原確認資料", "管理者関連資料", "委任状"], tasks: ["申請者区分確認", "主たる営業所確認", "管理者確認", "役員確認", "欠格要件確認", "取扱品目確認", "URL届出有無確認", "営業所使用権原確認", "管轄警察署確認", "必要書類回収", "申請書作成", "申請予約または提出方法確認", "警察署へ申請", "補正対応", "許可連絡確認", "許可証受領", "標識・帳簿・変更届義務案内"] },
+  kobutsu_solo: { label: "大阪府警 古物商許可 新規 個人", docs: ["古物商許可申請書", "別記様式第1号その1", "主たる営業所に関する記載事項", "ウェブサイト利用有無の記載事項", "略歴書", "誓約書", "住民票", "身分証明書", "営業所使用権原確認資料", "管理者関連資料", "委任状"], tasks: ["申請者区分確認", "主たる営業所確認", "管理者確認", "欠格要件確認", "取扱品目確認", "URL届出有無確認", "営業所使用権原確認", "管轄警察署確認", "必要書類回収", "申請書作成", "申請予約または提出方法確認", "警察署へ申請", "補正対応", "許可連絡確認", "許可証受領", "標識・帳簿・変更届義務案内"] },
   sangyo_unpan_new: { label: "産業廃棄物収集運搬業許可 新規", docs: ["法人/個人確認資料", "事業計画概要", "車両情報一覧", "運搬容器・設備確認資料", "講習会修了証"], tasks: ["許可要件確認", "必要書類案内", "車両・設備情報確認", "申請書作成", "提出・補正対応"] },
   keiei_shinsa_bidding: { label: "経営事項審査・入札参加資格 準備", docs: ["決算書", "工事経歴書", "納税証明書", "社会保険加入確認資料", "技術職員名簿"], tasks: ["経審対象確認", "評点シミュレーション", "必要書類回収", "申請スケジュール調整", "入札参加資格申請準備"] },
-  shakoshomei_standard: { label: "車庫証明申請 普通車", docs: ["自動車保管場所証明申請書", "保管場所使用権原疎明書面", "保管場所所在図・配置図", "使用の本拠の位置確認資料", "申請車両情報"], tasks: ["申請要件確認", "保管場所情報確認", "必要書類回収", "申請書作成", "警察署提出・受領"] },
+  shakoshomei_standard: { label: "車庫証明申請 普通車", docs: ["自動車保管場所証明申請書", "保管場所標章交付申請書", "保管場所の所在図", "保管場所の配置図", "保管場所使用権原疎明書面（自認書）", "保管場所使用承諾証明書", "賃貸借契約書の写し", "領収書等", "使用の本拠の位置を確認できる資料", "委任状"], tasks: ["車種区分確認", "使用者確認", "使用の本拠確認", "保管場所所在地確認", "本拠と保管場所の距離確認", "使用権原確認", "所在図作成", "配置図作成", "現地調査", "管轄警察署確認", "申請書作成", "警察署へ申請", "交付予定日確認", "受領", "顧客またはディーラーへ納品"] },
   kei_hokan_todokede: { label: "軽自動車 保管場所届出", docs: ["保管場所届出書", "保管場所使用権原疎明書面", "保管場所所在図・配置図", "使用の本拠の位置確認資料", "車台番号情報"], tasks: ["届出要件確認", "保管場所情報確認", "必要書類回収", "届出書作成", "警察署届出・受領"] },
   jidousha_transfer: { label: "自動車 移転登録", docs: ["譲渡証明書", "委任状", "印鑑証明書", "車検証", "自動車保管場所証明書（必要時）"], tasks: ["登録要件確認", "必要書類案内", "書類回収・確認", "申請書作成", "運輸支局提出・補正対応"] },
   jidousha_change: { label: "自動車 変更登録", docs: ["変更登録申請書", "住民票/登記事項証明書", "車検証", "委任状", "自動車保管場所証明書（必要時）"], tasks: ["変更事項確認", "必要書類案内", "書類回収・確認", "申請書作成", "運輸支局提出・補正対応"] },
-  kk_teikan_ninsho: { label: "株式会社設立 定款作成・認証準備", docs: ["会社基本事項メモ", "発起人情報", "役員予定者情報", "定款案", "公証人確認メモ"], tasks: ["設立要件ヒアリング", "定款案作成", "公証役場事前確認", "認証準備", "司法書士へ登記連携"] },
-  gk_teikan_check: { label: "合同会社設立 定款作成・設立前チェック", docs: ["会社基本事項メモ", "社員情報", "出資内容一覧", "定款案", "許認可要否メモ"], tasks: ["設立要件ヒアリング", "定款案作成", "設立前チェック", "必要手続案内", "司法書士へ登記連携"] },
+  kk_teikan_ninsho: { label: "株式会社設立 定款作成・認証準備", docs: ["基本事項ヒアリングシート", "商号確認資料", "本店所在地確認資料", "事業目的案", "発起人情報", "役員情報", "出資内容", "定款案", "印鑑証明書", "本人確認資料", "司法書士連携用資料", "許認可要否確認メモ"], tasks: ["商号確認", "本店所在地確認", "事業目的確認", "許認可要否確認", "発起人確認", "役員確認", "資本金確認", "定款案作成", "公証役場または電子定款対応確認", "司法書士連携", "登記完了確認", "開業後の許認可・税務・社保導線案内"] },
+  gk_teikan_check: { label: "合同会社設立 定款作成・設立前チェック", docs: ["基本事項ヒアリングシート", "商号確認資料", "本店所在地確認資料", "事業目的案", "発起人情報", "役員情報", "出資内容", "定款案", "印鑑証明書", "本人確認資料", "司法書士連携用資料", "許認可要否確認メモ"], tasks: ["商号確認", "本店所在地確認", "事業目的確認", "許認可要否確認", "発起人確認", "役員確認", "資本金確認", "定款案作成", "公証役場または電子定款対応確認", "司法書士連携", "登記完了確認", "開業後の許認可・税務・社保導線案内"] },
   startup_finance_hearing: { label: "創業融資 事前ヒアリング", docs: ["創業計画書案", "資金繰り表", "自己資金確認資料", "見積書・契約予定資料", "事業実績資料（該当時）"], tasks: ["創業計画ヒアリング", "資金計画確認", "必要書類案内", "申込前チェック", "金融機関相談準備"] },
   zairyu_nintei: { label: "在留資格認定証明書交付申請", docs: ["申請書", "理由書", "雇用契約書/受入資料", "申請人パスポート写し", "在留資格該当性疎明資料"], tasks: ["申請取次資格確認", "在留資格該当性確認", "必要書類回収", "申請書作成", "入管提出・補正対応"] },
   zairyu_henko: { label: "在留資格変更許可申請", docs: ["申請書", "変更理由説明資料", "現有在留カード写し", "パスポート写し", "活動内容疎明資料"], tasks: ["申請取次資格確認", "変更要件確認", "必要書類回収", "申請書作成", "入管提出・補正対応"] },
@@ -943,6 +951,7 @@ const WORK_TYPE_FIELD_SCHEMA = {
     { name: "permitBaseLocation", label: "使用の本拠", type: "text" },
     { name: "permitParkingLocation", label: "保管場所", type: "text" },
     { name: "permitStorageCategory", label: "保管場所区分", type: "select", options: [{ value: "自己所有", label: "自己所有" }, { value: "他人所有", label: "他人所有" }] },
+    { name: "permitParkingProofType", label: "他人所有時の疎明資料", type: "select", options: [{ value: "使用承諾証明書", label: "使用承諾証明書" }, { value: "賃貸借契約書の写し", label: "賃貸借契約書の写し" }] },
     { name: "permitHasProxyLetter", label: "委任状有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },
     { name: "permitHasVehicleInspection", label: "車検証有無", type: "select", options: [{ value: "あり", label: "あり" }, { value: "なし", label: "なし" }] },
   ],
@@ -960,7 +969,7 @@ const WORK_TYPE_FIELD_SCHEMA = {
     { name: "permitOfficerCount", label: "役員人数", type: "number", min: 0, value: 0 }
   ],
   kobutsu: [
-    { name: "permitOfficeAddress", label: "営業所所在地", type: "text" },{ name: "permitManager", label: "管理者", type: "text" },{ name: "permitHandledTypes", label: "取扱古物区分", type: "text" }
+    { name: "permitOfficeAddress", label: "営業所所在地", type: "text" },{ name: "permitManager", label: "管理者", type: "text" },{ name: "permitHandledTypes", label: "取扱古物区分", type: "text" },{ name: "permitAdditionalOfficeCount", label: "その他営業所数", type: "number", min: 0, value: 0 },{ name: "permitKobutsuOfficerCount", label: "古物商の役員人数", type: "number", min: 0, value: 0 },{ name: "permitHasWebsite", label: "URL届出", type: "select", options: [{ value: "なし", label: "なし" }, { value: "あり", label: "あり" }] }
   ],
   company_establishment: [
     { name: "permitCompanyType", label: "会社形態", type: "select", options: [{ value: "株式会社", label: "株式会社" }, { value: "合同会社", label: "合同会社" }] },
@@ -1076,6 +1085,14 @@ function buildPermitBranchingResult(baseDocs, baseTasks, conditions) {
   } else if (conditions.applicantType === "個人") {
     pushUnique(["本人確認資料", "納税証明書（個人）"], addedDocs, docSet, docs);
     pushUnique(["個人要件確認"], addedTasks, taskSet, tasks);
+    const dynamicAnswers = conditions.dynamicAnswers && typeof conditions.dynamicAnswers === "object" ? conditions.dynamicAnswers : {};
+  if (conditions.workTypeCategory === "kobutsu") {
+      ["法人登記事項証明書", "定款", "役員用継続用紙"].forEach((name) => {
+        const idx = docs.indexOf(name);
+        if (idx >= 0) docs.splice(idx, 1);
+        docSet.delete(name);
+      });
+    }
   }
 
   if (conditions.onlineApplication) {
@@ -1087,8 +1104,27 @@ function buildPermitBranchingResult(baseDocs, baseTasks, conditions) {
   if (conditions.hasJurisdictionInput) {
     pushUnique(["管轄窓口確認"], addedTasks, taskSet, tasks);
   }
-  const estimateAdjustments = [];
+  if (conditions.workTypeCategory === "kobutsu") {
+    const extraOfficeCount = Number(dynamicAnswers.permitAdditionalOfficeCount || 0);
+    const officerCount = Math.max(Number(dynamicAnswers.permitKobutsuOfficerCount || 0), Number(conditions.officerCount || 0));
+    if (extraOfficeCount > 0) pushUnique(["その他営業所に関する記載事項"], addedDocs, docSet, docs);
+    if (String(dynamicAnswers.permitHasWebsite || "なし") === "あり") pushUnique(["URL使用権限を疎明する資料"], addedDocs, docSet, docs);
+    if (conditions.applicantType === "法人" && officerCount > 1) pushUnique([`役員関連資料（${officerCount}名分）`], addedDocs, docSet, docs);
+  }
+  if (conditions.workTypeCategory === "automobile") {
+    const storage = String(dynamicAnswers.permitStorageCategory || "");
+    const proofType = String(dynamicAnswers.permitParkingProofType || "使用承諾証明書");
+    if (storage === "自己所有") {
+      pushUnique(["保管場所使用権原疎明書面（自認書）"], addedDocs, docSet, docs);
+      ["保管場所使用承諾証明書", "賃貸借契約書の写し"].forEach((name) => { const i = docs.indexOf(name); if (i >= 0) docs.splice(i, 1); docSet.delete(name); });
+    } else if (storage === "他人所有") {
+      pushUnique([proofType], addedDocs, docSet, docs);
+      const remove = proofType === "使用承諾証明書" ? "賃貸借契約書の写し" : "保管場所使用承諾証明書";
+      const i = docs.indexOf(remove); if (i >= 0) docs.splice(i, 1); docSet.delete(remove);
+    }
+  }
   const dynamicAnswers = conditions.dynamicAnswers && typeof conditions.dynamicAnswers === "object" ? conditions.dynamicAnswers : {};
+  const estimateAdjustments = [];
   (Array.isArray(conditions.dynamicSchema) ? conditions.dynamicSchema : []).forEach((field) => {
     const raw = dynamicAnswers[field.name];
     const numericValue = Number(raw || 0);
@@ -1259,6 +1295,8 @@ async function handlePermitHearingSubmit(event) {
     hasJurisdictionInput: jurisdictionPrefecture !== "（未入力）" || jurisdictionCity !== "（未入力）",
     dynamicSchema: workTypeSchema,
     dynamicAnswers,
+    workTypeCategory: resolveWorkTypeCategory(scenarioKey),
+    officerCount,
   });
   const generatedSummary = buildPermitSummary({
     scenarioLabel: scenario.label,
@@ -1294,6 +1332,7 @@ async function handlePermitHearingSubmit(event) {
     docs: branchingResult.docs,
     tasks: branchingResult.tasks,
     warnings: missingWarnings,
+    practicalMemos: PERMIT_PRACTICAL_MEMOS[resolveWorkTypeCategory(scenarioKey)] || [],
   });
   const linkedCustomerName = linkedCase.customer_name ?? linkedCase.customerName ?? "";
   const linkedCaseName = linkedCase.case_name ?? linkedCase.caseName ?? "";
@@ -1374,6 +1413,7 @@ function renderPermitGeneratedResult(payload) {
   const docs = Array.isArray(payload.docs) ? payload.docs : [];
   const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
   const warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
+  const practicalMemos = Array.isArray(payload.practicalMemos) ? payload.practicalMemos : [];
   permitSummary.textContent = summary;
   const permitNotice = document.getElementById("permit-notice");
   if (permitNotice) permitNotice.textContent = PERMIT_HEARING_NOTICE;
@@ -1386,6 +1426,8 @@ function renderPermitGeneratedResult(payload) {
   permitDocumentsList.innerHTML = docs.length
     ? docs.map((doc) => `<li class="permit-edit-row"><input type="text" data-permit-field="docs" value="${escapeHtml(doc)}" /><button type="button" class="danger-btn" data-permit-delete="docs">削除</button></li>`).join("")
     : "<li>保存済み書類がありません。</li>";
+  const permitMemoList = document.getElementById("permit-practical-memo-list");
+  if (permitMemoList) permitMemoList.innerHTML = practicalMemos.length ? practicalMemos.map((memo) => `<li>${escapeHtml(memo)}</li>`).join("") : "<li>実務メモはありません。</li>";
   permitTasksList.innerHTML = tasks.length
     ? tasks.map((task) => `<li class="permit-edit-row"><input type="text" data-permit-field="tasks" value="${escapeHtml(task)}" /><button type="button" class="danger-btn" data-permit-delete="tasks">削除</button></li>`).join("")
     : "<li>保存済みタスクがありません。</li>";
@@ -1630,7 +1672,7 @@ function handleViewSavedPermitHearing(event, button) {
     qualifiedCount: Number(hearing.qualified_person_count || 0),
     showOfficeFields: getPermitBaseFieldConfig(String(answers.permitScenario || "")).includes("permitOfficeAddress"),
   });
-  renderPermitGeneratedResult({ summary, docs, tasks, warnings: missingWarnings });
+  renderPermitGeneratedResult({ summary, docs, tasks, warnings: missingWarnings, practicalMemos: PERMIT_PRACTICAL_MEMOS[resolveWorkTypeCategory(answers?.permitScenario || "")] || [] });
   restorePermitHearingFormValues(hearing);
   permitResult?.scrollIntoView({ behavior: "smooth", block: "start" });
   showAppMessage("保存済みヒアリングを表示しました。", false);
