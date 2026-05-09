@@ -8198,10 +8198,11 @@ async function ensureCaseFromEstimate(estimateId, force = false) {
 }
 
 function buildInvoiceRowsFromEstimate(estimate) {
-  const { rewardTotal, expenseTotal } = aggregateEstimateItemsForCustomer(estimate);
+  const { rewardTotal, expenseTotal, discountTotal } = aggregateEstimateItemsForCustomer(estimate);
   const rows = [];
   if (rewardTotal !== 0) rows.push({ item_name: "行政書士報酬", quantity: 1, unit_price: rewardTotal, amount: rewardTotal });
   if (expenseTotal > 0) rows.push({ item_name: "実費・法定費用", quantity: 1, unit_price: expenseTotal, amount: expenseTotal });
+  if (discountTotal < 0) rows.push({ item_name: "値引き", quantity: 1, unit_price: discountTotal, amount: discountTotal });
   if (!rows.length) rows.push({ item_name: estimate.estimateTitle, quantity: 1, unit_price: estimate.subtotal, amount: estimate.subtotal });
   return rows.map((row) => ({
     customer_name: estimate.customerName,
@@ -8562,7 +8563,9 @@ function aggregateEstimateItemsForCustomer(estimate) {
     }));
   const expenseTotal = rawRows.filter((row) => row.itemName.includes("実費")).reduce((sum, row) => sum + row.amount, 0);
   const rewardTotal = rawRows.filter((row) => !row.itemName.includes("実費")).reduce((sum, row) => sum + row.amount, 0);
-  return { rewardTotal, expenseTotal };
+  const discountTotal = rawRows.filter((row) => row.amount < 0 || row.itemName.includes("値引き")).reduce((sum, row) => sum + row.amount, 0);
+  const normalizedRewardTotal = rewardTotal - discountTotal;
+  return { rewardTotal: normalizedRewardTotal, expenseTotal, discountTotal };
 }
 function downloadInvoiceWorkbook(invoiceData) {
   const wb = XLSX.utils.book_new();
@@ -8574,7 +8577,7 @@ function downloadInvoiceWorkbook(invoiceData) {
 
 function buildEstimateDocumentFromEstimate(estimate) {
   const appSettings = getAppSettings();
-  const { rewardTotal: gyoseiReward, expenseTotal } = aggregateEstimateItemsForCustomer(estimate);
+  const { rewardTotal: gyoseiReward, expenseTotal, discountTotal } = aggregateEstimateItemsForCustomer(estimate);
 
   const displayRows = [];
   if (gyoseiReward !== 0) {
@@ -8582,6 +8585,9 @@ function buildEstimateDocumentFromEstimate(estimate) {
   }
   if (expenseTotal > 0) {
     displayRows.push({ itemName: "実費・法定費用", quantity: 1, unitPrice: expenseTotal, amount: expenseTotal });
+  }
+  if (discountTotal < 0) {
+    displayRows.push({ itemName: "値引き", quantity: 1, unitPrice: discountTotal, amount: discountTotal });
   }
   if (!displayRows.length) {
     displayRows.push({ itemName: estimate.estimateTitle || "見積内容", quantity: 1, unitPrice: estimate.subtotal ?? 0, amount: estimate.subtotal ?? 0 });
