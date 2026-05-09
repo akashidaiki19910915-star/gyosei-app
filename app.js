@@ -7636,7 +7636,6 @@ async function handleCreateInvoiceFromEstimate(estimateId) {
     return;
   }
   const existingSale = state.sales.find((sale) => sale.estimateId === estimateId);
-  if (existingSale && !window.confirm("この見積はすでに請求作成済みです。請求を追加作成しますか？")) return null;
   if (existingSale) {
     showAppMessage("この見積は請求作成済みです。重複登録を防ぐため追加作成は行いません。");
     return existingSale;
