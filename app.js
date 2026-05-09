@@ -1503,8 +1503,20 @@ function mapPermitCategoryToEstimateWorkType(category) {
   return "建設業許可";
 }
 
+function parseJsonSafe(rawValue, fallback = {}) {
+  if (typeof rawValue !== "string") return rawValue && typeof rawValue === "object" ? rawValue : fallback;
+  const text = rawValue.trim();
+  if (!text) return fallback;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" ? parsed : fallback;
+  } catch (_error) {
+    return fallback;
+  }
+}
+
 function mapPermitHearingToEstimateCalc(hearing, linkedCase) {
-  const parsedAnswerJson = typeof hearing?.answer_json === "string" ? JSON.parse(hearing.answer_json || "{}") : (hearing?.answer_json || {});
+  const parsedAnswerJson = parseJsonSafe(hearing?.answer_json, {});
   const answers = hearing?.answers || parsedAnswerJson?.answers || hearing?.form_values || hearing?.entry || {};
   const dynamic = answers?.permitDynamicAnswers && typeof answers.permitDynamicAnswers === "object" ? answers.permitDynamicAnswers : {};
   const workType = mapPermitCategoryToEstimateWorkType(hearing?.permit_category || answers?.permitCategory || "");
