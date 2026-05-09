@@ -8198,31 +8198,19 @@ async function ensureCaseFromEstimate(estimateId, force = false) {
 }
 
 function buildInvoiceRowsFromEstimate(estimate) {
-  const items = state.estimateItems
-    .filter((row) => row.estimateId === estimate.id)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
-  if (!items.length) {
-    return [{
-      customer_name: estimate.customerName,
-      subject: estimate.estimateTitle,
-      invoice_date: toDateString(new Date()),
-      item_name: estimate.estimateTitle,
-      quantity: 1,
-      unit_price: estimate.subtotal,
-      amount: estimate.subtotal,
-      subtotal: estimate.subtotal,
-      tax: estimate.tax,
-      total: estimate.total,
-    }];
-  }
-  return items.map((item) => ({
+  const { rewardTotal, expenseTotal } = aggregateEstimateItemsForCustomer(estimate);
+  const rows = [];
+  if (rewardTotal !== 0) rows.push({ item_name: "行政書士報酬", quantity: 1, unit_price: rewardTotal, amount: rewardTotal });
+  if (expenseTotal > 0) rows.push({ item_name: "実費・法定費用", quantity: 1, unit_price: expenseTotal, amount: expenseTotal });
+  if (!rows.length) rows.push({ item_name: estimate.estimateTitle, quantity: 1, unit_price: estimate.subtotal, amount: estimate.subtotal });
+  return rows.map((row) => ({
     customer_name: estimate.customerName,
     subject: estimate.estimateTitle,
     invoice_date: toDateString(new Date()),
-    item_name: item.itemName,
-    quantity: item.quantity,
-    unit_price: item.unitPrice,
-    amount: item.amount,
+    item_name: row.item_name,
+    quantity: row.quantity,
+    unit_price: row.unit_price,
+    amount: row.amount,
     subtotal: estimate.subtotal,
     tax: estimate.tax,
     total: estimate.total,
@@ -8259,7 +8247,7 @@ function buildInvoiceDocumentFromEstimate(estimate, noteOverride = null) {
     total: estimate.total ?? 0,
     transferInfo: appSettings.bankInfo,
     taxRate: getCurrentTaxRate(),
-    note: asTrimmedText(noteOverride ?? "") || estimate.memo || appSettings.invoiceNote || "",
+    note: asTrimmedText(noteOverride ?? "") || appSettings.invoiceNote || getCustomerFacingEstimateNotice(),
   };
 }
 
@@ -8559,6 +8547,23 @@ function openBusinessDocumentPrintWindow(documentData, options = { type: "invoic
   printWindow.document.close();
 }
 
+
+function getCustomerFacingEstimateNotice() {
+  return "本見積は、現時点で確認できる情報に基づくものです。必要資料、申請先、業務範囲により金額が変動する場合があります。";
+}
+
+function aggregateEstimateItemsForCustomer(estimate) {
+  const rawRows = state.estimateItems
+    .filter((row) => row.estimateId === estimate.id)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((row) => ({
+      itemName: String(row.itemName || ""),
+      amount: Number(row.amount || 0) || 0,
+    }));
+  const expenseTotal = rawRows.filter((row) => row.itemName.includes("実費")).reduce((sum, row) => sum + row.amount, 0);
+  const rewardTotal = rawRows.filter((row) => !row.itemName.includes("実費")).reduce((sum, row) => sum + row.amount, 0);
+  return { rewardTotal, expenseTotal };
+}
 function downloadInvoiceWorkbook(invoiceData) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, createBusinessDocumentSheet(invoiceData, { type: "invoice" }), "請求書");
@@ -8569,25 +8574,7 @@ function downloadInvoiceWorkbook(invoiceData) {
 
 function buildEstimateDocumentFromEstimate(estimate) {
   const appSettings = getAppSettings();
-  const rawRows = state.estimateItems
-    .filter((row) => row.estimateId === estimate.id)
-    .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((row) => ({
-      itemName: String(row.itemName || ""),
-      quantity: Number(row.quantity || 0) || 0,
-      unitPrice: Number(row.unitPrice || 0) || 0,
-      amount: Number(row.amount || 0) || 0,
-    }));
-
-  const discountRows = rawRows.filter((row) => row.amount < 0 || row.itemName.includes("値引き"));
-  const expenseRows = rawRows.filter((row) => row.itemName.includes("実費"));
-  const addonRows = rawRows.filter((row) => row.itemName.includes("加算"));
-  const baseRows = rawRows.filter((row) => row.amount > 0 && !row.itemName.includes("加算") && !row.itemName.includes("実費") && !row.itemName.includes("値引き"));
-  const addonTotal = addonRows.reduce((sum, row) => sum + row.amount, 0);
-  const expenseTotal = expenseRows.reduce((sum, row) => sum + row.amount, 0);
-  const discountTotal = discountRows.reduce((sum, row) => sum + row.amount, 0);
-  const baseTotal = baseRows.reduce((sum, row) => sum + row.amount, 0);
-  const gyoseiReward = baseTotal + addonTotal;
+  const { rewardTotal: gyoseiReward, expenseTotal } = aggregateEstimateItemsForCustomer(estimate);
 
   const displayRows = [];
   if (gyoseiReward !== 0) {
@@ -8596,16 +8583,13 @@ function buildEstimateDocumentFromEstimate(estimate) {
   if (expenseTotal > 0) {
     displayRows.push({ itemName: "実費・法定費用", quantity: 1, unitPrice: expenseTotal, amount: expenseTotal });
   }
-  if (discountTotal < 0) {
-    displayRows.push({ itemName: "値引き", quantity: 1, unitPrice: discountTotal, amount: discountTotal });
-  }
   if (!displayRows.length) {
     displayRows.push({ itemName: estimate.estimateTitle || "見積内容", quantity: 1, unitPrice: estimate.subtotal ?? 0, amount: estimate.subtotal ?? 0 });
   }
 
   const estimateDate = estimate.estimateDate || toDateString(new Date());
   const expenseNotice = "実費・法定費用は申請先確認後に別途精算";
-  const noteLines = [asTrimmedText(estimate.memo || "") || asTrimmedText(appSettings.estimateNote || "") || ""];
+  const noteLines = [getCustomerFacingEstimateNotice(), asTrimmedText(appSettings.estimateNote || "") || ""];
   if (expenseTotal <= 0) noteLines.push(expenseNotice);
   return {
     customerName: estimate.customerName || "顧客名未設定",
