@@ -7737,6 +7737,58 @@ function getDocumentAlertTargets() {
   }, []).sort((a, b) => (a.priority || 99) - (b.priority || 99));
 }
 
+
+function getCaseAuditAlerts(entry) {
+  const alerts = [];
+  const todayTs = getTodayTimestamp();
+  const sevenDaysLaterTs = todayTs + (7 * 86400000);
+  const dueTs = toDateOnlyTimestamp(entry?.dueDate);
+  if (Number.isFinite(dueTs)) {
+    if (dueTs < todayTs) {
+      alerts.push("期限超過");
+    } else if (dueTs <= sevenDaysLaterTs) {
+      alerts.push("期限接近");
+    }
+  }
+
+  const nextActionTs = toDateOnlyTimestamp(entry?.nextActionDate);
+  if (Number.isFinite(nextActionTs) && nextActionTs < todayTs) alerts.push("次回対応日超過");
+
+  const caseDocuments = (Array.isArray(state.caseDocuments) ? state.caseDocuments : []).filter((doc) => doc.caseId === entry.id);
+  const uncollectedStatuses = new Set(["未回収", "依頼中", "不備", "不備あり", "未確認"]);
+  if (caseDocuments.some((doc) => uncollectedStatuses.has(String(doc.status || "").trim()))) {
+    alerts.push("書類未回収あり");
+  }
+
+  const completedTaskStatuses = new Set(["完了", "対応済み", "不要"]);
+  const caseTasks = (Array.isArray(state.caseTasks) ? state.caseTasks : []).filter((task) => task.caseId === entry.id);
+  if (caseTasks.some((task) => !completedTaskStatuses.has(String(task.status || "").trim()))) {
+    alerts.push("未完了タスクあり");
+  }
+
+  const linkedEstimate = entry?.estimateId
+    ? state.estimates.find((estimate) => estimate.id === entry.estimateId)
+    : state.estimates.find((estimate) => estimate.caseId === entry.id);
+  const linkedSales = (Array.isArray(state.sales) ? state.sales : []).filter((sale) => {
+    if (sale.caseId === entry.id) return true;
+    if (linkedEstimate && sale.estimateId === linkedEstimate.id) return true;
+    return false;
+  });
+
+  if (linkedEstimate && linkedSales.length === 0) alerts.push("請求未作成");
+  if (linkedEstimate && linkedSales.length === 0) alerts.push("売上未登録");
+
+  const unpaidStatuses = new Set(["未入金", "未確認"]);
+  if (linkedSales.some((sale) => unpaidStatuses.has(String(sale.paymentStatus || "").trim()))) {
+    alerts.push("入金未確認");
+  }
+  if (linkedSales.some((sale) => String(sale.paymentStatus || "").trim() === "一部入金")) {
+    alerts.push("一部入金");
+  }
+
+  return alerts;
+}
+
 function renderCases() {
   if (!caseList || !caseEmpty || !caseItemTemplate) return;
   caseList.innerHTML = "";
@@ -7766,6 +7818,7 @@ function renderCases() {
     const caseName = entry.caseName || "案件名未設定";
     const incompleteTasks = getIncompleteTaskCount(entry.taskList);
     const docStats = getCaseDocumentStats(entry.id);
+    const auditAlerts = getCaseAuditAlerts(entry);
 
     item.dataset.id = entry.id;
     title.textContent = `${customerName}｜${caseName}`;
@@ -7776,7 +7829,7 @@ function renderCases() {
     ].filter(Boolean).join(" / ");
     meta.innerHTML = `見積: ${formatCurrency(entry.estimateAmount)} / ステータス: ${escapeHtml(entry.status)} / 受付日: ${formatDate(entry.receivedDate)} / 期限日: ${formatDate(entry.dueDate)} / 次回対応日: ${formatDate(entry.nextActionDate)} / 次回対応内容: ${escapeHtml(entry.nextAction || "未設定")}${urlLinks ? ` / ${urlLinks}` : ""}`;
     if (caseWorkMeta) {
-      caseWorkMeta.textContent = `テンプレート: ${templateName} / 必要書類: ${truncateText(entry.requiredDocuments || "未設定", 50)} / 書類管理: 必要書類 ${docStats.total}件 / 回収済 ${docStats.received}件 / 未回収 ${docStats.unreceived}件 / 不備 ${docStats.defective}件 / タスク: ${truncateText(entry.taskList || "未設定", 50)} / 未完了タスク: ${incompleteTasks}件 / 作業メモ: ${truncateText(sanitizeLegacyEstimateMemo(entry.workMemo) || "未設定", 40)}`;
+      caseWorkMeta.textContent = `テンプレート: ${templateName} / 必要書類: ${truncateText(entry.requiredDocuments || "未設定", 50)} / 書類管理: 必要書類 ${docStats.total}件 / 回収済 ${docStats.received}件 / 未回収 ${docStats.unreceived}件 / 不備 ${docStats.defective}件 / タスク: ${truncateText(entry.taskList || "未設定", 50)} / 未完了タスク: ${incompleteTasks}件 / 作業メモ: ${truncateText(sanitizeLegacyEstimateMemo(entry.workMemo) || "未設定", 40)} / 進行監査: ${auditAlerts.length ? auditAlerts.join(" / ") : "問題なし"}`;
       caseWorkMeta.classList.remove("next-action-overdue", "next-action-within3", "next-action-within7");
       if (nextActionInfo) safeAddClass(caseWorkMeta, nextActionInfo.urgencyClass);
     }
