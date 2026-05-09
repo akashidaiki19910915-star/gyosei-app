@@ -131,6 +131,7 @@ const CLICK_ACTION_HANDLERS = {
   delete_saved_permit_hearing: handleDeleteSavedPermitHearing,
   clear_permit_hearing_filters: clearPermitHearingFilters,
   add_estimate_item_row: () => addEstimateItemRow(),
+  add_estimate_discount_row: () => addEstimateDiscountRow(),
   remove_estimate_item_row: handleEstimateItemsClick,
   status_summary_filter: handleStatusSummaryClick,
   deadline_alert_click: handleDeadlineAlertClick,
@@ -607,6 +608,7 @@ const fixedExpenseItemTemplate = document.getElementById("fixed-expense-item-tem
 const estimateForm = document.getElementById("estimate-form");
 const estimateItemsWrap = document.getElementById("estimate-items");
 const estimateAddItemBtn = document.getElementById("estimate-add-item-btn");
+const estimateAddDiscountBtn = document.getElementById("estimate-add-discount-btn");
 const estimateSubmitBtn = document.getElementById("estimate-submit-btn");
 const estimateSubtotal = document.getElementById("estimate-subtotal");
 const estimateTax = document.getElementById("estimate-tax");
@@ -793,6 +795,7 @@ function bindEvents() {
   backupRestoreForm?.addEventListener("submit", handleBackupRestoreSubmit);
   document.addEventListener("wheel", handleNumberInputWheel, { passive: true });
   if (estimateAddItemBtn) estimateAddItemBtn.dataset.action = "add_estimate_item_row";
+  if (estimateAddDiscountBtn) estimateAddDiscountBtn.dataset.action = "add_estimate_discount_row";
   estimateItemsWrap?.addEventListener("input", handleEstimateItemsInput);
   
   caseClientSelect?.addEventListener("change", syncCaseCustomerFromClient);
@@ -7106,7 +7109,7 @@ function addEstimateItemRow(defaultItem = {}) {
   row.innerHTML = `
     <input type="text" data-key="itemName" placeholder="項目名" value="${escapeHtml(defaultItem.itemName || "")}" />
     <input type="text" inputmode="decimal" pattern="[0-9.,]*" data-key="quantity" placeholder="数量" value="${defaultItem.quantity ?? 1}" />
-    <input type="text" inputmode="numeric" pattern="[0-9,]*" data-key="unitPrice" placeholder="単価" value="${defaultItem.unitPrice ?? 0}" />
+    <input type="text" inputmode="numeric" pattern="-?[0-9,]*" data-key="unitPrice" data-allow-negative="true" placeholder="単価" value="${defaultItem.unitPrice ?? 0}" />
     <p class="meta item-amount">${formatCurrency(defaultItem.amount ?? 0)}</p>
     <button type="button" class="danger-btn estimate-item-remove-btn" data-action="remove_estimate_item_row">削除</button>
   `;
@@ -7114,6 +7117,10 @@ function addEstimateItemRow(defaultItem = {}) {
   hydrateActionButtons(row);
   bindCommaInput(row.querySelector('[data-key="unitPrice"]'));
   recalcEstimateTotals();
+}
+
+function addEstimateDiscountRow() {
+  addEstimateItemRow({ itemName: "値引き", quantity: 1, unitPrice: -5000, amount: -5000 });
 }
 
 function handleEstimateItemsInput() {
@@ -9303,26 +9310,30 @@ function parseNumberInput(value) {
   return Number(String(value || "").replace(/,/g, "").trim()) || 0;
 }
 
-function formatNumberInput(value) {
-  const num = String(value || "").replace(/[^\d]/g, "");
-  if (!num) return "";
-  return num.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+function formatNumberInput(value, { allowNegative = false } = {}) {
+  const raw = String(value || "").trim();
+  const negative = allowNegative && raw.startsWith("-");
+  const num = raw.replace(/[^\d]/g, "");
+  if (!num) return negative ? "-" : "";
+  const formatted = num.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return negative ? `-${formatted}` : formatted;
 }
 
 function bindCommaInput(input) {
   if (!(input instanceof HTMLInputElement)) return;
   if (input.dataset.commaBound === "true") return;
   input.dataset.commaBound = "true";
+  const allowNegative = input.dataset.allowNegative === "true";
   input.addEventListener("input", () => {
     const cursor = input.selectionStart ?? input.value.length;
     const beforeLength = input.value.length;
-    input.value = formatNumberInput(input.value);
+    input.value = formatNumberInput(input.value, { allowNegative });
     const afterLength = input.value.length;
     const diff = afterLength - beforeLength;
     const nextCursor = Math.max(0, cursor + diff);
     input.setSelectionRange(nextCursor, nextCursor);
   });
-  input.value = formatNumberInput(input.value);
+  input.value = formatNumberInput(input.value, { allowNegative });
 }
 
 function isCommaInputTarget(input) {
@@ -10553,8 +10564,8 @@ function mapEstimateItemFromDb(row) {
     estimateId: row.estimate_id,
     itemName: row.item_name || "",
     quantity: Number(row.quantity ?? 1) || 1,
-    unitPrice: normalizeAmount(row.unit_price) ?? 0,
-    amount: normalizeAmount(row.amount) ?? 0,
+    unitPrice: Number(row.unit_price ?? 0) || 0,
+    amount: Number(row.amount ?? 0) || 0,
     sortOrder: Number(row.sort_order ?? 0) || 0,
     createdAt: Date.parse(row.created_at) || Date.now(),
   };
