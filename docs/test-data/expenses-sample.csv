@@ -1,0 +1,6 @@
+id,case_id,expense_date,category,amount,vendor,description,receipt_no,note,extra_column
+exp_test_sample_001,case_test_sample_001,2026-05-01,交通費,1200,テスト交通株式会社,電車移動テストサンプル,RCPT-TEST-001,交通費サンプル,ignore_exp_01
+exp_test_sample_002,case_test_sample_002,2026-05-02,郵送費,840,サンプル郵便局,書類郵送テストサンプル,RCPT-TEST-002,郵送費サンプル,ignore_exp_02
+exp_test_sample_003,case_test_sample_003,2026-05-03,証紙代,5000,テスト証紙販売所,証紙購入テストサンプル,RCPT-TEST-003,証紙代サンプル,ignore_exp_03
+exp_test_sample_004,case_test_sample_004,2026-05-04,雑費,0,テスト備品店,0円テストサンプル,RCPT-TEST-004,0円データ確認,ignore_exp_04
+exp_test_sample_005,case_test_sample_005,2026-05-05,交通費,,テストタクシー,空欄金額テストサンプル,,空欄確認,ignore_exp_05

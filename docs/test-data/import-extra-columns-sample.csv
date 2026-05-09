@@ -1,0 +1,4 @@
+id,name,status,url_notification,internal_temp_flag,selected_label,dummy_column,unmapped_note,created_at
+imp_test_sample_001,取込余計列テストサンプルA,active,https://example.com/notify/a,true,ラベルA,dummy_a,未定義列の無視確認A,2026-05-01
+imp_test_sample_002,取込余計列テストサンプルB,inactive,https://example.com/notify/b,false,ラベルB,dummy_b,未定義列の無視確認B,2026-05-02
+imp_test_sample_003,取込余計列テストサンプルC,active,https://example.com/notify/c,true,ラベルC,dummy_c,未定義列の無視確認C,2026-05-03

@@ -1,0 +1,5 @@
+id,name,type,contact_name,phone,email,address,status,memo,extra_column
+cli_test_sample_001,株式会社テスト建設,法人,山田テスト,03-1111-0001,test-kensetsu-sample@example.com,東京都千代田区テスト1-1,active,顧客サンプルデータA,ignore_me_01
+cli_test_sample_002,A不動産株式会社,法人,佐藤サンプル,03-1111-0002,test-fudosan-sample@example.com,東京都港区サンプル2-2,active,顧客サンプルデータB,ignore_me_02
+cli_test_sample_003,古物商テスト法人,法人,鈴木テスト,06-2222-0003,test-kobutsu-sample@example.com,大阪府大阪市サンプル3-3,active,顧客サンプルデータC,ignore_me_03
+cli_test_sample_004,個人事業主テスト,個人,高橋サンプル,090-3333-0004,test-kojin-sample@example.com,福岡県福岡市テスト4-4,inactive,顧客サンプルデータD,ignore_me_04

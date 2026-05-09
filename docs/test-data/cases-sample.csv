@@ -1,0 +1,9 @@
+id,client_id,title,status,priority,due_date,next_action_date,documents_pending_count,tasks_open_count,billing_status,sales_registered,assignee,memo
+case_test_sample_001,cli_test_sample_001,期限超過テスト案件サンプル,in_progress,high,2026-04-20,2026-05-15,0,0,created,true,担当テストA,期限超過を確認するサンプル
+case_test_sample_002,cli_test_sample_002,期限接近テスト案件サンプル,in_progress,medium,2026-05-12,2026-05-13,0,0,created,true,担当テストB,期限接近を確認するサンプル
+case_test_sample_003,cli_test_sample_003,次回対応日超過テスト案件サンプル,in_progress,high,2026-06-30,2026-05-01,0,0,created,true,担当テストC,次回対応日超過を確認するサンプル
+case_test_sample_004,cli_test_sample_004,書類未回収ありテスト案件サンプル,in_progress,medium,2026-06-10,2026-05-20,2,0,created,true,担当テストD,未回収書類ありを確認するサンプル
+case_test_sample_005,cli_test_sample_001,未完了タスクありテスト案件サンプル,in_progress,medium,2026-06-15,2026-05-18,0,3,created,true,担当テストE,未完了タスクありを確認するサンプル
+case_test_sample_006,cli_test_sample_002,請求未作成テスト案件サンプル,in_progress,medium,2026-06-20,2026-05-22,0,0,not_created,true,担当テストF,請求未作成を確認するサンプル
+case_test_sample_007,cli_test_sample_003,売上未登録テスト案件サンプル,in_progress,low,2026-06-25,2026-05-25,0,0,created,false,担当テストG,売上未登録を確認するサンプル
+case_test_sample_008,cli_test_sample_004,問題なしテスト案件サンプル,completed,low,2026-07-01,2026-05-30,0,0,created,true,担当テストH,問題なしを確認するサンプル

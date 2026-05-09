@@ -1,0 +1,65 @@
+{
+  "meta": {
+    "backup_id": "backup_test_sample_20260509_fixed",
+    "created_at": "2026-05-09T00:00:00Z",
+    "description": "手動復元確認用テストサンプルバックアップ"
+  },
+  "clients": [
+    {
+      "id": "cli_test_sample_bk_001",
+      "name": "バックアップ復元テスト顧客サンプルA",
+      "type": "法人",
+      "status": "active",
+      "ignored_unknown_client_field": "should_be_ignored"
+    }
+  ],
+  "cases": [
+    {
+      "id": "case_test_sample_bk_001",
+      "client_id": "cli_test_sample_bk_001",
+      "title": "バックアップ復元テスト案件サンプルA",
+      "status": "in_progress",
+      "due_date": "2026-05-15",
+      "extra_case_flag": true
+    }
+  ],
+  "sales": [
+    {
+      "id": "sale_test_sample_bk_001",
+      "case_id": "case_test_sample_bk_001",
+      "amount": 110000,
+      "paid_amount": 0,
+      "payment_status": "unpaid",
+      "unknown_sales_column": "ignored"
+    }
+  ],
+  "expenses": [
+    {
+      "id": "exp_test_sample_bk_001",
+      "case_id": "case_test_sample_bk_001",
+      "category": "交通費",
+      "amount": 980,
+      "remarks": "バックアップ復元テスト経費サンプル",
+      "undefined_expenses_col": "ignored"
+    }
+  ],
+  "case_documents": [
+    {
+      "id": "doc_test_sample_bk_001",
+      "case_id": "case_test_sample_bk_001",
+      "document_name": "復元テスト書類サンプルA",
+      "received": false,
+      "non_schema_document_attr": "ignored"
+    }
+  ],
+  "case_tasks": [
+    {
+      "id": "task_test_sample_bk_001",
+      "case_id": "case_test_sample_bk_001",
+      "task_name": "復元テストタスクサンプルA",
+      "status": "open",
+      "due_date": "2026-05-11",
+      "random_task_field": "ignored"
+    }
+  ]
+}

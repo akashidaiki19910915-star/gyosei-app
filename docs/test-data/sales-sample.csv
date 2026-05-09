@@ -1,0 +1,5 @@
+id,case_id,sale_date,invoice_no,amount,billed_amount,paid_amount,payment_status,payment_due_date,payment_date,memo
+sale_test_sample_001,case_test_sample_006,2026-05-01,INV-TEST-001,120000,120000,0,unpaid,2026-05-31,,未入金テストサンプル
+sale_test_sample_002,case_test_sample_005,2026-05-02,INV-TEST-002,"1,500,000",1500000,500000,partial,2026-05-31,2026-05-08,一部入金とカンマ入り金額テストサンプル
+sale_test_sample_003,case_test_sample_008,2026-05-03,INV-TEST-003,88000,88000,88000,paid,2026-05-31,2026-05-10,入金済みテストサンプル
+sale_test_sample_004,case_test_sample_007,2026-05-04,INV-TEST-004,,,,unpaid,2026-06-05,,空欄を含む行テストサンプル
