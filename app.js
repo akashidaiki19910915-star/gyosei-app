@@ -10132,7 +10132,7 @@ async function importRowsByType(importType, tableData) {
           invoiceAmount,
           normalizedPaidAmount,
         );
-        payloads.push({
+        const rawPayload = {
           user_id: currentUser.id,
           case_id: caseId,
           invoice_number: asTrimmedText(row.invoice_number) || null,
@@ -10146,7 +10146,8 @@ async function importRowsByType(importType, tableData) {
           last_reminder_date: parseFlexibleDate(row.last_reminder_date),
           reminder_method: normalizeReminderMethod(row.reminder_method),
           reminder_memo: asTrimmedText(row.reminder_memo) || null,
-        });
+        };
+        payloads.push(pickObjectKeys(rawPayload, SALES_MUTATION_COLUMNS));
       } catch (_error) {
         result.errorCount += 1;
       }
