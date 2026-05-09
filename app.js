@@ -1495,36 +1495,54 @@ function mapPermitCategoryToEstimateWorkType(category) {
   if (text.includes("建設")) return "建設業許可";
   if (text.includes("宅建")) return "宅建業免許";
   if (text.includes("産業廃棄物")) return "産業廃棄物収集運搬業許可";
-  if (text.includes("車庫証明") || text.includes("自動車")) return "車庫証明";
+  if (text.includes("車庫証明") || text.includes("自動車") || text.includes("shako") || text.includes("automobile")) return "車庫証明";
+  if (text.includes("古物") || text.includes("kobutsu")) return "古物商許可";
+  if (text.includes("会社設立") || text.includes("company_establishment")) return "会社設立";
+  if (text.includes("創業融資") || text.includes("startup_finance")) return "創業融資";
+  if (text.includes("在留") || text.includes("zairyu")) return "在留資格関連";
   return "建設業許可";
 }
 
-function buildEstimateCalculatorBridgePayload(hearing, linkedCase) {
-  const dynamic = hearing?.answers?.permitDynamicAnswers || {};
-  const workType = mapPermitCategoryToEstimateWorkType(hearing.permit_category);
+function parseJsonSafe(rawValue, fallback = {}) {
+  if (typeof rawValue !== "string") return rawValue && typeof rawValue === "object" ? rawValue : fallback;
+  const text = rawValue.trim();
+  if (!text) return fallback;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" ? parsed : fallback;
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function mapPermitHearingToEstimateCalc(hearing, linkedCase) {
+  const parsedAnswerJson = parseJsonSafe(hearing?.answer_json, {});
+  const answers = hearing?.answers || parsedAnswerJson?.answers || hearing?.form_values || hearing?.entry || {};
+  const dynamic = answers?.permitDynamicAnswers && typeof answers.permitDynamicAnswers === "object" ? answers.permitDynamicAnswers : {};
+  const workType = mapPermitCategoryToEstimateWorkType(hearing?.permit_category || answers?.permitCategory || "");
   return {
     source: "permit_hearing",
-    source_hearing_id: hearing.id || null,
-    client_id: hearing.client_id || linkedCase?.client_id || linkedCase?.clientId || "",
-    project_name: hearing.case_name || linkedCase?.case_name || linkedCase?.caseName || `${hearing.permit_category || "許認可"} / ${hearing.application_type || "新規"}`,
+    source_hearing_id: hearing?.id || null,
+    client_id: hearing?.client_id || linkedCase?.client_id || linkedCase?.clientId || "",
+    project_name: hearing?.case_name || linkedCase?.case_name || linkedCase?.caseName || `${hearing?.permit_category || "許認可"} / ${hearing?.application_type || "新規"}`,
     work_type: workType,
-    application_type: hearing.application_type || "新規",
-    corporate_type: hearing.applicant_type === "個人" ? "個人" : "法人",
-    governor_type: String(dynamic.permitGovernorType || "").includes("大臣") ? "大臣" : "知事",
-    general_specific: String(dynamic.permitGeneralSpecific || "").includes("特定") ? "特定" : "一般",
-    industry_count: Number(dynamic.permitBusinessTypes || 1),
-    officer_count: Number(dynamic.permitOfficerCount || hearing.officer_count || 2),
-    office_count: Number(dynamic.permitOfficeCount || 1),
-    document_level: "低",
-    urgent: hearing.urgency === "急ぎ",
-    keikan_level: "低",
-    sengi_level: "低",
-    zaisan_level: "低",
-    visit_required: false,
-    agent_required: false,
+    application_type: hearing?.application_type || answers?.permitApplicationType || "新規",
+    corporate_type: (hearing?.applicant_type || answers?.permitApplicantType) === "個人" ? "個人" : "法人",
+    governor_type: String(dynamic.permitGovernorType || answers?.permitGovernorType || "").includes("大臣") ? "大臣" : "知事",
+    general_specific: String(dynamic.permitGeneralSpecific || answers?.permitGeneralSpecific || "").includes("特定") ? "特定" : "一般",
+    industry_count: Number(dynamic.permitBusinessTypes || dynamic.permitVehicleCount || 1),
+    officer_count: Number(dynamic.permitOfficerCount || hearing?.officer_count || 2),
+    office_count: Number(dynamic.permitOfficeCount || dynamic.permitOfficeNumber || 1),
+    document_level: String(dynamic.permitDocumentLevel || "").includes("高") ? "高" : (String(dynamic.permitDocumentLevel || "").includes("中") ? "中" : "低"),
+    urgent: (hearing?.urgency || answers?.permitUrgency) === "急ぎ",
+    keikan_level: String(dynamic.permitKeikanLevel || "").includes("高") ? "高" : "低",
+    sengi_level: String(dynamic.permitSengiLevel || "").includes("高") ? "高" : "低",
+    zaisan_level: String(dynamic.permitZaisanLevel || "").includes("高") ? "高" : "低",
+    visit_required: String(dynamic.permitVisitRequired || "") === "あり",
+    agent_required: String(dynamic.permitAgentRequired || "") === "あり",
     expense_amount: 0,
     discount_amount: 0,
-    memo: hearing.memo || "",
+    memo: hearing?.memo || answers?.permitMemo || "",
     permit_dynamic_answers: dynamic,
   };
 }
@@ -1535,7 +1553,7 @@ async function handleReflectPermitHearingToEstimate(event, button) {
     || (lastPermitGenerated ? { ...lastPermitGenerated, answers: { permitDynamicAnswers: {} } } : null);
   if (!currentUser || !hearing) return showAppMessage("反映対象のヒアリング結果がありません。", true);
   const linkedCase = state.cases.find((entry) => String(entry.id) === String(hearing.case_id || hearing.caseId || ""));
-  window.__estimateCalculatorBridgeData = buildEstimateCalculatorBridgePayload(hearing, linkedCase);
+  window.__estimateCalculatorBridgeData = mapPermitHearingToEstimateCalc(hearing, linkedCase);
   activateTab("estimates");
   activateSubtab("estimates", "calculator");
   window.dispatchEvent(new CustomEvent("estimate-calculator-bridge-updated"));
@@ -6781,7 +6799,7 @@ function renderPermitHearings() {
         ${isReflected ? `<div class="meta">✅ ${escapeHtml(reflectedText)}</div>` : ""}
         <div class="btn-inline-group">
           <button type="button" class="secondary-btn" data-action="view_saved_permit_hearing" data-permit-hearing-id="${entry.id}">表示</button>
-          <button type="button" class="secondary-btn" data-action="reflect_permit_hearing_to_estimate" data-permit-hearing-id="${entry.id}">${isReflected ? "再反映" : "見積自動算出へ反映"}</button>
+          <button type="button" class="secondary-btn" data-action="reflect_permit_hearing_to_estimate" data-permit-hearing-id="${entry.id}">${isReflected ? "再反映" : "概算見積へ自動反映"}</button>
           <button type="button" class="danger-btn" data-action="delete_saved_permit_hearing" data-permit-hearing-id="${entry.id}">削除</button>
         </div>
       </td>
