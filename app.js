@@ -7352,11 +7352,17 @@ function renderEstimates() {
   filtered.forEach((entry) => {
     const isCaseCreated = state.cases.some((c) => c.estimateId === entry.id) || Boolean(entry.caseId);
     const hasCreatedInvoice = state.sales.some((sale) => sale.estimateId === entry.id);
+    const linkedSale = state.sales.find((sale) => sale.estimateId === entry.id);
+    const invoiceAmount = Number(linkedSale?.invoiceAmount ?? 0);
+    const estimateAmount = Number(entry.totalAmount ?? entry.total ?? 0);
+    const hasAmountMismatch = !!linkedSale && invoiceAmount !== estimateAmount;
     const li = document.createElement("li");
     li.className = "item estimate-card";
     li.dataset.id = entry.id;
     const itemCount = state.estimateItems.filter((row) => row.estimateId === entry.id).length;
     const casedLabel = isCaseCreated ? "案件化済み" : "未案件化";
+    const invoiceLabel = hasCreatedInvoice ? "請求書作成済み" : "請求書未作成";
+    const saleLabel = hasCreatedInvoice ? "売上登録済み" : "売上未登録";
     const sourceLabel = entry.estimateSourceLabel || getEstimateSourceLabel(entry.estimateSource);
     li.innerHTML = `
       <div class="estimate-card-body">
@@ -7371,12 +7377,15 @@ function renderEstimates() {
           <p class="meta"><span>合計金額:</span> ${formatCurrency(entry.totalAmount ?? entry.total ?? 0)}</p>
           <p class="meta"><span>明細件数:</span> ${itemCount}件</p>
           <p class="meta"><span>案件化:</span> ${casedLabel}</p>
+          <p class="meta"><span>請求:</span> ${invoiceLabel}</p>
+          <p class="meta"><span>売上:</span> ${saleLabel}</p>
+          <p class="meta"><span>金額整合:</span> ${hasAmountMismatch ? "⚠ 不一致（見積と請求）" : "一致"}</p>
         </div>
       </div>
       <div class="row-actions estimate-card-actions">
         <button type="button" class="secondary-btn estimate-edit-btn" data-action="edit_estimate" data-list-action="edit_estimate">編集</button>
         <button type="button" class="secondary-btn card-select-btn" data-action="select_estimate" data-estimate-id="${entry.id}">${new Set(getSelectedIdsByKey('selectedEstimateIds')).has(String(entry.id))?"☑":"☐"}</button><button type="button" class="danger-btn estimate-delete-btn" data-action="delete_estimate" data-list-action="delete_estimate">削除</button>
-        <button type="button" class="secondary-btn create-case-btn" data-action="create_case_from_estimate" data-list-action="create_case_from_estimate" ${isCaseCreated ? "disabled" : ""}>${isCaseCreated ? "案件化済み" : "案件化"}</button>
+        <button type="button" class="secondary-btn create-case-btn" data-action="create_case_from_estimate" data-list-action="create_case_from_estimate">案件化</button>
         <button type="button" class="secondary-btn estimate-estimate-print-btn" data-action="print_estimate" data-list-action="print_estimate">見積書出力</button>
         <button type="button" class="secondary-btn estimate-print-btn" data-action="print_invoice_from_estimate" data-list-action="print_invoice_from_estimate">請求書出力</button>
         <button type="button" class="secondary-btn estimate-delivery-note-btn" data-action="print_delivery_note" data-list-action="print_delivery_note">納品書</button>
@@ -7385,7 +7394,7 @@ function renderEstimates() {
         <button type="button" class="secondary-btn estimate-inspection-report-btn" data-action="print_acceptance_certificate" data-list-action="print_acceptance_certificate">検収書</button>
         <button type="button" class="secondary-btn estimate-estimate-xlsx-btn" data-action="export_estimate_excel" data-list-action="export_estimate_excel">見積Excel</button>
         <button type="button" class="secondary-btn estimate-xlsx-btn" data-action="export_invoice_excel_from_estimate" data-list-action="export_invoice_excel_from_estimate">請求Excel</button>
-        <button type="button" class="secondary-btn create-invoice-btn" data-action="create_invoice_from_estimate" data-list-action="create_invoice_from_estimate" ${hasCreatedInvoice ? "disabled" : ""}>${hasCreatedInvoice ? "請求済み" : "請求作成"}</button>
+        <button type="button" class="secondary-btn create-invoice-btn" data-action="create_invoice_from_estimate" data-list-action="create_invoice_from_estimate">請求作成</button>
       </div>
     `;
     estimateList.appendChild(li);
@@ -7521,13 +7530,10 @@ async function createCaseFromEstimate(estimateId) {
   const estimate = state.estimates.find((entry) => entry.id === estimateId);
   if (!estimate) throw new Error("対象見積が見つかりません。");
   const existingCase = state.cases.find((c) => c.estimateId === estimateId || c.id === estimate.caseId);
-  if (existingCase) {
-    const duplicatedError = new Error("この見積はすでに案件化済みです。");
-    duplicatedError.code = "DUPLICATE_ESTIMATE_CASE";
-    throw duplicatedError;
-  }
+  if (existingCase) return existingCase;
   const customerName = estimate.customerName || estimate.customer_name || "顧客不明";
-  const caseName = estimate.subject || estimate.caseName || estimate.title || estimate.estimateTitle || "見積から作成した案件";
+  const estimateTitle = estimate.subject || estimate.caseName || estimate.title || estimate.estimateTitle || "";
+  const caseName = `${estimateTitle || "見積"} / ${customerName}`.replace(/\s+/g, " ").trim();
   const estimateAmount = Number(estimate.totalAmount || estimate.total || estimate.amount || estimate.estimateAmount || 0);
   const rawPayload = {
     user_id: currentUser.id,
@@ -7561,6 +7567,18 @@ async function createCaseFromEstimate(estimateId) {
 
 async function handleCreateCaseFromEstimate(estimateId) {
   console.log("CREATE CASE START", estimateId);
+  const estimate = state.estimates.find((entry) => entry.id === estimateId);
+  if (!estimate) {
+    showAppMessage("対象見積が見つかりません。", true);
+    return null;
+  }
+  const existingCase = state.cases.find((c) => c.estimateId === estimateId || c.id === estimate.caseId);
+  const confirmMessage = getCaseCreationConfirmationMessage(estimate, existingCase);
+  if (confirmMessage && !window.confirm(confirmMessage)) return null;
+  if (existingCase) {
+    showAppMessage("この見積はすでに案件化済みです。重複作成は行いません。");
+    return existingCase;
+  }
   return handleEstimateConversionAction({
     estimateId,
     loadingLabel: "案件化",
@@ -7580,11 +7598,7 @@ async function createInvoiceFromEstimate(estimateId) {
   const estimate = state.estimates.find((entry) => entry.id === estimateId);
   if (!estimate) throw new Error("対象見積が見つかりません。");
   const existingSale = state.sales.find((sale) => sale.estimateId === estimateId);
-  if (existingSale) {
-    const duplicatedError = new Error("この見積はすでに請求作成済みです。");
-    duplicatedError.code = "DUPLICATE_ESTIMATE_INVOICE";
-    throw duplicatedError;
-  }
+  if (existingSale) return existingSale;
   const invoiceAmount = Number(estimate.totalAmount || estimate.total || estimate.amount || estimate.estimateAmount || 0);
   if (!invoiceAmount || invoiceAmount <= 0) throw new Error("見積金額が0円のため請求を作成できません。");
   const rawPayload = {
@@ -7615,6 +7629,17 @@ async function handleCreateInvoiceFromEstimate(estimateId) {
   if (!estimateId) {
     showAppMessage("対象見積IDを取得できませんでした。", true);
     return;
+  }
+  const estimate = state.estimates.find((entry) => entry.id === estimateId);
+  if (!estimate) {
+    showAppMessage("対象見積が見つかりません。", true);
+    return;
+  }
+  const existingSale = state.sales.find((sale) => sale.estimateId === estimateId);
+  if (existingSale && !window.confirm("この見積はすでに請求作成済みです。請求を追加作成しますか？")) return null;
+  if (existingSale) {
+    showAppMessage("この見積は請求作成済みです。重複登録を防ぐため追加作成は行いません。");
+    return existingSale;
   }
   console.log("CREATE INVOICE START", estimateId);
   return handleEstimateConversionAction({
@@ -8194,6 +8219,15 @@ function resetEditMode(target) {
 
 function normalizeEstimateStatus(status) {
   return ESTIMATE_STATUS_ORDER.includes(status) ? status : "作成中";
+}
+
+function getCaseCreationConfirmationMessage(estimate, existingCase) {
+  if (existingCase || estimate?.caseId) {
+    return "この見積はすでに案件化済みです。再案件化は重複登録の原因になります。続行しますか？";
+  }
+  if (estimate?.status === "受注") return "";
+  if (estimate?.status === "失注") return "この見積は「失注」です。案件化は通常行いません。本当に続行しますか？";
+  return `この見積ステータスは「${estimate?.status || "未設定"}」です。受注前の案件化になります。続行しますか？`;
 }
 
 async function ensureCaseFromEstimate(estimateId, force = false) {
