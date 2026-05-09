@@ -1096,6 +1096,11 @@ function buildPermitBranchingResult(baseDocs, baseTasks, conditions) {
   const addedTasks = [];
   const docSet = new Set(docs.map((item) => String(item || "").trim()).filter(Boolean));
   const taskSet = new Set(tasks.map((item) => String(item || "").trim()).filter(Boolean));
+  const dynamicAnswers = conditions.dynamicAnswers && typeof conditions.dynamicAnswers === "object" ? conditions.dynamicAnswers : {};
+  const normalizeOn = (value) => {
+    const text = String(value || "").trim();
+    return ["1", "あり", "要確認", "確認済", "期限迫る", "要", "true"].includes(text);
+  };
   const pushUnique = (items, collector, set, target) => {
     (Array.isArray(items) ? items : []).forEach((item) => {
       const value = String(item || "").trim();
@@ -1112,7 +1117,6 @@ function buildPermitBranchingResult(baseDocs, baseTasks, conditions) {
   } else if (conditions.applicantType === "個人") {
     pushUnique(["本人確認資料", "納税証明書（個人）"], addedDocs, docSet, docs);
     pushUnique(["個人要件確認"], addedTasks, taskSet, tasks);
-    const dynamicAnswers = conditions.dynamicAnswers && typeof conditions.dynamicAnswers === "object" ? conditions.dynamicAnswers : {};
   if (conditions.workTypeCategory === "kobutsu") {
       ["法人登記事項証明書", "定款", "役員用継続用紙"].forEach((name) => {
         const idx = docs.indexOf(name);
@@ -1150,7 +1154,48 @@ function buildPermitBranchingResult(baseDocs, baseTasks, conditions) {
       const i = docs.indexOf(remove); if (i >= 0) docs.splice(i, 1); docSet.delete(remove);
     }
   }
-  const dynamicAnswers = conditions.dynamicAnswers && typeof conditions.dynamicAnswers === "object" ? conditions.dynamicAnswers : {};
+  if (conditions.workTypeCategory === "takken") {
+    if (normalizeOn(dynamicAnswers.qualifiedStaffCheck)) {
+      pushUnique(["専任宅建士確認資料"], addedDocs, docSet, docs);
+      pushUnique(["専任者/資格者確認"], addedTasks, taskSet, tasks);
+    }
+    if (normalizeOn(dynamicAnswers.guaranteeAssociation)) {
+      pushUnique(["保証協会加入または営業保証金供託確認資料"], addedDocs, docSet, docs);
+      pushUnique(["保証協会/営業保証金確認"], addedTasks, taskSet, tasks);
+    }
+    if (Number(conditions.officeCount || 0) > 1) pushUnique([`事務所確認資料（${Number(conditions.officeCount)}拠点分）`], addedDocs, docSet, docs);
+    if (Number(conditions.officerCount || 0) > 1 && conditions.applicantType === "法人") pushUnique([`法人役員関係書類（${Number(conditions.officerCount)}名分）`], addedDocs, docSet, docs);
+  }
+  if (conditions.workTypeCategory === "sangyo_unpan") {
+    if (normalizeOn(dynamicAnswers.courseCompletion)) {
+      pushUnique(["講習修了証の写し"], addedDocs, docSet, docs);
+      pushUnique(["講習修了証確認"], addedTasks, taskSet, tasks);
+    }
+    if (dynamicAnswers.permitTransportVehicles) pushUnique(["車両情報の裏付け資料"], addedDocs, docSet, docs);
+    if (dynamicAnswers.permitTransportItems) pushUnique(["事業範囲確認資料"], addedDocs, docSet, docs);
+  }
+  if (conditions.workTypeCategory === "zairyu") {
+    if (normalizeOn(dynamicAnswers.renewalDeadline)) pushUnique(["更新期限を示す資料"], addedDocs, docSet, docs);
+    if (normalizeOn(dynamicAnswers.renewalDeadline)) pushUnique(["更新期限確認"], addedTasks, taskSet, tasks);
+    if (dynamicAnswers.permitHostOrg) pushUnique(["受入機関確認資料"], addedDocs, docSet, docs);
+    if (String(dynamicAnswers.permitResidenceCard || "") === "あり") pushUnique(["本人確認資料（在留カード・パスポート）"], addedDocs, docSet, docs);
+  }
+  if (conditions.workTypeCategory === "automobile") {
+    if (normalizeOn(dynamicAnswers.selfCertification)) pushUnique(["保管場所使用権原疎明書面（自認書）"], addedDocs, docSet, docs);
+    if (normalizeOn(dynamicAnswers.selfCertification)) pushUnique(["自認書確認"], addedTasks, taskSet, tasks);
+    if (normalizeOn(dynamicAnswers.usageConsent)) pushUnique(["保管場所使用承諾証明書"], addedDocs, docSet, docs);
+    if (normalizeOn(dynamicAnswers.usageConsent)) pushUnique(["使用承諾証明書取得確認"], addedTasks, taskSet, tasks);
+    if (normalizeOn(dynamicAnswers.baseLocationCheck)) pushUnique(["使用の本拠確認資料"], addedDocs, docSet, docs);
+    if (normalizeOn(dynamicAnswers.baseLocationCheck)) pushUnique(["保管場所の本拠確認"], addedTasks, taskSet, tasks);
+  }
+  if (conditions.workTypeCategory === "kobutsu") {
+    if (normalizeOn(dynamicAnswers.urlNotification) || String(dynamicAnswers.permitHasWebsite || "なし") === "あり") {
+      pushUnique(["URL届出資料"], addedDocs, docSet, docs);
+      pushUnique(["URL届出確認"], addedTasks, taskSet, tasks);
+    }
+    if (Number(conditions.officeCount || 0) > 1) pushUnique([`営業所情報確認資料（${Number(conditions.officeCount)}拠点分）`], addedDocs, docSet, docs);
+  }
+
   const estimateAdjustments = [];
   (Array.isArray(conditions.dynamicSchema) ? conditions.dynamicSchema : []).forEach((field) => {
     const raw = dynamicAnswers[field.name];
@@ -1324,6 +1369,7 @@ async function handlePermitHearingSubmit(event) {
     dynamicAnswers,
     workTypeCategory: resolveWorkTypeCategory(scenarioKey),
     officerCount,
+    officeCount: Number(formData.get("permitOfficeCount") || dynamicAnswers.permitOfficeCount || 0),
   });
   const generatedSummary = buildPermitSummary({
     scenarioLabel: scenario.label,
