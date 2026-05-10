@@ -628,9 +628,9 @@ let eventsBound = false;
 let loadingCount = 0;
 let loadingTimer = null;
 let isApplyingAuthState = false;
-const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "permit_hearings", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
-const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "permit_hearings", "estimates", "estimate_items", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
-const RESTORE_DELETE_ORDER = ["payments", "estimate_items", "sales", "expenses", "fixed_expenses", "daily_reports", "permit_hearings", "case_documents", "case_tasks", "estimates", "cases", "work_templates", "clients", "app_settings"];
+const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "permit_hearings", "estimates", "estimate_items", "estimate_calculations", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
+const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "permit_hearings", "estimates", "estimate_items", "estimate_calculations", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
+const RESTORE_DELETE_ORDER = ["payments", "estimate_items", "estimate_calculations", "sales", "expenses", "fixed_expenses", "daily_reports", "permit_hearings", "case_documents", "case_tasks", "estimates", "cases", "work_templates", "clients", "app_settings"];
 const CASE_MUTATION_COLUMNS = [
   "user_id",
   "client_id",
@@ -682,8 +682,9 @@ const RESTORE_MUTATION_COLUMNS = {
   client_interactions: CLIENT_INTERACTION_MUTATION_COLUMNS,
   work_templates: ["user_id", "name", "items", "memo"],
   permit_hearings: ["id", "user_id", "case_id", "scenario_key", "scenario_label", "industry_primary", "industry_secondary", "industry_notes", "preparation_status", "application_route", "corporation_plan", "applicant_name", "applicant_kana", "contact_name", "contact_tel", "contact_email", "office_name", "office_address", "office_postal_code", "business_type", "capital", "employees_count", "officers_count", "years_in_business", "fiscal_month", "insurance_joined", "construction_career_system", "social_insurance_notes", "requested_permissions", "existing_permits", "past_admin_dispositions", "documents", "tasks", "hearing_notes", "next_actions", "status", "updated_at"],
-  estimates: ["user_id", "client_id", "title", "status", "issue_date", "expiry_date", "tax_rate", "subtotal", "tax", "total", "memo", "case_id"],
-  estimate_items: ["user_id", "estimate_id", "name", "quantity", "unit_price", "amount", "memo", "sort_order"],
+  estimates: ["user_id", "client_id", "customer_name", "estimate_title", "estimate_date", "valid_until", "status", "memo", "subtotal", "tax", "total", "estimate_source", "estimate_number", "case_id"],
+  estimate_items: ["user_id", "estimate_id", "item_name", "quantity", "unit_price", "amount", "memo", "sort_order"],
+  estimate_calculations: ["user_id", "client_id", "project_name", "work_type", "application_type", "corporate_type", "governor_type", "general_specific", "industry_count", "officer_count", "office_count", "document_level", "urgent", "expense_amount", "discount_amount", "memo", "base_fee", "addon_fee", "taxable_subtotal", "tax", "total", "addon_breakdown", "reflected_estimate_id", "reflected_at"],
   daily_reports: ["user_id", "client_id", "case_id", "report_date", "interaction_type", "work_content", "work_minutes", "next_action", "next_action_date", "memo"],
   app_settings: ["user_id", "office_name", "postal_code", "address", "tel", "email", "invoice_registration_number", "bank_info", "default_invoice_due_days", "tax_rate", "estimate_note", "invoice_note"],
 };
@@ -4974,6 +4975,7 @@ function buildBackupJson() {
       cases: Array.isArray(state.cases) ? state.cases : [],
       estimates: Array.isArray(state.estimates) ? state.estimates : [],
       estimate_items: Array.isArray(state.estimateItems) ? state.estimateItems : [],
+      estimate_calculations: Array.isArray(state.estimateCalculations) ? state.estimateCalculations : [],
       sales: Array.isArray(state.sales) ? state.sales : [],
       payments: Array.isArray(state.payments) ? state.payments : [],
       expenses: Array.isArray(state.expenses) ? state.expenses : [],
