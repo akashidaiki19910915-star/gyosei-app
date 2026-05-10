@@ -147,6 +147,7 @@ const CLICK_ACTION_HANDLERS = {
   delete_case: handleCaseListAction,
   print_case_invoice: handleCaseListAction,
   export_case_invoice_excel: handleCaseListAction,
+  register_sale_from_case: handleCaseListAction,
   edit_work_template: handleWorkTemplateListAction,
   delete_work_template: handleWorkTemplateListAction,
   edit_estimate: handleEstimateListAction,
@@ -3127,6 +3128,10 @@ async function handleCaseListAction(event) {
     exportInvoiceDataForCase(id);
     return;
   }
+  if (listAction === "register_sale_from_case") {
+    await registerSaleFromCase(id);
+    return;
+  }
   if (listAction === "print_case_delivery_note") return openCaseBusinessDocumentPrintPreview(id, "delivery_note");
   if (listAction === "print_case_purchase_order") return openCaseBusinessDocumentPrintPreview(id, "purchase_order");
   if (listAction === "print_case_order_confirmation") return openCaseBusinessDocumentPrintPreview(id, "order_confirmation");
@@ -3556,7 +3561,7 @@ function handleBillingLeakAlertAction(event) {
   const caseId = btn.dataset.caseId;
   if (!caseId) return;
   if (btn.dataset.listAction === "register_sale") {
-    openSaleFormForCase(caseId);
+    registerSaleFromCase(caseId).catch(() => {});
   }
 }
 
@@ -3862,6 +3867,54 @@ function openSaleFormForCase(caseId) {
   saleForm.elements.dueDate.value = "";
   setSaleInvoiceNumberDisplay("");
   saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function getCaseLinkedEstimate(caseEntry) {
+  if (!caseEntry) return null;
+  if (caseEntry.estimateId) return state.estimates.find((estimate) => estimate.id === caseEntry.estimateId) || null;
+  return state.estimates.find((estimate) => estimate.caseId === caseEntry.id) || null;
+}
+
+function getCasePreferredInvoiceAmount(caseEntry, linkedEstimate = null) {
+  const estimateAmount = Number(linkedEstimate?.totalAmount ?? linkedEstimate?.total ?? 0);
+  if (estimateAmount > 0) return estimateAmount;
+  const caseAmount = Number(caseEntry?.estimateAmount ?? 0);
+  if (caseAmount > 0) return caseAmount;
+  return 0;
+}
+
+async function registerSaleFromCase(caseId) {
+  if (!currentUser) return showAppMessage("ログイン状態を確認できません。", true);
+  const targetCase = state.cases.find((entry) => entry.id === caseId);
+  if (!targetCase) return showAppMessage("対象の案件が見つかりません。", true);
+  const linkedEstimate = getCaseLinkedEstimate(targetCase);
+  const alreadyRegistered = state.sales.some((sale) => sale.caseId === targetCase.id || (linkedEstimate && sale.estimateId === linkedEstimate.id));
+  if (alreadyRegistered) return showAppMessage("既に売上登録済みです。", true);
+  if (getStatusCategory(targetCase.status) !== "完了" && !window.confirm("この案件は完了前です。売上登録しますか？")) return;
+  const invoiceAmount = getCasePreferredInvoiceAmount(targetCase, linkedEstimate);
+  if (!invoiceAmount || invoiceAmount <= 0) {
+    return showAppMessage("案件の見積金額または請求金額を確認してください。金額が未設定のため売上登録できません。", true);
+  }
+  const payload = pickObjectKeys({
+    user_id: currentUser.id,
+    case_id: targetCase.id,
+    estimate_id: linkedEstimate?.id || null,
+    invoice_amount: invoiceAmount,
+    paid_amount: 0,
+    paid_date: null,
+    due_date: null,
+    payment_status: "未入金",
+    is_unpaid: true,
+  }, SALES_MUTATION_COLUMNS);
+  await runMutation("案件から売上登録", async () => {
+    const invoiceNumber = await generateInvoiceNumberIfNeeded();
+    const insertPayload = pickObjectKeys({ ...payload, invoice_number: invoiceNumber || null }, SALES_MUTATION_COLUMNS);
+    const { data, error } = await sbClient.from("sales").insert(insertPayload).select().single();
+    if (error) throw error;
+    if (!data) throw new Error("売上登録結果を取得できませんでした。");
+    await appendChangeLog({ action: "create", table: "sales", recordId: data.id, before: null, after: mapSaleFromDb(data) });
+    return data;
+  }, { successMessage: "売上を登録しました。" });
 }
 
 async function startFixedExpenseEdit(fixedExpenseId) {
@@ -7917,6 +7970,16 @@ function renderCases() {
     const incompleteTasks = getIncompleteTaskCount(entry.taskList);
     const docStats = getCaseDocumentStats(entry.id);
     const auditAlerts = getCaseAuditAlerts(entry);
+    const linkedEstimate = getCaseLinkedEstimate(entry);
+    const linkedSales = (Array.isArray(state.sales) ? state.sales : []).filter((sale) => {
+      if (sale.caseId === entry.id) return true;
+      if (linkedEstimate && sale.estimateId === linkedEstimate.id) return true;
+      return false;
+    });
+    const hasSaleRegistered = linkedSales.length > 0;
+    const preferredAmount = getCasePreferredInvoiceAmount(entry, linkedEstimate);
+    const linkedSaleAmount = Number(linkedSales[0]?.invoiceAmount ?? 0);
+    const hasSaleAmountMismatch = hasSaleRegistered && preferredAmount > 0 && linkedSaleAmount !== preferredAmount;
 
     item.dataset.id = entry.id;
     title.textContent = `${customerName}｜${caseName}`;
@@ -7927,7 +7990,7 @@ function renderCases() {
     ].filter(Boolean).join(" / ");
     meta.innerHTML = `見積: ${formatCurrency(entry.estimateAmount)} / ステータス: ${escapeHtml(entry.status)} / 受付日: ${formatDate(entry.receivedDate)} / 期限日: ${formatDate(entry.dueDate)} / 次回対応日: ${formatDate(entry.nextActionDate)} / 次回対応内容: ${escapeHtml(entry.nextAction || "未設定")}${urlLinks ? ` / ${urlLinks}` : ""}`;
     if (caseWorkMeta) {
-      caseWorkMeta.textContent = `テンプレート: ${templateName} / 必要書類: ${truncateText(entry.requiredDocuments || "未設定", 50)} / 書類管理: 必要書類 ${docStats.total}件 / 回収済 ${docStats.received}件 / 未回収 ${docStats.unreceived}件 / 不備 ${docStats.defective}件 / タスク: ${truncateText(entry.taskList || "未設定", 50)} / 未完了タスク: ${incompleteTasks}件 / 作業メモ: ${truncateText(sanitizeLegacyEstimateMemo(entry.workMemo) || "未設定", 40)} / 進行監査: ${auditAlerts.length ? auditAlerts.join(" / ") : "問題なし"}`;
+      caseWorkMeta.textContent = `テンプレート: ${templateName} / 必要書類: ${truncateText(entry.requiredDocuments || "未設定", 50)} / 書類管理: 必要書類 ${docStats.total}件 / 回収済 ${docStats.received}件 / 未回収 ${docStats.unreceived}件 / 不備 ${docStats.defective}件 / タスク: ${truncateText(entry.taskList || "未設定", 50)} / 未完了タスク: ${incompleteTasks}件 / 売上: ${hasSaleRegistered ? "売上登録済み" : "売上未登録"}${hasSaleAmountMismatch ? " / ⚠ 金額不一致あり" : ""} / 作業メモ: ${truncateText(sanitizeLegacyEstimateMemo(entry.workMemo) || "未設定", 40)} / 進行監査: ${auditAlerts.length ? auditAlerts.join(" / ") : "問題なし"}`;
       caseWorkMeta.classList.remove("next-action-overdue", "next-action-within3", "next-action-within7");
       if (nextActionInfo) safeAddClass(caseWorkMeta, nextActionInfo.urgencyClass);
     }
@@ -7975,6 +8038,17 @@ function renderCases() {
       btn.textContent = config.label;
       rowActions.appendChild(btn);
     });
+    if (rowActions && !rowActions.querySelector(".case-register-sale-btn")) {
+      const saleBtn = document.createElement("button");
+      saleBtn.type = "button";
+      saleBtn.className = "secondary-btn case-register-sale-btn";
+      saleBtn.dataset.action = "register_sale_from_case";
+      saleBtn.dataset.listAction = "register_sale_from_case";
+      saleBtn.dataset.caseId = entry.id;
+      saleBtn.textContent = hasSaleRegistered ? "売上登録済み" : "売上登録";
+      saleBtn.disabled = hasSaleRegistered;
+      rowActions.appendChild(saleBtn);
+    }
     caseList.appendChild(node);
   });
 
