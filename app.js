@@ -4085,14 +4085,20 @@ async function deleteClient(id) {
     table: "clients",
     id,
     actionName: "顧客削除",
-    confirmMessage: "この顧客を削除しますか？案件や見積は削除されません。",
+    confirmMessage: "この顧客を削除しますか？関連する案件・見積・売上なども削除されます。",
     beforeDelete: async (clientId) => {
-      const casesUpdateRes = await sbClient.from("cases").update({ client_id: null }).eq("client_id", clientId).eq("user_id", currentUser.id);
-      if (casesUpdateRes.error) throw casesUpdateRes.error;
-      const estimatesUpdateRes = await sbClient.from("estimates").update({ client_id: null }).eq("client_id", clientId).eq("user_id", currentUser.id);
-      if (estimatesUpdateRes.error) throw estimatesUpdateRes.error;
-      const reportsUpdateRes = await sbClient.from("daily_reports").update({ client_id: null }).eq("client_id", clientId).eq("user_id", currentUser.id);
-      if (reportsUpdateRes.error) throw reportsUpdateRes.error;
+      const relatedCases = state.cases.filter((entry) => entry.clientId === clientId);
+      for (const entry of relatedCases) {
+        await deleteCase(entry.id, { skipConfirm: true });
+      }
+      const relatedEstimates = state.estimates.filter((entry) => entry.clientId === clientId);
+      for (const estimate of relatedEstimates) {
+        await deleteEstimate(estimate.id, { skipConfirm: true });
+      }
+      const reportsDeleteRes = await sbClient.from("daily_reports").delete().eq("client_id", clientId).eq("user_id", currentUser.id);
+      if (reportsDeleteRes.error) throw reportsDeleteRes.error;
+      const permitDeleteRes = await sbClient.from("permit_hearings").delete().eq("client_id", clientId).eq("user_id", currentUser.id);
+      if (permitDeleteRes.error) throw permitDeleteRes.error;
     },
     afterSuccess: () => {
       if (editState.clientId === id) {
@@ -4103,12 +4109,12 @@ async function deleteClient(id) {
   });
 }
 
-async function deleteCase(id) {
+async function deleteCase(id, options = {}) {
   await deleteRecord({
     table: "cases",
     id,
     actionName: "案件削除",
-    confirmMessage: "この案件を削除しますか？関連する売上・経費も削除されます。",
+    confirmMessage: options.skipConfirm ? null : "この案件を削除しますか？関連する売上・経費も削除されます。",
     beforeDelete: async (caseId) => {
       const caseSales = state.sales.filter((entry) => entry.caseId === caseId);
       for (const sale of caseSales) {
@@ -4123,10 +4129,12 @@ async function deleteCase(id) {
       if (caseDocumentsDeleteRes.error) throw caseDocumentsDeleteRes.error;
       const expensesDeleteRes = await sbClient.from("expenses").delete().eq("case_id", caseId).eq("user_id", currentUser.id);
       if (expensesDeleteRes.error) throw expensesDeleteRes.error;
-      const reportsUpdateRes = await sbClient.from("daily_reports").update({ case_id: null }).eq("case_id", caseId).eq("user_id", currentUser.id);
-      if (reportsUpdateRes.error) throw reportsUpdateRes.error;
-      const estimatesUpdateRes = await sbClient.from("estimates").update({ case_id: null }).eq("case_id", caseId).eq("user_id", currentUser.id);
-      if (estimatesUpdateRes.error) throw estimatesUpdateRes.error;
+      const reportsDeleteRes = await sbClient.from("daily_reports").delete().eq("case_id", caseId).eq("user_id", currentUser.id);
+      if (reportsDeleteRes.error) throw reportsDeleteRes.error;
+      const permitDeleteRes = await sbClient.from("permit_hearings").delete().eq("case_id", caseId).eq("user_id", currentUser.id);
+      if (permitDeleteRes.error) throw permitDeleteRes.error;
+      const estimatesDeleteRes = await sbClient.from("estimates").delete().eq("case_id", caseId).eq("user_id", currentUser.id);
+      if (estimatesDeleteRes.error) throw estimatesDeleteRes.error;
     },
     afterSuccess: () => {
       if (editState.caseId === id) {
@@ -4162,7 +4170,7 @@ async function deleteSale(id) {
     confirmMessage: "この売上を削除しますか？関連する入金履歴も削除されます。",
     beforeDelete: async (saleId) => {
       const { error } = await sbClient.from("payments").delete().eq("sale_id", saleId).eq("user_id", currentUser.id);
-      if (error) console.error("payments削除エラー", error);
+      if (error) throw error;
     },
     afterSuccess: () => {
       editState.saleId = null;
@@ -7734,13 +7742,13 @@ async function handleCreateInvoiceFromEstimate(estimateId) {
   });
 }
 
-async function deleteEstimate(id) {
+async function deleteEstimate(id, options = {}) {
   if (!currentUser) return;
   if (!id) {
     showAppMessage("削除対象の見積IDがありません。", true);
     return;
   }
-  if (!window.confirm("この見積を削除しますか？")) return;
+  if (!options.skipConfirm && !window.confirm("この見積を削除しますか？")) return;
   try {
     await runMutation("見積削除", async () => {
       const estimateItemsRes = await sbClient
@@ -7749,6 +7757,13 @@ async function deleteEstimate(id) {
         .eq("estimate_id", id)
         .eq("user_id", currentUser.id);
       if (estimateItemsRes.error) throw estimateItemsRes.error;
+
+      const estimateCalcDeleteRes = await sbClient
+        .from("estimate_calculations")
+        .delete()
+        .eq("reflected_estimate_id", id)
+        .eq("user_id", currentUser.id);
+      if (estimateCalcDeleteRes.error) throw estimateCalcDeleteRes.error;
 
       const estimateDeleteRes = await sbClient
         .from("estimates")
@@ -10153,6 +10168,8 @@ async function importRowsByType(importType, tableData) {
   if (importType === "clients") {
     validateRequiredHeaders(headers, ["name"]);
     const payloads = [];
+    const existingInvoiceNumbers = new Set((state.sales || []).map((entry) => asTrimmedText(entry.invoiceNumber)).filter(Boolean));
+    const importInvoiceNumbers = new Set();
     rows.forEach((row) => {
       const name = asTrimmedText(row.name);
       if (!name) {
@@ -10182,6 +10199,8 @@ async function importRowsByType(importType, tableData) {
   if (importType === "cases") {
     validateRequiredHeaders(headers, ["customer_name", "case_name", "estimate_amount", "received_date", "due_date", "status"]);
     const payloads = [];
+    const existingPaymentKeys = new Set((state.payments || []).map((entry) => `${entry.saleId}__${entry.paymentDate}__${Number(entry.amount || 0)}__${asTrimmedText(entry.memo || "")}`));
+    const importPaymentKeys = new Set();
     rows.forEach((row) => {
       try {
         const customerName = asTrimmedText(row.customer_name);
@@ -10190,6 +10209,13 @@ async function importRowsByType(importType, tableData) {
           result.skippedCount += 1;
           return;
         }
+        const memo = asTrimmedText(row.memo || row.payment_memo) || "";
+        const dupKey = `${saleId}__${paymentDate}__${Number(amount || 0)}__${memo}`;
+        if (existingPaymentKeys.has(dupKey) || importPaymentKeys.has(dupKey)) {
+          result.skippedCount += 1;
+          return;
+        }
+        importPaymentKeys.add(dupKey);
         payloads.push(pickObjectKeys({
           user_id: currentUser.id,
           client_id: asTrimmedText(row.client_id) || null,
@@ -10225,6 +10251,8 @@ async function importRowsByType(importType, tableData) {
     validateRequiredHeaders(headers, ["case_name", "invoice_amount", "paid_amount"]);
     const caseMap = new Map(state.cases.map((c) => [c.caseName, c.id]));
     const payloads = [];
+    const existingInvoiceNumbers = new Set((state.sales || []).map((entry) => asTrimmedText(entry.invoiceNumber)).filter(Boolean));
+    const importInvoiceNumbers = new Set();
     rows.forEach((row) => {
       try {
         const caseName = asTrimmedText(row.case_name);
@@ -10260,6 +10288,12 @@ async function importRowsByType(importType, tableData) {
           reminder_method: normalizeReminderMethod(row.reminder_method),
           reminder_memo: asTrimmedText(row.reminder_memo) || null,
         };
+        const invoiceNumber = asTrimmedText(rawPayload.invoice_number);
+        if (invoiceNumber && (existingInvoiceNumbers.has(invoiceNumber) || importInvoiceNumbers.has(invoiceNumber))) {
+          result.skippedCount += 1;
+          return;
+        }
+        if (invoiceNumber) importInvoiceNumbers.add(invoiceNumber);
         payloads.push(pickObjectKeys(rawPayload, SALES_MUTATION_COLUMNS));
       } catch (_error) {
         result.errorCount += 1;
@@ -10277,6 +10311,8 @@ async function importRowsByType(importType, tableData) {
     validateRequiredHeaders(headers, ["case_name", "date", "content", "amount"]);
     const caseMap = new Map(state.cases.map((c) => [c.caseName, c.id]));
     const payloads = [];
+    const existingPaymentKeys = new Set((state.payments || []).map((entry) => `${entry.saleId}__${entry.paymentDate}__${Number(entry.amount || 0)}__${asTrimmedText(entry.memo || "")}`));
+    const importPaymentKeys = new Set();
     rows.forEach((row) => {
       try {
         const date = parseFlexibleDate(row.date);
@@ -10328,13 +10364,20 @@ async function importRowsByType(importType, tableData) {
           result.errorCount += 1;
           return;
         }
+        const memo = asTrimmedText(row.memo || row.payment_memo) || "";
+        const dupKey = `${saleId}__${paymentDate}__${Number(amount || 0)}__${memo}`;
+        if (existingPaymentKeys.has(dupKey) || importPaymentKeys.has(dupKey)) {
+          result.skippedCount += 1;
+          return;
+        }
+        importPaymentKeys.add(dupKey);
         payloads.push(pickObjectKeys({
           user_id: currentUser.id,
           sale_id: saleId,
           payment_date: paymentDate,
           amount,
           method: normalizePaymentMethod(row.method || row.payment_method),
-          memo: asTrimmedText(row.memo || row.payment_memo) || null,
+          memo: memo || null,
         }, PAYMENT_MUTATION_COLUMNS));
       } catch (_error) {
         result.errorCount += 1;
