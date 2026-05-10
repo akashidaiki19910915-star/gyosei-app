@@ -2808,12 +2808,17 @@ async function handleSaleSubmit(event) {
     }
 
     const paymentStatus = calculatePaymentStatus(invoiceAmount, paidAmount);
+    const normalizedPaidAmount = Math.max(Number(paidAmount) || 0, 0);
+    const normalizedPaidDate = normalizedPaidAmount > 0 ? (paidDate || null) : null;
+    if (!isEdit && caseId && state.sales.some((sale) => sale.caseId === caseId)) {
+      throw new Error("この案件は既に売上登録済みです。重複登録はできません。");
+    }
     const rawPayload = {
       user_id: currentUser.id,
       case_id: caseId || null,
       invoice_amount: invoiceAmount,
-      paid_amount: paidAmount || 0,
-      paid_date: paidDate || null,
+      paid_amount: normalizedPaidAmount,
+      paid_date: normalizedPaidDate,
       due_date: dueDate || null,
       payment_status: paymentStatus,
       is_unpaid: paymentStatus !== "入金済",
@@ -3804,9 +3809,14 @@ async function deletePayment(paymentId) {
     const currentSalePaid = Number(saleRow.paid_amount || 0);
     const newPaidAmount = Math.max(0, currentSalePaid - deletedAmount);
     const paymentStatus = calculatePaymentStatus(invoiceAmount, newPaidAmount);
+    const remainingPayments = state.payments
+      .filter((entry) => entry.saleId === target.saleId && entry.id !== paymentId)
+      .slice()
+      .sort((a, b) => toSortTimestamp(b.paymentDate) - toSortTimestamp(a.paymentDate));
+    const latestPaymentDate = remainingPayments[0]?.paymentDate || null;
     const saleUpdatePayload = {
       paid_amount: newPaidAmount,
-      paid_date: newPaidAmount > 0 ? (target.paymentDate || null) : null,
+      paid_date: newPaidAmount > 0 ? latestPaymentDate : null,
       payment_status: paymentStatus,
       is_unpaid: newPaidAmount < invoiceAmount,
     };
