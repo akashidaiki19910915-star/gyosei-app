@@ -35,6 +35,11 @@ const DEFAULT_APP_SETTINGS = {
   invoiceNote: OFFICE_INFO.invoiceNote,
 };
 
+const DEBUG_MODE = false;
+const debugLog = (...args) => {
+  if (DEBUG_MODE) console.log(...args);
+};
+
 const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
     persistSession: true,
@@ -703,7 +708,7 @@ async function initialize() {
 
     sbClient.auth.onAuthStateChange((_event, sessionState) => {
       if (isLoggingOut) return;
-      console.log("AUTH STATE CHANGED", _event);
+      debugLog("AUTH STATE CHANGED", _event);
       currentUser = sessionState?.user ?? null;
       setTimeout(() => {
         applyAuthState({ silent: true })
@@ -759,9 +764,9 @@ function bindEvents() {
   if (permitReflectEstimateBtn) permitReflectEstimateBtn.dataset.action = "reflect_permit_hearing_to_estimate";
   if (permitOverwriteHearingBtn) permitOverwriteHearingBtn.addEventListener("click", handleOverwritePermitHearing);
   workTemplateForm?.addEventListener("submit", handleWorkTemplateSubmit);
-  console.log("SALE FORM FOUND", !!saleForm);
-  console.log("EXPENSE FORM FOUND", !!expenseForm);
-  console.log("DAILY REPORT FORM FOUND", !!dailyReportForm);
+  debugLog("SALE FORM FOUND", !!saleForm);
+  debugLog("EXPENSE FORM FOUND", !!expenseForm);
+  debugLog("DAILY REPORT FORM FOUND", !!dailyReportForm);
   saleForm?.addEventListener("submit", handleSaleSubmit);
   expenseForm?.addEventListener("submit", handleExpenseSubmit);
   fixedExpenseForm.addEventListener("submit", handleFixedExpenseSubmit);
@@ -815,7 +820,7 @@ function bindEvents() {
   if (exportExcelBtn) exportExcelBtn.dataset.action = "export_excel";
   if (exportAnalysisExcelBtn) exportAnalysisExcelBtn.dataset.action = "export_analysis_excel";
   excelImportForm?.addEventListener("submit", handleExcelImportSubmit);
-  console.log("BACKUP BUTTON FOUND", !!exportBackupJsonBtn);
+  debugLog("BACKUP BUTTON FOUND", !!exportBackupJsonBtn);
   if (exportBackupJsonBtn) exportBackupJsonBtn.dataset.action = "export_backup_json";
   backupRestoreForm?.addEventListener("submit", handleBackupRestoreSubmit);
   document.addEventListener("wheel", handleNumberInputWheel, { passive: true });
@@ -844,7 +849,7 @@ function bindEvents() {
   });
   hydrateActionButtons();
   eventsBound = true;
-  console.log("EVENTS BOUND");
+  debugLog("EVENTS BOUND");
   activateTab("cases");
 }
 
@@ -2493,7 +2498,7 @@ async function loadAllDataSafely() {
     }
   }
 
-  console.log("LOAD COUNTS", {
+  debugLog("LOAD COUNTS", {
     clients: state.clients.length,
     cases: state.cases.length,
     sales: state.sales.length,
@@ -2576,7 +2581,7 @@ function formatSupabaseError(error) {
 
 async function handleClientSubmit(event) {
   event.preventDefault();
-  console.log("CLIENT SUBMIT FIRED");
+  debugLog("CLIENT SUBMIT FIRED");
   if (!currentUser || !clientForm) return;
   const name = asTrimmedText(clientForm.elements.clientName.value);
   if (!name) return;
@@ -2591,22 +2596,22 @@ async function handleClientSubmit(event) {
     memo: asTrimmedText(clientForm.elements.clientMemo.value) || null,
   };
   const taskName = editState.clientId ? "顧客更新" : "顧客登録";
-  console.log("EDIT STATE", editState);
-  console.log("ACTION START", taskName, editState.clientId || "new");
-  console.log("PAYLOAD", payload);
+  debugLog("EDIT STATE", editState);
+  debugLog("ACTION START", taskName, editState.clientId || "new");
+  debugLog("PAYLOAD", payload);
   try {
     await runMutation(taskName, async () => {
       if (editState.clientId) {
         const { data, error } = await sbClient.from("clients").update(payload).eq("id", editState.clientId).eq("user_id", currentUser.id).select().single();
         if (error) throw error;
         if (!data) throw new Error("更新結果を取得できませんでした。");
-        console.log("DB DONE", taskName, editState.clientId);
+        debugLog("DB DONE", taskName, editState.clientId);
         return data;
       }
       const { data, error } = await sbClient.from("clients").insert(payload).select().single();
       if (error) throw error;
       if (!data) throw new Error("登録結果を取得できませんでした。");
-      console.log("DB DONE", taskName, data.id || "new");
+      debugLog("DB DONE", taskName, data.id || "new");
       return data;
     }, {
       successMessage: editState.clientId ? "顧客を更新しました。" : "顧客を登録しました。",
@@ -2628,7 +2633,7 @@ async function refreshEstimateListData() {
 
 async function handleCaseSubmit(event) {
   event.preventDefault();
-  console.log("CASE SUBMIT FIRED");
+  debugLog("CASE SUBMIT FIRED");
   if (!currentUser || !ensureInitialDataReady("案件登録")) return;
 
   const taskName = editState.caseId ? "案件更新" : "案件登録";
@@ -2636,24 +2641,24 @@ async function handleCaseSubmit(event) {
   try {
     await runMutation(taskName, async () => {
       const payload = buildCasePayloadFromForm();
-      console.log("EDIT STATE", editState);
+      debugLog("EDIT STATE", editState);
       const templateId = payload.template_id || "";
-      console.log("CASE TEMPLATE VALUE", templateId);
-      console.log("PAYLOAD", payload);
+      debugLog("CASE TEMPLATE VALUE", templateId);
+      debugLog("PAYLOAD", payload);
       if (!payload.customer_name || !payload.case_name) return;
 
       if (isEdit) {
         const { data, error } = await sbClient.from("cases").update(payload).eq("id", editState.caseId).eq("user_id", currentUser.id).select().single();
         if (error) throw error;
         if (!data) throw new Error("更新結果を取得できませんでした。");
-        console.log("CASE INSERT SUCCESS", data);
+        debugLog("CASE INSERT SUCCESS", data);
       } else {
         const { data, error } = await sbClient.from("cases").insert(payload).select().single();
         if (error) throw error;
         if (!data) throw new Error("案件登録結果を取得できませんでした。");
         await createCaseTasksFromTemplate(data, payload.template_id);
         await createCaseDocumentsFromTemplate(data, payload.template_id);
-        console.log("CASE INSERT SUCCESS", data);
+        debugLog("CASE INSERT SUCCESS", data);
       }
       return true;
     }, {
@@ -2672,7 +2677,7 @@ async function handleCaseSubmit(event) {
 
 async function handleWorkTemplateSubmit(event) {
   event.preventDefault();
-  console.log("WORK TEMPLATE SUBMIT FIRED");
+  debugLog("WORK TEMPLATE SUBMIT FIRED");
   if (!currentUser || !workTemplateForm) return;
   const name = asTrimmedText(workTemplateForm.elements.templateName.value);
   if (!name) return;
@@ -2686,7 +2691,7 @@ async function handleWorkTemplateSubmit(event) {
     memo: asTrimmedText(workTemplateForm.elements.templateMemo.value) || null,
   };
   const taskName = editState.workTemplateId ? "業務テンプレート更新" : "業務テンプレート登録";
-  console.log("EDIT STATE", editState);
+  debugLog("EDIT STATE", editState);
   try {
     await runMutation(taskName, async () => {
       if (editState.workTemplateId) {
@@ -2788,7 +2793,7 @@ async function handleSaleSubmit(event) {
   if (!saleForm) return;
 
   try {
-    console.log("SALE SUBMIT FIRED");
+    debugLog("SALE SUBMIT FIRED");
 
     const isEdit = Boolean(editState.saleId);
     const caseId = saleCaseSelect?.value || null;
@@ -2814,7 +2819,7 @@ async function handleSaleSubmit(event) {
     };
     const payload = pickObjectKeys(rawPayload, SALES_MUTATION_COLUMNS);
 
-    console.log("SALE PAYLOAD", payload);
+    debugLog("SALE PAYLOAD", payload);
 
     await runMutation(isEdit ? "売上更新" : "売上登録", async () => {
       if (isEdit) {
@@ -2829,7 +2834,7 @@ async function handleSaleSubmit(event) {
         if (!data) throw new Error("売上更新結果を取得できませんでした。");
         const beforeSale = state.sales.find((entry) => entry.id === editState.saleId) || null;
         await appendChangeLog({ action: "update", table: "sales", recordId: data.id, before: beforeSale, after: mapSaleFromDb(data) });
-        console.log("SALE UPDATE SUCCESS", data);
+        debugLog("SALE UPDATE SUCCESS", data);
         return data;
       }
 
@@ -2842,7 +2847,7 @@ async function handleSaleSubmit(event) {
       if (error) throw error;
       if (!data) throw new Error("売上登録結果を取得できませんでした。");
       await appendChangeLog({ action: "create", table: "sales", recordId: data.id, before: null, after: mapSaleFromDb(data) });
-      console.log("SALE INSERT SUCCESS", data);
+      debugLog("SALE INSERT SUCCESS", data);
       return data;
     }, {
       successMessage: isEdit ? "売上を更新しました。" : "売上を登録しました。",
@@ -2867,7 +2872,7 @@ function setSaleInvoiceNumberDisplay(value = "") {
 
 async function handleExpenseSubmit(event) {
   event.preventDefault();
-  console.log("EXPENSE SUBMIT FIRED");
+  debugLog("EXPENSE SUBMIT FIRED");
   if (!currentUser || !expenseForm) return;
 
   const expenseDate = expenseForm.elements.expenseDate.value;
@@ -2889,9 +2894,9 @@ async function handleExpenseSubmit(event) {
   };
 
   const taskName = editState.expenseId ? "経費更新" : "経費登録";
-  console.log("EDIT STATE", editState);
-  console.log("ACTION START", taskName, editState.expenseId || "new");
-  console.log("PAYLOAD", payload);
+  debugLog("EDIT STATE", editState);
+  debugLog("ACTION START", taskName, editState.expenseId || "new");
+  debugLog("PAYLOAD", payload);
   try {
     await runMutation(taskName, async () => {
       if (editState.expenseId) {
@@ -2905,7 +2910,7 @@ async function handleExpenseSubmit(event) {
         }
         if (!data) throw new Error("更新結果を取得できませんでした。");
         await appendChangeLog({ action: "update", table: "expenses", recordId: data.id, before: currentExpense || null, after: mapExpenseFromDb(data) });
-        console.log("DB DONE", taskName, editState.expenseId);
+        debugLog("DB DONE", taskName, editState.expenseId);
         return data;
       }
 
@@ -2916,7 +2921,7 @@ async function handleExpenseSubmit(event) {
       }
       if (!data) throw new Error("登録結果を取得できませんでした。");
       await appendChangeLog({ action: "create", table: "expenses", recordId: data.id, before: null, after: mapExpenseFromDb(data) });
-      console.log("DB DONE", taskName, data.id || "new");
+      debugLog("DB DONE", taskName, data.id || "new");
       return data;
     }, {
       successMessage: editState.expenseId ? "経費を更新しました。" : "経費を登録しました。",
@@ -2933,7 +2938,7 @@ async function handleExpenseSubmit(event) {
 
 async function handleFixedExpenseSubmit(event) {
   event.preventDefault();
-  console.log("FIXED EXPENSE SUBMIT FIRED");
+  debugLog("FIXED EXPENSE SUBMIT FIRED");
   if (!currentUser) return;
 
   const content = fixedExpenseForm.elements.fixedExpenseContent.value.trim();
@@ -2952,9 +2957,9 @@ async function handleFixedExpenseSubmit(event) {
   };
 
   const taskName = editState.fixedExpenseId ? "固定費更新" : "固定費登録";
-  console.log("EDIT STATE", editState);
-  console.log("ACTION START", taskName, editState.fixedExpenseId || "new");
-  console.log("PAYLOAD", payload);
+  debugLog("EDIT STATE", editState);
+  debugLog("ACTION START", taskName, editState.fixedExpenseId || "new");
+  debugLog("PAYLOAD", payload);
   try {
     await runMutation(taskName, async () => {
       if (editState.fixedExpenseId) {
@@ -2967,13 +2972,13 @@ async function handleFixedExpenseSubmit(event) {
           .single();
         if (error) throw error;
         if (!data) throw new Error("更新結果を取得できませんでした。");
-        console.log("DB DONE", taskName, editState.fixedExpenseId);
+        debugLog("DB DONE", taskName, editState.fixedExpenseId);
         return data;
       }
       const { data, error } = await sbClient.from("fixed_expenses").insert(payload).select().single();
       if (error) throw error;
       if (!data) throw new Error("登録結果を取得できませんでした。");
-      console.log("DB DONE", taskName, data.id || "new");
+      debugLog("DB DONE", taskName, data.id || "new");
       return data;
     }, {
       successMessage: editState.fixedExpenseId ? "固定費を更新しました。" : "固定費を登録しました。",
@@ -2986,7 +2991,7 @@ async function handleFixedExpenseSubmit(event) {
 
 async function handleDailyReportSubmit(event) {
   event.preventDefault();
-  console.log("DAILY REPORT SUBMIT FIRED");
+  debugLog("DAILY REPORT SUBMIT FIRED");
   if (!currentUser || !dailyReportForm) return;
 
   const reportDate = dailyReportForm.elements.reportDate?.value || "";
@@ -2998,7 +3003,7 @@ async function handleDailyReportSubmit(event) {
   const nextAction = asTrimmedText(dailyReportForm.elements.reportNextAction?.value);
   const nextActionDate = dailyReportForm.elements.reportNextActionDate?.value || "";
   const memo = asTrimmedText(dailyReportForm.elements.reportMemo?.value);
-  console.log("DAILY REPORT VALUES", {
+  debugLog("DAILY REPORT VALUES", {
     reportDate,
     clientId,
     caseId,
@@ -3034,8 +3039,8 @@ async function handleDailyReportSubmit(event) {
 
   const isEdit = Boolean(editState.dailyReportId);
   const taskName = isEdit ? "日報更新" : "日報登録";
-  console.log("EDIT STATE", editState);
-  console.log("PAYLOAD", payload);
+  debugLog("EDIT STATE", editState);
+  debugLog("PAYLOAD", payload);
   try {
     await runMutation(taskName, async () => {
       if (isEdit) {
@@ -3045,7 +3050,7 @@ async function handleDailyReportSubmit(event) {
           throw error;
         }
         if (!data) throw new Error("日報更新結果を取得できませんでした。");
-        console.log("DAILY REPORT INSERT SUCCESS", data);
+        debugLog("DAILY REPORT INSERT SUCCESS", data);
       } else {
         const { data, error } = await sbClient.from("daily_reports").insert(payload).select().single();
         if (error) {
@@ -3053,7 +3058,7 @@ async function handleDailyReportSubmit(event) {
           throw error;
         }
         if (!data) throw new Error("日報登録結果を取得できませんでした。");
-        console.log("DAILY REPORT INSERT SUCCESS", data);
+        debugLog("DAILY REPORT INSERT SUCCESS", data);
       }
       return true;
     }, {
@@ -3615,7 +3620,7 @@ async function handleRecordReminder(saleId) {
         reminder_method: normalizedMethod,
         reminder_memo: normalizedMemo,
       };
-      console.log("REMINDER PAYLOAD", saleId, payload);
+      debugLog("REMINDER PAYLOAD", saleId, payload);
       const { data, error } = await sbClient
         .from("sales")
         .update(payload)
@@ -3678,7 +3683,7 @@ async function handleRecordPayment(saleId) {
 
   try {
     await runMutation("入金登録", async () => {
-      console.log("PAYMENT START", { saleId, paymentDate, amount, method, memo });
+      debugLog("PAYMENT START", { saleId, paymentDate, amount, method, memo });
       const {
         data: { user },
         error: userError,
@@ -3687,7 +3692,7 @@ async function handleRecordPayment(saleId) {
         throw userError || new Error("ログインユーザーを確認できません。");
       }
       const authUserId = user.id;
-      console.log("PAYMENT AUTH USER", authUserId);
+      debugLog("PAYMENT AUTH USER", authUserId);
       const { data: saleRow, error: saleLoadError } = await sbClient
         .from("sales")
         .select("id,user_id,invoice_amount,paid_amount,paid_date,payment_status")
@@ -3720,7 +3725,7 @@ async function handleRecordPayment(saleId) {
         method: method,
         memo: memo || null,
       };
-      console.log("PAYMENT INSERT PAYLOAD", paymentPayload);
+      debugLog("PAYMENT INSERT PAYLOAD", paymentPayload);
 
       const { data: insertedPayment, error: paymentError } = await sbClient
         .from("payments")
@@ -3906,7 +3911,7 @@ async function handleFixedExpensesListAction(event) {
           .single();
         if (error) throw error;
         if (!data) throw new Error("更新結果を取得できませんでした。");
-        console.log("DB success", "固定費更新");
+        debugLog("DB success", "固定費更新");
         return data;
       }, {
         successMessage: "固定費の有効/無効を更新しました。",
@@ -4006,7 +4011,7 @@ async function runMutation(actionName, mutationFn, options = {}) {
   try {
     clearAppMessage();
 
-    console.log("MUTATION START", actionName);
+    debugLog("MUTATION START", actionName);
 
     const result = await mutationFn();
 
@@ -4032,7 +4037,7 @@ async function runMutation(actionName, mutationFn, options = {}) {
       }
     }
 
-    console.log("MUTATION SUCCESS", actionName);
+    debugLog("MUTATION SUCCESS", actionName);
     showAppMessage(options.successMessage || `${actionName}が完了しました。`, false);
 
     return result;
@@ -4162,7 +4167,7 @@ async function deleteWorkTemplate(id) {
 }
 
 async function deleteSale(id) {
-  console.log("DELETE SALE CLICKED", id);
+  debugLog("DELETE SALE CLICKED", id);
   await deleteRecord({
     table: "sales",
     id,
@@ -4909,7 +4914,7 @@ async function handleExcelImportSubmit(event) {
 function handleExportBackupJson(event) {
   if (event) event.preventDefault();
   if (!currentUser) return;
-  console.log("BACKUP CLICK FIRED");
+  debugLog("BACKUP CLICK FIRED");
   safeFileExport("全データバックアップJSON", () => {
     const backup = buildBackupJson();
     const date = new Date().toISOString().slice(0, 10);
@@ -4926,7 +4931,7 @@ function handleExportBackupJson(event) {
       case_tasks: backup.data.case_tasks.length,
       app_settings: backup.data.app_settings.length,
     };
-    console.log("BACKUP JSON COUNTS", counts);
+    debugLog("BACKUP JSON COUNTS", counts);
     downloadJsonFile(filename, backup);
     safeSetLocalStorage(BACKUP_AT_STORAGE_KEY, new Date().toISOString());
     safeRender("dataIntegrity", renderDataIntegrityCheck);
@@ -5122,7 +5127,7 @@ function renderAfterDataChanged() {
   safeRender("clientAnalysis", renderClientAnalysis);
   safeRender("referralAnalysis", renderReferralAnalysis);
   hydrateActionButtons();
-  console.log("RENDER DONE");
+  debugLog("RENDER DONE");
 }
 
 function formatShortId(value) {
@@ -7344,7 +7349,7 @@ function recalcEstimateTotals() {
 
 async function handleEstimateSubmit(event) {
   event.preventDefault();
-  console.log("ESTIMATE SUBMIT FIRED");
+  debugLog("ESTIMATE SUBMIT FIRED");
   if (!currentUser) return;
   const customerName = asTrimmedText(estimateForm.elements.customerName.value);
   const estimateTitle = asTrimmedText(estimateForm.elements.estimateTitle.value);
@@ -7369,9 +7374,9 @@ async function handleEstimateSubmit(event) {
 
   if (editState.estimateId) delete payload.estimate_source;
   const taskName = editState.estimateId ? "見積更新" : "見積登録";
-  console.log("EDIT STATE", editState);
-  console.log("ACTION START", taskName, editState.estimateId || "new");
-  console.log("PAYLOAD", payload);
+  debugLog("EDIT STATE", editState);
+  debugLog("ACTION START", taskName, editState.estimateId || "new");
+  debugLog("PAYLOAD", payload);
   try {
     await runMutation(taskName, async () => {
       let estimateId = editState.estimateId;
@@ -7406,7 +7411,7 @@ async function handleEstimateSubmit(event) {
       }
       safeRender("estimates", renderEstimates);
       if (payload.status === "受注") await ensureCaseFromEstimate(estimateId);
-      console.log("DB DONE", taskName, estimateId);
+      debugLog("DB DONE", taskName, estimateId);
       return { estimateId, isUpdate };
     }, {
       successMessage: editState.estimateId ? "見積を更新しました。" : "見積を登録しました。",
@@ -7545,7 +7550,7 @@ async function handleEstimateListAction(event) {
   if (!(button instanceof HTMLButtonElement) || !currentUser) return;
   const item = button.closest("[data-id]");
   const estimateId = item?.dataset.id;
-  console.log("ESTIMATE LIST BUTTON CLICKED", button.className, estimateId);
+  debugLog("ESTIMATE LIST BUTTON CLICKED", button.className, estimateId);
   if (!estimateId) {
     showAppMessage("対象データIDを取得できませんでした。", true);
     return;
@@ -7557,7 +7562,7 @@ async function handleEstimateListAction(event) {
     return;
   }
   if (listAction === "create_case_from_estimate") {
-    console.log("CREATE CASE CLICKED", estimateId);
+    debugLog("CREATE CASE CLICKED", estimateId);
     await handleCreateCaseFromEstimate(estimateId);
     return;
   }
@@ -7570,7 +7575,7 @@ async function handleEstimateListAction(event) {
   if (listAction === "export_estimate_excel") return exportEstimateDataForEstimate(estimateId);
   if (listAction === "export_invoice_excel_from_estimate") return exportInvoiceDataForEstimate(estimateId);
   if (listAction === "create_invoice_from_estimate") {
-    console.log("CREATE INVOICE CLICKED", estimateId);
+    debugLog("CREATE INVOICE CLICKED", estimateId);
     await handleCreateInvoiceFromEstimate(estimateId);
   }
 }
@@ -7642,7 +7647,7 @@ async function createCaseFromEstimate(estimateId) {
     receipt_url: null,
   };
   const payload = pickObjectKeys(rawPayload, CASE_MUTATION_COLUMNS);
-  console.log("CREATE CASE PAYLOAD", payload);
+  debugLog("CREATE CASE PAYLOAD", payload);
   const { data, error } = await sbClient.from("cases").insert(payload).select().single();
   if (error) throw error;
   if (!data) throw new Error("案件化の登録結果を取得できませんでした。");
@@ -7652,7 +7657,7 @@ async function createCaseFromEstimate(estimateId) {
 }
 
 async function handleCreateCaseFromEstimate(estimateId) {
-  console.log("CREATE CASE START", estimateId);
+  debugLog("CREATE CASE START", estimateId);
   const estimate = state.estimates.find((entry) => entry.id === estimateId);
   if (!estimate) {
     showAppMessage("対象見積が見つかりません。", true);
@@ -7674,7 +7679,7 @@ async function handleCreateCaseFromEstimate(estimateId) {
     successSubtab: "list",
     execute: async () => {
       const data = await createCaseFromEstimate(estimateId);
-      console.log("CREATE CASE SUCCESS", data);
+      debugLog("CREATE CASE SUCCESS", data);
       return data;
     },
   });
@@ -7700,7 +7705,7 @@ async function createInvoiceFromEstimate(estimateId) {
     invoice_number: await generateInvoiceNumberIfNeeded(),
   };
   const payload = pickObjectKeys(rawPayload, SALES_MUTATION_COLUMNS);
-  console.log("CREATE INVOICE PAYLOAD", payload);
+  debugLog("CREATE INVOICE PAYLOAD", payload);
   const { data, error } = await sbClient.from("sales").insert(payload).select().single();
   if (error) throw error;
   if (!data) throw new Error("請求作成結果を取得できませんでした。");
@@ -7726,7 +7731,7 @@ async function handleCreateInvoiceFromEstimate(estimateId) {
     showAppMessage("この見積は請求作成済みです。重複登録を防ぐため追加作成は行いません。");
     return existingSale;
   }
-  console.log("CREATE INVOICE START", estimateId);
+  debugLog("CREATE INVOICE START", estimateId);
   return handleEstimateConversionAction({
     estimateId,
     loadingLabel: "請求作成",
@@ -7736,7 +7741,7 @@ async function handleCreateInvoiceFromEstimate(estimateId) {
     successSubtab: "list",
     execute: async () => {
       const data = await createInvoiceFromEstimate(estimateId);
-      console.log("CREATE INVOICE SUCCESS", data);
+      debugLog("CREATE INVOICE SUCCESS", data);
       return data;
     },
   });
@@ -8146,7 +8151,7 @@ function renderSales() {
   salesEmpty.textContent = filteredSales.length || !state.salesSearchQuery
     ? "売上データはまだありません。"
     : "条件に一致する売上データはありません。";
-  console.log("RENDER SALES DONE");
+  debugLog("RENDER SALES DONE");
 }
 
 function renderExpenses() {
@@ -9812,14 +9817,14 @@ function importTypeToLabel(type) {
 function safeFileExport(actionName, exportFn) {
   try {
     clearAppMessage();
-    console.log("FILE EXPORT START", actionName);
+    debugLog("FILE EXPORT START", actionName);
     const result = exportFn();
     if (result === false) {
-      console.log("FILE EXPORT CANCELED", actionName);
+      debugLog("FILE EXPORT CANCELED", actionName);
       return;
     }
     showAppMessage(`${actionName}を出力しました。`, false);
-    console.log("FILE EXPORT DONE", actionName);
+    debugLog("FILE EXPORT DONE", actionName);
   } catch (error) {
     console.error(`${actionName}の出力に失敗しました`, error);
     showAppMessage(`${actionName}の出力に失敗しました。${error?.message || ""}`, true);
@@ -9831,14 +9836,14 @@ function safeFileExport(actionName, exportFn) {
 async function safeFileExportAsync(actionName, exportFn) {
   try {
     clearAppMessage();
-    console.log("FILE EXPORT START", actionName);
+    debugLog("FILE EXPORT START", actionName);
     const result = await exportFn();
     if (result === false) {
-      console.log("FILE EXPORT CANCELED", actionName);
+      debugLog("FILE EXPORT CANCELED", actionName);
       return;
     }
     showAppMessage(`${actionName}を出力しました。`, false);
-    console.log("FILE EXPORT DONE", actionName);
+    debugLog("FILE EXPORT DONE", actionName);
   } catch (error) {
     console.error(`${actionName}の出力に失敗しました`, error);
     showAppMessage(`${actionName}の出力に失敗しました。${error?.message || ""}`, true);
@@ -9883,13 +9888,13 @@ function downloadTextFile(filename, content, mimeType = "text/plain;charset=utf-
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  console.log("DOWNLOAD START", filename);
+  debugLog("DOWNLOAD START", filename);
   link.href = url;
   link.download = filename;
   link.style.display = "none";
   document.body.appendChild(link);
   link.click();
-  console.log("DOWNLOAD CLICKED", filename);
+  debugLog("DOWNLOAD CLICKED", filename);
   document.body.removeChild(link);
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -11015,7 +11020,7 @@ function startLoading(label = "処理中") {
 
   document.body.classList.add("is-loading");
   document.body.setAttribute("aria-busy", "true");
-  console.log("LOADING START", label, loadingCount);
+  debugLog("LOADING START", label, loadingCount);
 
 }
 
