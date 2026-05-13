@@ -2061,7 +2061,9 @@ async function applyAuthState(options = {}) {
     resetSaleForm();
     resetExpenseForm();
     resetFixedExpenseForm();
-    resetDailyReportForm();
+    if (!editState.dailyReportId) {
+      resetDailyReportForm();
+    }
     safeRender("renderAfterDataChanged", renderAfterDataChanged);
     state.isInitialDataReady = true;
     setDataMutationControlsEnabled(true);
