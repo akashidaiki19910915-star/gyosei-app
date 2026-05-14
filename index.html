@@ -69,7 +69,31 @@
                 <button id="export-case-documents-csv-btn" type="button">書類管理CSV</button>
                 <button id="export-all-csv-btn" type="button" class="secondary-btn">全データCSV</button>
               </div>
-              
+            </section>
+            <section>
+              <h2>CSV取込</h2>
+              <form id="csv-import-form" class="form">
+                <label>
+                  種類
+                  <select id="csv-import-type" name="csvImportType" required>
+                    <option value="clients">顧客CSV</option>
+                    <option value="cases">案件CSV</option>
+                    <option value="sales">売上CSV</option>
+                    <option value="payments">入金CSV</option>
+                    <option value="expenses">経費CSV</option>
+                    <option value="fixed_expenses">固定費CSV</option>
+                    <option value="case_documents">書類管理CSV</option>
+                    <option value="client_interactions">対応履歴CSV</option>
+                  </select>
+                </label>
+                <label>
+                  ファイル
+                  <input id="csv-import-file" name="csvImportFile" type="file" accept=".csv,text/csv" required />
+                </label>
+                <button id="csv-import-btn" type="submit">CSV取込を実行</button>
+              </form>
+            </section>
+          </div>
           <div class="layout two-col">
             <section>
               <h2>Excel出力</h2>

@@ -5324,7 +5324,7 @@ function renderDocumentAlerts() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(entry.typeLabel)}</td>
-      <td>${escapeHtml(entry.clientName)}</td>
+      <td>${escapeHtml(entry.customerName)}</td>
       <td>${escapeHtml(entry.caseName)}</td>
       <td>${escapeHtml(entry.documentName)}</td>
       <td>${escapeHtml(entry.subInfo)}</td>
@@ -6193,7 +6193,7 @@ function renderDeadlineAlertCard() {
         entry.deadlineStatus === "within7" ? "deadline-within7" :
         "deadline-within30";
       tr.innerHTML = `
-        <td>${escapeHtml(entry.clientName)}</td>
+        <td>${escapeHtml(entry.customerName)}</td>
         <td>${escapeHtml(entry.caseName)}</td>
         <td>${formatDate(entry.dueDate)}</td>
         <td>${escapeHtml(entry.label || entry.status)}</td>
@@ -6346,10 +6346,12 @@ function renderNextActionAlertCard() {
         <td>${escapeHtml(entry.clientName)}</td>
         <td>${escapeHtml(entry.caseName)}</td>
         <td>${formatDate(entry.nextActionDate)}</td>
+        <td>${escapeHtml(entry.originLabel)}</td>
+        <td>${escapeHtml(entry.displayStatus)}</td>
         <td>${escapeHtml(entry.nextAction || "内容未設定")}</td>
         <td>${entry.sourceType === "daily-report"
         ? `<button type="button" class="secondary-btn" data-action="edit_daily_report" data-list-action="edit_daily_report" data-daily-report-id="${entry.id}" data-id="${entry.id}">編集</button> <button type="button" class="secondary-btn" data-action="complete_next_action_alert" data-source-type="${entry.sourceType}" data-source-id="${entry.sourceId}">完了</button> <button type="button" class="secondary-btn" data-action="postpone_next_action_alert" data-source-type="${entry.sourceType}" data-source-id="${entry.sourceId}">延期</button>`
-        : `<button type="button" class="secondary-btn" data-action="edit_case" data-list-action="edit_case" data-task-target="case" data-task-id="${entry.id}" data-case-id="${entry.id}">編集</button>`}</td>
+        : `<button type="button" class="secondary-btn" data-action="edit_case" data-list-action="edit_case" data-task-target="case" data-task-id="${entry.id}" data-case-id="${entry.id}">編集</button> <button type="button" class="secondary-btn" data-action="complete_next_action_alert" data-source-type="${entry.sourceType}" data-source-id="${entry.sourceId}">完了</button> <button type="button" class="secondary-btn" data-action="postpone_next_action_alert" data-source-type="${entry.sourceType}" data-source-id="${entry.sourceId}">延期</button>`}</td>
       `;
       nextActionAlertBody.appendChild(tr);
     });
@@ -6846,7 +6848,7 @@ function renderBillingLeakAlert() {
   billingLeakCases.forEach((entry) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${escapeHtml(entry.clientName)}</td>
+      <td>${escapeHtml(entry.customerName)}</td>
       <td>${escapeHtml(entry.caseName)}</td>
       <td>${formatCurrency(entry.estimateAmount)}</td>
       <td>${escapeHtml(entry.status || "完了")}</td>
