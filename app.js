@@ -653,6 +653,8 @@ const CASE_MUTATION_COLUMNS = [
   "work_memo",
   "next_action_date",
   "next_action",
+  "next_action_status",
+  "next_action_completed_at",
   "template_id",
   "required_documents",
   "task_list",
@@ -694,7 +696,7 @@ const RESTORE_MUTATION_COLUMNS = {
   estimates: ["user_id", "client_id", "customer_name", "estimate_title", "estimate_date", "valid_until", "status", "memo", "subtotal", "tax", "total", "estimate_source", "estimate_number", "case_id"],
   estimate_items: ["user_id", "estimate_id", "item_name", "quantity", "unit_price", "amount", "memo", "sort_order"],
   estimate_calculations: ["user_id", "client_id", "project_name", "work_type", "application_type", "corporate_type", "governor_type", "general_specific", "industry_count", "officer_count", "office_count", "document_level", "urgent", "expense_amount", "discount_amount", "memo", "base_fee", "addon_fee", "taxable_subtotal", "tax", "total", "addon_breakdown", "reflected_estimate_id", "reflected_at"],
-  daily_reports: ["user_id", "client_id", "case_id", "report_date", "interaction_type", "work_content", "work_minutes", "next_action", "next_action_date", "memo"],
+  daily_reports: ["user_id", "client_id", "case_id", "report_date", "interaction_type", "work_content", "work_minutes", "next_action", "next_action_date", "next_action_status", "next_action_completed_at", "memo"],
   app_settings: ["user_id", "office_name", "postal_code", "address", "tel", "email", "invoice_registration_number", "bank_info", "default_invoice_due_days", "tax_rate", "estimate_note", "invoice_note"],
 };
 
@@ -3087,7 +3089,7 @@ async function handleClientListAction(event) {
   if (!(btn instanceof HTMLButtonElement) || !currentUser) return;
   const listAction = btn.dataset.listAction;
   const item = btn.closest("[data-id]");
-  const id = item?.dataset.id || btn.dataset.dailyReportId || btn.dataset.id;
+  const id = item?.dataset.id;
   if (!id) {
     showAppMessage("対象データIDを取得できませんでした。", true);
     return;
@@ -4029,7 +4031,7 @@ async function handleDailyReportsListAction(event) {
   if (!(btn instanceof HTMLButtonElement) || !currentUser) return;
   const listAction = btn.dataset.listAction;
   const item = btn.closest("[data-id]");
-  const id = item?.dataset.id || btn.dataset.dailyReportId || btn.dataset.id;
+  const id = item?.dataset.id;
   if (!id) {
     showAppMessage("対象データIDを取得できませんでした。", true);
     return;
@@ -5323,7 +5325,7 @@ function renderDocumentAlerts() {
     tr.innerHTML = `
       <td>${escapeHtml(entry.typeLabel)}</td>
       <td>${escapeHtml(entry.clientName)}</td>
-      <td>${escapeHtml(entry.caseName)}</td><td>${escapeHtml(entry.originLabel)}</td><td>${escapeHtml(entry.displayStatus)}</td>
+      <td>${escapeHtml(entry.caseName)}</td>
       <td>${escapeHtml(entry.documentName)}</td>
       <td>${escapeHtml(entry.subInfo)}</td>
       <td><button type="button" class="secondary-btn" data-action="edit_case_document" data-list-action="edit_case_document" data-case-document-id="${entry.id}">編集</button></td>
@@ -6192,13 +6194,13 @@ function renderDeadlineAlertCard() {
         "deadline-within30";
       tr.innerHTML = `
         <td>${escapeHtml(entry.clientName)}</td>
-        <td>${escapeHtml(entry.caseName)}</td><td>${escapeHtml(entry.originLabel)}</td><td>${escapeHtml(entry.displayStatus)}</td>
+        <td>${escapeHtml(entry.caseName)}</td>
         <td>${formatDate(entry.dueDate)}</td>
         <td>${escapeHtml(entry.label || entry.status)}</td>
         <td>${formatRemainingDays(entry.remainingDays)}</td>
         <td>${entry.alertType === "case-task"
     ? `<button type="button" class="secondary-btn edit-case-task-btn" data-action="edit_case_task" data-list-action="edit_case_task" data-task-id="${entry.id}">編集</button>`
-    : `<button type="button" class="secondary-btn" data-action="edit_case" data-list-action="edit_case" data-task-target="case" data-task-id="${entry.sourceId}" data-case-id="${entry.sourceId}" data-id="${entry.sourceId}">編集</button> <button type="button" class="secondary-btn" data-action="complete_next_action_alert" data-source-type="${entry.sourceType}" data-source-id="${entry.sourceId}">完了</button> <button type="button" class="secondary-btn" data-action="postpone_next_action_alert" data-source-type="${entry.sourceType}" data-source-id="${entry.sourceId}">延期</button>`}</td>
+    : `<button type="button" class="secondary-btn" data-action="edit_case" data-list-action="edit_case" data-task-target="case" data-task-id="${entry.id}" data-case-id="${entry.id}">編集</button>`}</td>
       `;
       deadlineAlertBody.appendChild(tr);
     });
@@ -6342,12 +6344,12 @@ function renderNextActionAlertCard() {
       tr.className = entry.urgencyClass;
       tr.innerHTML = `
         <td>${escapeHtml(entry.clientName)}</td>
-        <td>${escapeHtml(entry.caseName)}</td><td>${escapeHtml(entry.originLabel)}</td><td>${escapeHtml(entry.displayStatus)}</td>
+        <td>${escapeHtml(entry.caseName)}</td>
         <td>${formatDate(entry.nextActionDate)}</td>
         <td>${escapeHtml(entry.nextAction || "内容未設定")}</td>
         <td>${entry.sourceType === "daily-report"
-        ? `<button type="button" class="secondary-btn" data-action="edit_daily_report" data-list-action="edit_daily_report" data-daily-report-id="${entry.sourceId}" data-id="${entry.sourceId}">編集</button>`
-        : `<button type="button" class="secondary-btn" data-action="edit_case" data-list-action="edit_case" data-task-target="case" data-task-id="${entry.sourceId}" data-case-id="${entry.sourceId}" data-id="${entry.sourceId}">編集</button> <button type="button" class="secondary-btn" data-action="complete_next_action_alert" data-source-type="${entry.sourceType}" data-source-id="${entry.sourceId}">完了</button> <button type="button" class="secondary-btn" data-action="postpone_next_action_alert" data-source-type="${entry.sourceType}" data-source-id="${entry.sourceId}">延期</button>`}</td>
+        ? `<button type="button" class="secondary-btn" data-action="edit_daily_report" data-list-action="edit_daily_report" data-daily-report-id="${entry.id}" data-id="${entry.id}">編集</button> <button type="button" class="secondary-btn" data-action="complete_next_action_alert" data-source-type="${entry.sourceType}" data-source-id="${entry.sourceId}">完了</button> <button type="button" class="secondary-btn" data-action="postpone_next_action_alert" data-source-type="${entry.sourceType}" data-source-id="${entry.sourceId}">延期</button>`
+        : `<button type="button" class="secondary-btn" data-action="edit_case" data-list-action="edit_case" data-task-target="case" data-task-id="${entry.id}" data-case-id="${entry.id}">編集</button>`}</td>
       `;
       nextActionAlertBody.appendChild(tr);
     });
@@ -6374,6 +6376,10 @@ function renderDailyReportAlerts() {
   const targets = all.filter((entry) => entry.workflowStatus !== "completed" && (entry.remainingDays ?? 0) <= 0);
   const completed = all.filter((entry) => entry.workflowStatus === "completed");
   dailyReportAlertBody.innerHTML = "";
+  const completedBody = document.getElementById("daily-report-alert-completed-body");
+  const completedWrap = document.getElementById("daily-report-alert-completed-wrap");
+  const completedEmpty = document.getElementById("daily-report-alert-completed-empty");
+  if (completedBody) completedBody.innerHTML = "";
   dailyReportAlertEmpty.hidden = targets.length > 0;
   dailyReportAlertListWrap.hidden = targets.length === 0;
   targets.slice().sort((a,b)=>(a.remainingDays||0)-(b.remainingDays||0)).forEach((entry)=>{
@@ -6381,6 +6387,15 @@ function renderDailyReportAlerts() {
     tr.innerHTML=`<td>次回対応</td><td>${escapeHtml(entry.clientName)}</td><td>${escapeHtml(entry.caseName)}</td><td>${formatDate(entry.nextActionDate)}</td><td>${escapeHtml(entry.displayStatus)}</td><td>${escapeHtml(entry.nextAction||'内容未設定')}</td><td>${escapeHtml(entry.detailText||'-')}</td><td>${escapeHtml(entry.originLabel)}</td><td><button type="button" class="secondary-btn" data-action="${entry.sourceType==='daily-report'?'edit_daily_report':'edit_case'}" data-list-action="${entry.sourceType==='daily-report'?'edit_daily_report':'edit_case'}" data-id="${entry.sourceId}" data-daily-report-id="${entry.sourceId}" data-case-id="${entry.sourceId}">編集</button> <button type="button" class="secondary-btn" data-action="complete_next_action_alert" data-source-type="${entry.sourceType}" data-source-id="${entry.sourceId}">完了</button> <button type="button" class="secondary-btn" data-action="postpone_next_action_alert" data-source-type="${entry.sourceType}" data-source-id="${entry.sourceId}">延期</button> <button type="button" class="secondary-btn" data-action="view_next_action_alert_detail" data-source-type="${entry.sourceType}" data-source-id="${entry.sourceId}">詳細</button></td>`;
     dailyReportAlertBody.appendChild(tr);
   });
+  if (completedBody) {
+    completed.slice().sort((a,b)=>String(b.completedAt||"").localeCompare(String(a.completedAt||""))).forEach((entry)=>{
+      const tr=document.createElement("tr");
+      tr.innerHTML=`<td>${escapeHtml(entry.clientName)}</td><td>${escapeHtml(entry.caseName)}</td><td>${formatDate(entry.nextActionDate)}</td><td>${escapeHtml(entry.nextAction||"内容未設定")}</td><td>${escapeHtml(entry.originLabel)}</td><td>${formatDateTime(entry.completedAt)||"-"}</td>`;
+      completedBody.appendChild(tr);
+    });
+  }
+  if (completedWrap) completedWrap.hidden = completed.length === 0;
+  if (completedEmpty) completedEmpty.hidden = completed.length > 0;
 }
 
 
@@ -6832,7 +6847,7 @@ function renderBillingLeakAlert() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(entry.clientName)}</td>
-      <td>${escapeHtml(entry.caseName)}</td><td>${escapeHtml(entry.originLabel)}</td><td>${escapeHtml(entry.displayStatus)}</td>
+      <td>${escapeHtml(entry.caseName)}</td>
       <td>${formatCurrency(entry.estimateAmount)}</td>
       <td>${escapeHtml(entry.status || "完了")}</td>
       <td><button type="button" class="secondary-btn register-sale-btn" data-action="register_sale" data-list-action="register_sale" data-case-id="${entry.id}">売上登録</button></td>
@@ -7230,7 +7245,7 @@ function renderDailyReports() {
           <p class="daily-report-card-case">対応種別: ${escapeHtml(entry.interactionType || "作業")}</p>
         </div>
         <div class="daily-report-card-actions">
-          <button type="button" class="secondary-btn card-select-btn" data-action="select_daily_report" data-daily-report-id="${entry.sourceId}" data-id="${entry.sourceId}">${new Set(getSelectedIdsByKey('selectedDailyReportIds')).has(String(entry.id))?"☑":"☐"}</button>
+          <button type="button" class="secondary-btn card-select-btn" data-action="select_daily_report" data-daily-report-id="${entry.id}" data-id="${entry.id}">${new Set(getSelectedIdsByKey('selectedDailyReportIds')).has(String(entry.id))?"☑":"☐"}</button>
           <button type="button" class="secondary-btn edit-daily-report-btn" data-action="edit_daily_report" data-list-action="edit_daily_report">編集</button>
           <button type="button" class="danger-btn delete-daily-report-btn" data-action="delete_daily_report" data-list-action="delete_daily_report">削除</button>
         </div>
@@ -10762,6 +10777,8 @@ function mapCaseFromDb(row) {
     workMemo: row.work_memo || "",
     nextActionDate: row.next_action_date || "",
     nextAction: row.next_action || "",
+    nextActionStatus: row.next_action_status || "open",
+    nextActionCompletedAt: row.next_action_completed_at || "",
     documentUrl: row.document_url || "",
     invoiceUrl: row.invoice_url || "",
     receiptUrl: row.receipt_url || "",
@@ -10843,6 +10860,8 @@ function mapClientInteractionFromDb(row) {
     summary: row.summary || "",
     nextAction: row.next_action || "",
     nextActionDate: row.next_action_date || "",
+    nextActionStatus: row.next_action_status || "open",
+    nextActionCompletedAt: row.next_action_completed_at || "",
     memo: row.memo || "",
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
@@ -11062,6 +11081,8 @@ function mapDailyReportFromDb(row) {
     workMinutes: normalizeAmount(row.work_minutes) ?? 0,
     nextAction: row.next_action || "",
     nextActionDate: row.next_action_date || "",
+    nextActionStatus: row.next_action_status || "open",
+    nextActionCompletedAt: row.next_action_completed_at || "",
     memo: row.memo || "",
     createdAt: Date.parse(row.created_at) || Date.now(),
     updatedAt: Date.parse(row.updated_at) || Date.now(),
