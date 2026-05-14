@@ -5324,7 +5324,7 @@ function renderDocumentAlerts() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(entry.typeLabel)}</td>
-      <td>${escapeHtml(entry.customerName)}</td>
+      <td>${escapeHtml(entry.clientName)}</td>
       <td>${escapeHtml(entry.caseName)}</td>
       <td>${escapeHtml(entry.documentName)}</td>
       <td>${escapeHtml(entry.subInfo)}</td>
