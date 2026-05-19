@@ -809,9 +809,11 @@ function bindEvents() {
   if (permitHearingFilterClearBtn) permitHearingFilterClearBtn.dataset.action = "clear_permit_hearing_filters";
   window.addEventListener("pageshow", forceHideLoading);
   window.addEventListener("focus", forceHideLoading);
+  window.addEventListener("focus", restoreDailyReportDraftOnResume);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       forceHideLoading();
+      restoreDailyReportDraftOnResume();
     }
   });
   if (loadingForceCloseBtn) loadingForceCloseBtn.dataset.action = "force_close_loading";
@@ -3079,7 +3081,13 @@ async function handleDailyReportSubmit(event) {
     }, {
       successMessage: isEdit ? "日報を更新しました。" : "日報を登録しました。",
       resetForm: resetDailyReportForm,
-      afterSuccess: () => activateSubtab("daily-reports", "list"),
+      afterSuccess: () => {
+        clearCurrentDailyReportDraft();
+        if (!isEdit) {
+          clearDailyReportDraft();
+        }
+        activateSubtab("daily-reports", "list");
+      },
     });
   } catch (error) {
     showAppMessage(`日報登録に失敗しました。${error?.message || ""} ${error?.details || ""} ${error?.hint || ""} ${error?.code || ""}`, true);
@@ -8496,7 +8504,6 @@ function resetFixedExpenseForm() {
 }
 
 function resetDailyReportForm() {
-  clearDailyReportDraft();
   resetEditMode("dailyReport");
   dailyReportForm.reset();
   dailyReportForm.elements.reportDate.value = toDateString(new Date());
@@ -11402,6 +11409,15 @@ function saveDailyReportDraft() {
   }
 }
 
+function isDailyReportEntryActive() {
+  return normalizeTabKey(activeTab || "cases") === "daily-reports" && subtabState["daily-reports"] === "entry";
+}
+
+function restoreDailyReportDraftOnResume() {
+  if (!isDailyReportEntryActive()) return;
+  restoreDailyReportDraft();
+}
+
 function restoreDailyReportDraft() {
   if (!dailyReportForm) return;
   try {
@@ -11436,3 +11452,11 @@ function clearDailyReportDraft() {
   }
 }
 
+function clearCurrentDailyReportDraft() {
+  const key = getDailyReportDraftStorageKey();
+  try {
+    sessionStorage.removeItem(key);
+  } catch (error) {
+    console.warn("日報下書き削除に失敗", error);
+  }
+}
