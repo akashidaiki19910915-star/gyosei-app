@@ -11409,8 +11409,18 @@ function saveDailyReportDraft() {
   }
 }
 
+function getActiveMainTabKey() {
+  const activeTabButton = tabs.find((btn) => btn.classList.contains("active"));
+  if (activeTabButton?.dataset?.tab) return normalizeTabKey(activeTabButton.dataset.tab);
+
+  const activePanelEntry = Object.entries(panels).find(([, panel]) => panel?.classList?.contains("active"));
+  if (activePanelEntry) return normalizeTabKey(activePanelEntry[0]);
+
+  return "cases";
+}
+
 function isDailyReportEntryActive() {
-  return normalizeTabKey(activeTab || "cases") === "daily-reports" && subtabState["daily-reports"] === "entry";
+  return getActiveMainTabKey() === "daily-reports" && subtabState["daily-reports"] === "entry";
 }
 
 function restoreDailyReportDraftOnResume() {
