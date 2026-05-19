@@ -777,6 +777,8 @@ function bindEvents() {
   expenseForm?.addEventListener("submit", handleExpenseSubmit);
   fixedExpenseForm.addEventListener("submit", handleFixedExpenseSubmit);
   dailyReportForm?.addEventListener("submit", handleDailyReportSubmit);
+  dailyReportForm?.addEventListener("input", saveDailyReportDraft);
+  dailyReportForm?.addEventListener("change", saveDailyReportDraft);
   estimateForm?.addEventListener("submit", handleEstimateSubmit);
   settingsForm?.addEventListener("submit", handleSettingsSubmit);
 
@@ -4065,6 +4067,7 @@ async function startDailyReportEdit(dailyReportId) {
     syncDailyReportClientLabel();
     dailyReportSubmitBtn.textContent = "日報を更新";
     dailyReportForm.scrollIntoView({ behavior: "smooth", block: "start" });
+    restoreDailyReportDraft();
 }
 
 
@@ -5593,6 +5596,7 @@ function activateSubtab(parentTab, subtab) {
   if (!subtab) return;
   subtabState[normalizedTab] = subtab;
   applySubtabVisibility(normalizedTab);
+  if (normalizedTab === "daily-reports" && subtab === "entry") restoreDailyReportDraft();
 }
 
 function applySubtabVisibility(activeMainTab) {
@@ -6392,7 +6396,7 @@ function renderDailyReportAlerts() {
   if (completedBody) {
     completed.slice().sort((a,b)=>String(b.completedAt||"").localeCompare(String(a.completedAt||""))).forEach((entry)=>{
       const tr=document.createElement("tr");
-      tr.innerHTML=`<td>${escapeHtml(entry.clientName)}</td><td>${escapeHtml(entry.caseName)}</td><td>${formatDate(entry.nextActionDate)}</td><td>${escapeHtml(entry.nextAction||"内容未設定")}</td><td>${escapeHtml(entry.originLabel)}</td><td>${formatDateTime(entry.completedAt)||"-"}</td>`;
+      tr.innerHTML=`<td>${escapeHtml(entry.clientName)}</td><td>${escapeHtml(entry.caseName)}</td><td>${formatDate(entry.nextActionDate)}</td><td>${escapeHtml(entry.nextAction||"内容未設定")}</td><td>${escapeHtml(entry.originLabel)}</td><td>${formatDateTimeValue(entry.completedAt)||"-"}</td>`;
       completedBody.appendChild(tr);
     });
   }
@@ -8492,12 +8496,15 @@ function resetFixedExpenseForm() {
 }
 
 function resetDailyReportForm() {
+  clearDailyReportDraft();
   resetEditMode("dailyReport");
   dailyReportForm.reset();
   dailyReportForm.elements.reportDate.value = toDateString(new Date());
   if (reportInteractionTypeSelect) reportInteractionTypeSelect.value = "作業";
   if (reportClientSelect) reportClientSelect.value = "";
   dailyReportSubmitBtn.textContent = "日報を登録";
+  if (!currentUser) return;
+  restoreDailyReportDraft();
 }
 
 function resetCaseDocumentForm() {
@@ -11354,3 +11361,78 @@ window.GyoseiApp = {
   getEstimateCalculatorBridgeData: () => window.__estimateCalculatorBridgeData ? { ...window.__estimateCalculatorBridgeData } : null,
   clearEstimateCalculatorBridgeData: () => { window.__estimateCalculatorBridgeData = null; },
 };
+
+const DAILY_REPORT_DRAFT_STORAGE_KEY = "gyosei_daily_report_draft_v1";
+
+function getDailyReportDraftStorageKey() {
+  const userPart = currentUser?.id ? `user:${currentUser.id}` : "guest";
+  const modePart = editState.dailyReportId ? `edit:${editState.dailyReportId}` : "new";
+  return `${DAILY_REPORT_DRAFT_STORAGE_KEY}:${userPart}:${modePart}`;
+}
+
+function collectDailyReportFormDraft() {
+  if (!dailyReportForm) return null;
+  return {
+    reportDate: dailyReportForm.elements.reportDate?.value || "",
+    reportClientId: dailyReportForm.elements.reportClientId?.value || "",
+    reportCaseId: dailyReportForm.elements.reportCaseId?.value || "",
+    reportInteractionType: normalizeDailyReportInteractionType(dailyReportForm.elements.reportInteractionType?.value),
+    reportWorkContent: dailyReportForm.elements.reportWorkContent?.value || "",
+    reportWorkMinutes: dailyReportForm.elements.reportWorkMinutes?.value || "",
+    reportNextAction: dailyReportForm.elements.reportNextAction?.value || "",
+    reportNextActionDate: dailyReportForm.elements.reportNextActionDate?.value || "",
+    reportMemo: dailyReportForm.elements.reportMemo?.value || "",
+    dailyReportId: editState.dailyReportId || null,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function saveDailyReportDraft() {
+  if (!dailyReportForm) return;
+  try {
+    const draft = collectDailyReportFormDraft();
+    if (!draft) return;
+    if (!draft.reportWorkContent && !draft.reportNextAction && !draft.reportMemo && !draft.reportCaseId && !draft.reportClientId) {
+      sessionStorage.removeItem(getDailyReportDraftStorageKey());
+      return;
+    }
+    sessionStorage.setItem(getDailyReportDraftStorageKey(), JSON.stringify(draft));
+  } catch (error) {
+    console.warn("日報下書き保存に失敗", error);
+  }
+}
+
+function restoreDailyReportDraft() {
+  if (!dailyReportForm) return;
+  try {
+    const raw = sessionStorage.getItem(getDailyReportDraftStorageKey());
+    if (!raw) return;
+    const draft = JSON.parse(raw);
+    if (!draft || draft.dailyReportId !== (editState.dailyReportId || null)) return;
+    if (draft.reportDate) dailyReportForm.elements.reportDate.value = draft.reportDate;
+    if (reportClientSelect) reportClientSelect.value = draft.reportClientId || "";
+    if (reportCaseSelect) reportCaseSelect.value = draft.reportCaseId || "";
+    if (reportInteractionTypeSelect) reportInteractionTypeSelect.value = normalizeDailyReportInteractionType(draft.reportInteractionType || "作業");
+    dailyReportForm.elements.reportWorkContent.value = draft.reportWorkContent || "";
+    dailyReportForm.elements.reportWorkMinutes.value = draft.reportWorkMinutes || 0;
+    dailyReportForm.elements.reportNextAction.value = draft.reportNextAction || "";
+    dailyReportForm.elements.reportNextActionDate.value = draft.reportNextActionDate || "";
+    dailyReportForm.elements.reportMemo.value = draft.reportMemo || "";
+    syncDailyReportClientLabel();
+  } catch (error) {
+    console.warn("日報下書き復元に失敗", error);
+  }
+}
+
+function clearDailyReportDraft() {
+  if (!currentUser) return;
+  const userPrefix = `${DAILY_REPORT_DRAFT_STORAGE_KEY}:user:${currentUser.id}:`;
+  try {
+    Object.keys(sessionStorage).forEach((key) => {
+      if (key.startsWith(userPrefix)) sessionStorage.removeItem(key);
+    });
+  } catch (error) {
+    console.warn("日報下書き削除に失敗", error);
+  }
+}
+
