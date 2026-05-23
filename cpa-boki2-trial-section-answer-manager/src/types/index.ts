@@ -161,6 +161,63 @@ export interface ExamSetRecord {
   relatedHistoryIds: string[];
 }
 
+export type MasteryStatus = '未着手' | '1回演習済み' | '2回演習済み' | '3回以上演習済み' | '合格水準' | '再復習対象' | '危険問題' | '期限超過';
+export type MasteryFilter = '全体' | '未着手' | '危険問題' | '期限超過' | 'C判定' | 'B判定' | '合格水準' | '商業簿記' | '工業簿記' | '第1問対策' | '第2問対策' | '第3問対策' | '第4問対策' | '第5問対策';
+
+export interface MasteryMapItem {
+  problem: ProblemDefinition;
+  latestScore: number | null;
+  maxScore: number | null;
+  scoreRate: number | null;
+  latestRank: ReviewRank;
+  attempts: number;
+  aCount: number;
+  bCount: number;
+  cCount: number;
+  lastPracticedAt: string;
+  nextReviewDate: string;
+  status: MasteryStatus;
+  action: string;
+  sortPriority: number;
+}
+
+export interface MistakeCard {
+  id: string;
+  problemId: string;
+  correctFlow: string;
+  mistakeReason: string;
+  firstReviewPoint: string;
+  preSolveChecklist: string;
+  preventionPhrase: string;
+  missReasons: MissReason[];
+  importance: '高' | '中' | '低';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RecoveryPlanRow {
+  sectionId: SectionId;
+  sectionLabel: string;
+  score: number;
+  maxScore: number;
+  lostPoints: number;
+}
+
+export interface RecoveryPlan {
+  source: '直近90分セット' | '問題別履歴';
+  totalScore: number;
+  maxScore: number;
+  shortage70: number;
+  shortage72: number;
+  shortage80: number;
+  sectionRows: RecoveryPlanRow[];
+  biggestLossSection: string;
+  mostFrequentMissReason: string;
+  nextFocus: string;
+  recoveryCandidates: string[];
+  latestExamSet?: ExamSetRecord;
+}
+
 export interface BackupPayload {
   exportedAt: string;
   appName: string;
@@ -171,5 +228,6 @@ export interface BackupPayload {
   templates: Record<string, unknown>[];
   backups?: Record<string, unknown>[];
   examSets?: ExamSetRecord[];
+  mistakeCards?: MistakeCard[];
   backupMetadata?: BackupMetadata | null;
 }
