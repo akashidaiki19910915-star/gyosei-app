@@ -1,10 +1,15 @@
 import type { AnswerState, ExamSetRecord, HistoryEntry, ProblemDefinition, StudyQueueItem } from '../types';
+import { formatAmount, isAmountColumn } from './numberFormat';
 import { draftSummary } from './scoring';
 
 function escapeCsv(value: unknown): string {
   const raw = value === null || value === undefined ? '' : value;
   const text = String(raw).replace(/"/g, '""');
   return `"${text}"`;
+}
+
+function formatAnswerCell(columnName: string, value: string): string {
+  return isAmountColumn(columnName) ? formatAmount(value) : value;
 }
 
 export function downloadText(filename: string, text: string, type = 'text/plain;charset=utf-8'): void {
@@ -29,7 +34,7 @@ export function currentAnswerCsvRows(answer: AnswerState, problem: ProblemDefini
     [],
     ['行番号', ...answer.columns, '採点', '行別得点'],
   ];
-  answer.rows.forEach((row, index) => rows.push([index + 1, ...row.cells, row.grade, row.points]));
+  answer.rows.forEach((row, index) => rows.push([index + 1, ...answer.columns.map((column, colIndex) => formatAnswerCell(column, row.cells[colIndex] ?? '')), row.grade, row.points]));
   return rows;
 }
 
