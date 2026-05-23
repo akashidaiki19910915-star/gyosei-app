@@ -129,6 +129,14 @@ export default function App() {
     setMessage('手動保存しました');
   };
 
+  const clearCurrentAnswer = async () => {
+    if (!window.confirm('現在問題IDの答案を全消去しますか？履歴は消えません。')) return;
+    const cleared = createAnswer(problemId, answer.templateId);
+    await saveAnswer(cleared);
+    setAnswer(cleared);
+    setMessage('現在問題IDの答案を全消去しました');
+  };
+
   const bulkAddAllAnswers = async () => {
     const answers = (await getAllAnswers()).filter(hasMeaningfulAnswer);
     if (answers.length === 0) {
@@ -215,6 +223,7 @@ export default function App() {
       <div className="status-bar">{message}</div>
 
       <div className="top-actions">
+        <button className="danger" onClick={clearCurrentAnswer}>現在問題IDの答案を全消去</button>
         <button onClick={bulkAddAllAnswers}>保存済み答案を一括履歴追加</button>
         <button onClick={exportCurrentCsv}>現在問題IDの答案CSV</button>
         <button onClick={exportHistoryCsv}>履歴一覧CSV</button>
