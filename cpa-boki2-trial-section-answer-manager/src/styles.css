@@ -62,6 +62,7 @@ th { background: #e8f2ee; position: sticky; top: 0; z-index: 1; }
 .answer-table input, .answer-table select, .answer-table textarea { width: 100%; min-width: 0; box-sizing: border-box; font-size: 14px; padding: 6px 8px; }
 .answer-table th input { font-weight: 700; background: #f7fbf9; }
 .answer-table input:focus, .answer-table select:focus, .answer-table textarea:focus { outline: 2px solid #7bbda6; outline-offset: 1px; }
+.answer-table .cell-editing { outline: 2px solid #d79b22 !important; background: #fffdf2; }
 .memo-cell-input { min-height: 34px; max-height: 70px; resize: vertical; line-height: 1.35; }
 .invalid-amount { border-color: #d65844 !important; background: #fff4f1; }
 .answer-table .col-row-number, .answer-table col.col-row-number { width: 44px; }

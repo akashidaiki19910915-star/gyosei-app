@@ -1,9 +1,15 @@
-import type { HTMLAttributes, KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useState } from 'react';
+import type { FocusEvent as ReactFocusEvent, HTMLAttributes, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { AnswerRow, AnswerState, GradeMark, TemplateDefinition } from '../types';
 import { formatAmount, isAmountColumn, isInvalidAmount, isJapaneseTextColumn, normalizeNumericInput, toHalfWidthNumber } from '../utils/numberFormat';
 import { handleTableCellKeyDown } from '../utils/tableNavigation';
 
 const gradeOptions: GradeMark[] = ['未採点', '○', '△', '×'];
+
+type EditingCell = {
+  rowIndex: number;
+  colIndex: number;
+} | null;
 
 interface Props {
   answer: AnswerState;
@@ -42,6 +48,17 @@ function placeholderFor(column: string): string {
 }
 
 export function AnswerTable({ answer, template, onChange, onApplyRowPoints }: Props) {
+  const [editingCell, setEditingCell] = useState<EditingCell>(null);
+
+  const isEditing = (rowIndex: number, colIndex: number) => editingCell?.rowIndex === rowIndex && editingCell.colIndex === colIndex;
+  const enterEditMode = (rowIndex: number, colIndex: number) => setEditingCell({ rowIndex, colIndex });
+  const exitEditMode = () => setEditingCell(null);
+
+  const selectOnMoveFocus = (event: ReactFocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>, rowIndex: number, colIndex: number) => {
+    if (isEditing(rowIndex, colIndex)) return;
+    if (event.currentTarget instanceof HTMLInputElement) event.currentTarget.select();
+  };
+
   const updateHeader = (index: number, value: string) => {
     const columns = [...answer.columns];
     columns[index] = value;
@@ -100,21 +117,32 @@ export function AnswerTable({ answer, template, onChange, onApplyRowPoints }: Pr
     onChange({ ...answer, rows: rows.length ? rows : createRows(answer.columns.length, 1) });
   };
 
+  const keyDownOptions = (rowIndex: number, colIndex: number) => ({
+    isEditing: isEditing(rowIndex, colIndex),
+    enterEditMode: () => enterEditMode(rowIndex, colIndex),
+    exitEditMode,
+  });
+
   const renderCellInput = (row: AnswerRow, rowIndex: number, column: string, colIndex: number) => {
     const value = row.cells[colIndex] ?? '';
     const amount = isAmountColumn(column);
     const invalidAmount = amount && isInvalidAmount(value);
+    const editing = isEditing(rowIndex, colIndex);
     const commonProps = {
       'data-answer-cell': 'true',
       'data-row-index': rowIndex,
       'data-col-index': colIndex,
-      onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => handleTableCellKeyDown(event, rowIndex, colIndex),
+      'data-edit-mode': editing ? 'true' : 'false',
+      onFocus: (event: ReactFocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => selectOnMoveFocus(event, rowIndex, colIndex),
+      onDoubleClick: () => enterEditMode(rowIndex, colIndex),
+      onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => handleTableCellKeyDown(event, rowIndex, colIndex, keyDownOptions(rowIndex, colIndex)),
     };
 
     if (template.optionColumns?.[column]) {
       return (
         <select
           {...commonProps}
+          className={editing ? 'cell-editing' : ''}
           value={value}
           onChange={(event) => updateCell(rowIndex, colIndex, event.target.value)}
           aria-label={`${column} ${rowIndex + 1}行目`}
@@ -129,7 +157,7 @@ export function AnswerTable({ answer, template, onChange, onApplyRowPoints }: Pr
       return (
         <textarea
           {...commonProps}
-          className="memo-cell-input"
+          className={`memo-cell-input ${editing ? 'cell-editing' : ''}`}
           value={value}
           title={value}
           onChange={(event) => updateCell(rowIndex, colIndex, event.target.value)}
@@ -145,7 +173,7 @@ export function AnswerTable({ answer, template, onChange, onApplyRowPoints }: Pr
     return (
       <input
         {...commonProps}
-        className={invalidAmount ? 'invalid-amount' : ''}
+        className={`${invalidAmount ? 'invalid-amount' : ''} ${editing ? 'cell-editing' : ''}`.trim()}
         type="text"
         value={amount ? formatAmount(value) : value}
         title={value}
@@ -204,9 +232,13 @@ export function AnswerTable({ answer, template, onChange, onApplyRowPoints }: Pr
                     data-answer-cell="true"
                     data-row-index={rowIndex}
                     data-col-index={answer.columns.length}
+                    data-edit-mode={isEditing(rowIndex, answer.columns.length) ? 'true' : 'false'}
+                    className={isEditing(rowIndex, answer.columns.length) ? 'cell-editing' : ''}
                     value={row.grade}
+                    onFocus={(event) => selectOnMoveFocus(event, rowIndex, answer.columns.length)}
+                    onDoubleClick={() => enterEditMode(rowIndex, answer.columns.length)}
                     onChange={(event) => updateGrade(rowIndex, event.target.value as GradeMark)}
-                    onKeyDown={(event) => handleTableCellKeyDown(event, rowIndex, answer.columns.length)}
+                    onKeyDown={(event) => handleTableCellKeyDown(event, rowIndex, answer.columns.length, keyDownOptions(rowIndex, answer.columns.length))}
                     aria-label={`採点 ${rowIndex + 1}行目`}
                   >
                     {gradeOptions.map((grade) => <option key={grade} value={grade}>{grade}</option>)}
@@ -217,12 +249,16 @@ export function AnswerTable({ answer, template, onChange, onApplyRowPoints }: Pr
                     data-answer-cell="true"
                     data-row-index={rowIndex}
                     data-col-index={answer.columns.length + 1}
+                    data-edit-mode={isEditing(rowIndex, answer.columns.length + 1) ? 'true' : 'false'}
+                    className={isEditing(rowIndex, answer.columns.length + 1) ? 'cell-editing' : ''}
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9,\\-]*"
                     value={String(row.points)}
+                    onFocus={(event) => selectOnMoveFocus(event, rowIndex, answer.columns.length + 1)}
+                    onDoubleClick={() => enterEditMode(rowIndex, answer.columns.length + 1)}
                     onChange={(event) => updatePoints(rowIndex, Number(normalizeNumericInput(event.target.value) || 0))}
-                    onKeyDown={(event) => handleTableCellKeyDown(event, rowIndex, answer.columns.length + 1)}
+                    onKeyDown={(event) => handleTableCellKeyDown(event, rowIndex, answer.columns.length + 1, keyDownOptions(rowIndex, answer.columns.length + 1))}
                     autoComplete="off"
                     spellCheck={false}
                     aria-label={`行別得点 ${rowIndex + 1}行目`}
