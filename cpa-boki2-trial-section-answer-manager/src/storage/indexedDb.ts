@@ -1,8 +1,8 @@
-import type { AnswerState, BackupPayload, HistoryEntry } from '../types';
+import type { AnswerState, BackupMetadata, BackupPayload, ExamSetRecord, HistoryEntry } from '../types';
 
 const DB_NAME = 'cpa-boki2-trial-section-answer-manager';
-const DB_VERSION = 1;
-const STORES = ['answers', 'histories', 'settings', 'templates', 'backups'] as const;
+const DB_VERSION = 2;
+const STORES = ['answers', 'histories', 'settings', 'templates', 'backups', 'examSets'] as const;
 
 type StoreName = (typeof STORES)[number];
 
@@ -65,15 +65,68 @@ export async function clearHistories(): Promise<void> {
   await tx('histories', 'readwrite', (store) => store.clear());
 }
 
+export async function saveExamSet(record: ExamSetRecord): Promise<void> {
+  await tx('examSets', 'readwrite', (store) => store.put(record));
+}
+
+export async function getExamSets(): Promise<ExamSetRecord[]> {
+  const rows = await tx<ExamSetRecord[]>('examSets', 'readonly', (store) => store.getAll());
+  return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function deleteExamSet(id: string): Promise<void> {
+  await tx('examSets', 'readwrite', (store) => store.delete(id));
+}
+
+export async function getBackupMetadata(): Promise<BackupMetadata | null> {
+  const row = await tx<BackupMetadata | undefined>('backups', 'readonly', (store) => store.get('backupMeta'));
+  return row ?? null;
+}
+
+export async function saveBackupMetadata(meta: BackupMetadata): Promise<void> {
+  await tx('backups', 'readwrite', (store) => store.put(meta));
+}
+
+export async function recordBackupMade(historyCount: number, answerCount: number): Promise<BackupMetadata> {
+  const current = await getBackupMetadata();
+  const next: BackupMetadata = {
+    id: 'backupMeta',
+    lastBackupAt: new Date().toISOString(),
+    lastRestoreAt: current?.lastRestoreAt ?? '',
+    backupCount: (current?.backupCount ?? 0) + 1,
+    lastBackupHistoryCount: historyCount,
+    lastBackupAnswerCount: answerCount,
+  };
+  await saveBackupMetadata(next);
+  return next;
+}
+
+export async function recordRestoreMade(): Promise<BackupMetadata> {
+  const current = await getBackupMetadata();
+  const next: BackupMetadata = {
+    id: 'backupMeta',
+    lastBackupAt: current?.lastBackupAt ?? '',
+    lastRestoreAt: new Date().toISOString(),
+    backupCount: current?.backupCount ?? 0,
+    lastBackupHistoryCount: current?.lastBackupHistoryCount ?? 0,
+    lastBackupAnswerCount: current?.lastBackupAnswerCount ?? 0,
+  };
+  await saveBackupMetadata(next);
+  return next;
+}
+
 export async function exportAllData(): Promise<BackupPayload> {
   return {
     exportedAt: new Date().toISOString(),
     appName: 'CPA日商簿記2級 試験対策編 解答・復習管理アプリ',
-    version: '1.0.0',
+    version: '1.1.0',
     answers: await getAllAnswers(),
     histories: await getHistories(),
     settings: await tx<Record<string, unknown>[]>('settings', 'readonly', (store) => store.getAll()),
     templates: await tx<Record<string, unknown>[]>('templates', 'readonly', (store) => store.getAll()),
+    backups: await tx<Record<string, unknown>[]>('backups', 'readonly', (store) => store.getAll()),
+    examSets: await getExamSets(),
+    backupMetadata: await getBackupMetadata(),
   };
 }
 
@@ -86,6 +139,9 @@ export async function importAllData(payload: BackupPayload): Promise<void> {
     payload.histories?.forEach((item) => transaction.objectStore('histories').put(item));
     payload.settings?.forEach((item) => transaction.objectStore('settings').put(item));
     payload.templates?.forEach((item) => transaction.objectStore('templates').put(item));
+    payload.backups?.forEach((item) => transaction.objectStore('backups').put(item));
+    payload.examSets?.forEach((item) => transaction.objectStore('examSets').put(item));
+    if (payload.backupMetadata) transaction.objectStore('backups').put(payload.backupMetadata);
     transaction.oncomplete = () => {
       db.close();
       resolve();
@@ -95,4 +151,5 @@ export async function importAllData(payload: BackupPayload): Promise<void> {
       reject(transaction.error);
     };
   });
+  await recordRestoreMade();
 }

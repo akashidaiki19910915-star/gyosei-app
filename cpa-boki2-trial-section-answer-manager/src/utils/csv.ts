@@ -1,4 +1,4 @@
-import type { AnswerState, HistoryEntry, ProblemDefinition } from '../types';
+import type { AnswerState, ExamSetRecord, HistoryEntry, ProblemDefinition, StudyQueueItem } from '../types';
 import { draftSummary } from './scoring';
 
 function escapeCsv(value: unknown): string {
@@ -54,7 +54,40 @@ export function problemStatsCsvRows(histories: HistoryEntry[]): unknown[][] {
 }
 
 export function missReasonCsvRows(histories: HistoryEntry[]): unknown[][] {
-  const counts = new Map<string, number>();
-  histories.forEach((history) => history.missReasons.forEach((reason) => counts.set(reason, (counts.get(reason) || 0) + 1)));
-  return [['ミス原因', '件数'], ...Array.from(counts.entries())];
+  const counts = new Map<string, { count: number; problemIds: Set<string>; latestAt: string }>();
+  histories.forEach((history) => history.missReasons.forEach((reason) => {
+    const current = counts.get(reason) ?? { count: 0, problemIds: new Set<string>(), latestAt: '' };
+    current.count += 1;
+    current.problemIds.add(history.displayId);
+    if (history.savedAt > current.latestAt) current.latestAt = history.savedAt;
+    counts.set(reason, current);
+  }));
+  return [['ミス原因', '件数', '該当問題ID', '最新発生日'], ...Array.from(counts.entries()).map(([reason, info]) => [reason, info.count, Array.from(info.problemIds).join('/'), info.latestAt])];
+}
+
+export function studyQueueCsvRows(items: StudyQueueItem[]): unknown[][] {
+  return [
+    ['優先順位', '状態ラベル', '科目', '大問対策', '問題ID', '論点名', '前回得点', '満点', '前回判定', '次回復習日', 'ミス原因', '前回メモ要約', '理由'],
+    ...items.map((item) => [item.priority, item.statusLabels.join('/'), item.problem.subject, item.problem.sectionLabel, item.problem.displayId, item.problem.topic, item.previousScore ?? '', item.maxScore ?? '', item.rank, item.nextReviewDate, item.missReasons.join('/'), item.memoSummary, item.reason]),
+  ];
+}
+
+export function dashboardCsvRows(histories: HistoryEntry[]): unknown[][] {
+  const byProblem = new Map<string, HistoryEntry[]>();
+  histories.forEach((history) => byProblem.set(history.displayId, [...(byProblem.get(history.displayId) ?? []), history]));
+  return [
+    ['問題ID', '演習回数', '最新得点', '最高得点', '最低得点', '最新判定', '最新復習日', '最新ミス原因'],
+    ...Array.from(byProblem.entries()).map(([displayId, rows]) => {
+      const sorted = rows.sort((a, b) => a.savedAt.localeCompare(b.savedAt));
+      const latest = sorted.at(-1)!;
+      return [displayId, rows.length, latest.score, Math.max(...rows.map((row) => row.score)), Math.min(...rows.map((row) => row.score)), latest.rank, latest.nextReviewDate, latest.missReasons.join('/')];
+    }),
+  ];
+}
+
+export function examSetCsvRows(examSets: ExamSetRecord[]): unknown[][] {
+  return [
+    ['作成日時', 'セット名', '開始日時', '終了日時', '所要秒数', '選択問題ID', '合計点', '70点判定', 'メモ'],
+    ...examSets.map((set) => [set.createdAt, set.name, set.startedAt, set.finishedAt, set.durationSeconds, set.selectedProblemIds.join('/'), set.totalScore, set.passLineReached ? '合格ライン到達' : '復習優先', set.memo]),
+  ];
 }
