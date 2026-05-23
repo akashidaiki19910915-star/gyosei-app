@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnswerTable, createRows } from './components/AnswerTable';
+import { ExampleGuide } from './components/ExampleGuide';
 import { HistoryPanel } from './components/HistoryPanel';
 import { ProblemSelector } from './components/ProblemSelector';
 import { ReviewPanel } from './components/ReviewPanel';
@@ -42,9 +43,33 @@ function createAnswer(problemId: string, templateId: TemplateId): AnswerState {
   };
 }
 
+function normalizeAnswer(answer: AnswerState): AnswerState {
+  const template = getTemplateById(answer.templateId);
+  if (answer.templateId !== 'journal') return answer;
+
+  const legacyIndex = answer.columns.indexOf('会社名・立場');
+  const columns = template.columns;
+  if (legacyIndex === -1 && answer.columns.join('|') === columns.join('|')) return answer;
+
+  const rows = answer.rows.map((row) => {
+    const cells = [...row.cells];
+    if (legacyIndex >= 0) cells.splice(legacyIndex, 1);
+    return { ...row, cells: columns.map((_, index) => cells[index] ?? '') };
+  });
+
+  return {
+    ...answer,
+    columns,
+    rows,
+    templateName: template.name,
+    updatedAt: nowIso(),
+  };
+}
+
 function buildHistory(answer: AnswerState): HistoryEntry {
   const problem = getProblemById(answer.problemId);
   const savedAt = nowIso();
+  const snapshot = normalizeAnswer(answer);
   return {
     id: crypto.randomUUID(),
     savedAt,
@@ -54,19 +79,19 @@ function buildHistory(answer: AnswerState): HistoryEntry {
     problemId: problem.id,
     displayId: problem.displayId,
     topic: problem.topic,
-    templateId: answer.templateId,
-    templateName: answer.templateName,
-    score: answer.score,
-    maxScore: answer.maxScore,
-    rowPointsTotal: answer.rowPointsTotal,
-    scored: answer.scored,
-    scoredAt: answer.scoredAt,
-    rank: answer.rank,
-    nextReviewDate: answer.nextReviewDate,
-    missReasons: answer.missReasons,
-    reviewMemo: answer.reviewMemo,
-    draftMemoSummary: draftSummary(answer.draftMemo),
-    snapshot: answer,
+    templateId: snapshot.templateId,
+    templateName: snapshot.templateName,
+    score: snapshot.score,
+    maxScore: snapshot.maxScore,
+    rowPointsTotal: snapshot.rowPointsTotal,
+    scored: snapshot.scored,
+    scoredAt: snapshot.scoredAt,
+    rank: snapshot.rank,
+    nextReviewDate: snapshot.nextReviewDate,
+    missReasons: snapshot.missReasons,
+    reviewMemo: snapshot.reviewMemo,
+    draftMemoSummary: draftSummary(snapshot.draftMemo),
+    snapshot,
   };
 }
 
@@ -87,8 +112,9 @@ export default function App() {
   async function loadProblem(nextProblemId: string) {
     const problemDefinition = getProblemById(nextProblemId);
     const stored = await getAnswer(nextProblemId);
+    const nextAnswer = normalizeAnswer(stored ?? createAnswer(nextProblemId, problemDefinition.defaultTemplateId));
     setProblemId(nextProblemId);
-    setAnswer(stored ?? createAnswer(nextProblemId, problemDefinition.defaultTemplateId));
+    setAnswer(nextAnswer);
   }
 
   useEffect(() => {
@@ -98,13 +124,13 @@ export default function App() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const updated = { ...answer, updatedAt: nowIso() };
+      const updated = normalizeAnswer({ ...answer, updatedAt: nowIso() });
       saveAnswer(updated).then(() => setMessage(`自動保存済み ${new Date().toLocaleTimeString('ja-JP')}`));
     }, 800);
     return () => window.clearTimeout(timer);
   }, [answer]);
 
-  const updateAnswer = (next: AnswerState) => setAnswer({ ...next, updatedAt: nowIso() });
+  const updateAnswer = (next: AnswerState) => setAnswer(normalizeAnswer({ ...next, updatedAt: nowIso() }));
 
   const selectTemplate = (templateId: TemplateId) => {
     const nextTemplate = getTemplateById(templateId);
@@ -125,7 +151,7 @@ export default function App() {
   };
 
   const manualSave = async () => {
-    await saveAnswer({ ...answer, updatedAt: nowIso() });
+    await saveAnswer(normalizeAnswer({ ...answer, updatedAt: nowIso() }));
     setMessage('手動保存しました');
   };
 
@@ -138,7 +164,7 @@ export default function App() {
   };
 
   const bulkAddAllAnswers = async () => {
-    const answers = (await getAllAnswers()).filter(hasMeaningfulAnswer);
+    const answers = (await getAllAnswers()).map(normalizeAnswer).filter(hasMeaningfulAnswer);
     if (answers.length === 0) {
       setMessage('履歴追加できる保存済み答案がありません');
       return;
@@ -152,7 +178,7 @@ export default function App() {
 
   const confirmScoring = async () => {
     const rowTotal = sumRowPoints(answer.rows);
-    const scored = { ...answer, rowPointsTotal: rowTotal, score: rowTotal || answer.score, scored: true, scoredAt: nowIso(), updatedAt: nowIso() };
+    const scored = normalizeAnswer({ ...answer, rowPointsTotal: rowTotal, score: rowTotal || answer.score, scored: true, scoredAt: nowIso(), updatedAt: nowIso() });
     if (!hasMeaningfulAnswer(scored)) {
       setMessage('空の答案は履歴に追加しませんでした');
       return;
@@ -166,9 +192,10 @@ export default function App() {
 
   const restoreHistory = async (entry: HistoryEntry) => {
     if (!window.confirm('現在の画面を上書きして、この履歴を復元しますか？')) return;
-    await saveAnswer(entry.snapshot);
+    const restored = normalizeAnswer(entry.snapshot);
+    await saveAnswer(restored);
     setProblemId(entry.problemId);
-    setAnswer(entry.snapshot);
+    setAnswer(restored);
     setMessage('履歴を復元しました');
   };
 
@@ -244,6 +271,7 @@ export default function App() {
             <p><strong>{problem.topic}</strong></p>
             <p>使用テンプレート：{answer.templateName}</p>
           </section>
+          <ExampleGuide template={template} />
           <AnswerTable answer={answer} template={template} onChange={updateAnswer} onApplyRowPoints={applyRowPoints} />
           <HistoryPanel histories={histories} filter={historyFilter} onFilter={setHistoryFilter} onRestore={restoreHistory} onDelete={deleteHistoryEntry} onClear={clearAllHistories} />
         </section>
