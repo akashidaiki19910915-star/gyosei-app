@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { HTMLAttributes, KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { FocusEvent as ReactFocusEvent, HTMLAttributes, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { AnswerRow, AnswerState, GradeMark, TemplateDefinition } from '../types';
 import { formatAmount, isAmountColumn, isInvalidAmount, isJapaneseTextColumn, normalizeNumericInput, toHalfWidthNumber } from '../utils/numberFormat';
 import { handleTableCellKeyDown } from '../utils/tableNavigation';
@@ -54,7 +54,7 @@ export function AnswerTable({ answer, template, onChange, onApplyRowPoints }: Pr
   const enterEditMode = (rowIndex: number, colIndex: number) => setEditingCell({ rowIndex, colIndex });
   const exitEditMode = () => setEditingCell(null);
 
-  const selectOnMoveFocus = (event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>, rowIndex: number, colIndex: number) => {
+  const selectOnMoveFocus = (event: ReactFocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>, rowIndex: number, colIndex: number) => {
     if (isEditing(rowIndex, colIndex)) return;
     if (event.currentTarget instanceof HTMLInputElement) event.currentTarget.select();
   };
@@ -133,7 +133,7 @@ export function AnswerTable({ answer, template, onChange, onApplyRowPoints }: Pr
       'data-row-index': rowIndex,
       'data-col-index': colIndex,
       'data-edit-mode': editing ? 'true' : 'false',
-      onFocus: (event: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => selectOnMoveFocus(event, rowIndex, colIndex),
+      onFocus: (event: ReactFocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => selectOnMoveFocus(event, rowIndex, colIndex),
       onDoubleClick: () => enterEditMode(rowIndex, colIndex),
       onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => handleTableCellKeyDown(event, rowIndex, colIndex, keyDownOptions(rowIndex, colIndex)),
     };
