@@ -15,7 +15,7 @@ import { getTemplateById } from './data/templateCatalog';
 import { addHistory, clearHistories, deleteHistory, exportAllData, getAllAnswers, getAnswer, getBackupMetadata, getExamSets, getHistories, importAllData, recordBackupMade, saveAnswer, saveExamSet } from './storage/indexedDb';
 import type { AnswerState, BackupMetadata, BackupPayload, ExamSetRecord, HistoryEntry, StorageSafetyInfo, TemplateId } from './types';
 import { currentAnswerCsvRows, dashboardCsvRows, downloadCsv, downloadText, examSetCsvRows, historyCsvRows, missReasonCsvRows, problemStatsCsvRows, reviewTargetCsvRows, studyQueueCsvRows } from './utils/csv';
-import { isDueTodayOrEarlier, nowIso } from './utils/dates';
+import { isDueTodayOrEarlier, nowIso, reviewDateForRank } from './utils/dates';
 import { draftSummary, hasMeaningfulAnswer, sumRowPoints } from './utils/scoring';
 import { getStorageSafetyInfo } from './utils/storageSafety';
 import { buildStudyQueue } from './utils/studyQueue';
@@ -107,7 +107,7 @@ export default function App() {
   const [answers, setAnswers] = useState<AnswerState[]>([]);
   const [histories, setHistories] = useState<HistoryEntry[]>([]);
   const [examSets, setExamSets] = useState<ExamSetRecord[]>([]);
-  const [backupMeta, setBackupMeta] = useState<BackupMetadata | null>(null);
+  const [, setBackupMeta] = useState<BackupMetadata | null>(null);
   const [safetyInfo, setSafetyInfo] = useState<StorageSafetyInfo | null>(null);
   const [message, setMessage] = useState('待機中');
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
@@ -258,9 +258,10 @@ export default function App() {
   const exportExamSetCsv = () => downloadCsv('exam-sets.csv', examSetCsvRows(examSets));
 
   const exportJson = async () => {
+    const [historyRows, answerRows] = await Promise.all([getHistories(), getAllAnswers()]);
+    const meta = await recordBackupMade(historyRows.length, answerRows.length);
     const payload = await exportAllData();
-    downloadText('cpa-boki2-backup.json', JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
-    const meta = await recordBackupMade(payload.histories.length, payload.answers.length);
+    downloadText('cpa-boki2-backup.json', JSON.stringify({ ...payload, backupMetadata: meta }, null, 2), 'application/json;charset=utf-8');
     setBackupMeta(meta);
     await refreshSafety();
     setMessage('JSONバックアップを出力しました');
@@ -280,9 +281,30 @@ export default function App() {
   };
 
   const saveExamSetRecord = async (record: ExamSetRecord) => {
-    await saveExamSet(record);
-    await loadExamSets();
-    setMessage('90分セット演習履歴を保存しました');
+    const relatedHistoryIds: string[] = [];
+    for (const problemState of record.problemStates) {
+      if (problemState.rank !== 'B' && problemState.rank !== 'C') continue;
+      const problemDefinition = getProblemById(problemState.problemId);
+      const base = createAnswer(problemState.problemId, problemDefinition.defaultTemplateId);
+      const scored = normalizeAnswer({
+        ...base,
+        score: Number(problemState.score) || 0,
+        rowPointsTotal: Number(problemState.score) || 0,
+        rank: problemState.rank,
+        nextReviewDate: reviewDateForRank(problemState.rank),
+        reviewMemo: `90分セット演習「${record.name}」から登録。${record.memo}`,
+        scored: true,
+        scoredAt: nowIso(),
+        updatedAt: nowIso(),
+      });
+      const history = buildHistory(scored);
+      relatedHistoryIds.push(history.id);
+      await addHistory(history);
+    }
+
+    await saveExamSet({ ...record, relatedHistoryIds });
+    await refreshAll();
+    setMessage('90分セット演習履歴を保存しました。B/C判定の問題は復習キューにも反映しました。');
   };
 
   return (
