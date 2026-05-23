@@ -1,0 +1,32 @@
+name: CPA Boki2 App Build Check
+
+on:
+  pull_request:
+    paths:
+      - 'cpa-boki2-trial-section-answer-manager/**'
+      - '.github/workflows/cpa-boki2-check.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'cpa-boki2-trial-section-answer-manager/**'
+      - '.github/workflows/cpa-boki2-check.yml'
+  workflow_dispatch:
+
+jobs:
+  build-cpa-boki2:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cpa-boki2-trial-section-answer-manager
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Build
+        run: npm run build

@@ -1,8 +1,8 @@
-import type { AnswerState, BackupMetadata, BackupPayload, ExamSetRecord, HistoryEntry } from '../types';
+import type { AnswerState, BackupMetadata, BackupPayload, ExamSetRecord, HistoryEntry, MistakeCard } from '../types';
 
 const DB_NAME = 'cpa-boki2-trial-section-answer-manager';
-const DB_VERSION = 2;
-const STORES = ['answers', 'histories', 'settings', 'templates', 'backups', 'examSets'] as const;
+const DB_VERSION = 3;
+const STORES = ['answers', 'histories', 'settings', 'templates', 'backups', 'examSets', 'mistakeCards'] as const;
 
 type StoreName = (typeof STORES)[number];
 
@@ -78,6 +78,19 @@ export async function deleteExamSet(id: string): Promise<void> {
   await tx('examSets', 'readwrite', (store) => store.delete(id));
 }
 
+export async function saveMistakeCard(card: MistakeCard): Promise<void> {
+  await tx('mistakeCards', 'readwrite', (store) => store.put(card));
+}
+
+export async function getMistakeCards(): Promise<MistakeCard[]> {
+  const rows = await tx<MistakeCard[]>('mistakeCards', 'readonly', (store) => store.getAll());
+  return rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function deleteMistakeCard(id: string): Promise<void> {
+  await tx('mistakeCards', 'readwrite', (store) => store.delete(id));
+}
+
 export async function getBackupMetadata(): Promise<BackupMetadata | null> {
   const row = await tx<BackupMetadata | undefined>('backups', 'readonly', (store) => store.get('backupMeta'));
   return row ?? null;
@@ -119,13 +132,14 @@ export async function exportAllData(): Promise<BackupPayload> {
   return {
     exportedAt: new Date().toISOString(),
     appName: 'CPA日商簿記2級 試験対策編 解答・復習管理アプリ',
-    version: '1.1.0',
+    version: '1.2.0',
     answers: await getAllAnswers(),
     histories: await getHistories(),
     settings: await tx<Record<string, unknown>[]>('settings', 'readonly', (store) => store.getAll()),
     templates: await tx<Record<string, unknown>[]>('templates', 'readonly', (store) => store.getAll()),
     backups: await tx<Record<string, unknown>[]>('backups', 'readonly', (store) => store.getAll()),
     examSets: await getExamSets(),
+    mistakeCards: await getMistakeCards(),
     backupMetadata: await getBackupMetadata(),
   };
 }
@@ -141,6 +155,7 @@ export async function importAllData(payload: BackupPayload): Promise<void> {
     payload.templates?.forEach((item) => transaction.objectStore('templates').put(item));
     payload.backups?.forEach((item) => transaction.objectStore('backups').put(item));
     payload.examSets?.forEach((item) => transaction.objectStore('examSets').put(item));
+    payload.mistakeCards?.forEach((item) => transaction.objectStore('mistakeCards').put(item));
     if (payload.backupMetadata) transaction.objectStore('backups').put(payload.backupMetadata);
     transaction.oncomplete = () => {
       db.close();

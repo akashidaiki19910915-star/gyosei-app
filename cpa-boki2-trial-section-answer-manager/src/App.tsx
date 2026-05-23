@@ -5,17 +5,22 @@ import { DashboardPanel } from './components/DashboardPanel';
 import { ExamSetPanel } from './components/ExamSetPanel';
 import { ExampleGuide } from './components/ExampleGuide';
 import { HistoryPanel } from './components/HistoryPanel';
+import { MasteryMapPanel } from './components/MasteryMapPanel';
+import { MistakeCardPanel } from './components/MistakeCardPanel';
 import { ProblemSelector } from './components/ProblemSelector';
+import { RecoveryPlanPanel } from './components/RecoveryPlanPanel';
 import { ReviewPanel } from './components/ReviewPanel';
 import { ScoringPanel } from './components/ScoringPanel';
 import { StudyQueuePanel } from './components/StudyQueuePanel';
 import { Timer } from './components/Timer';
 import { getProblemById, problemCatalog } from './data/problemCatalog';
 import { getTemplateById } from './data/templateCatalog';
-import { addHistory, clearHistories, deleteHistory, exportAllData, getAllAnswers, getAnswer, getBackupMetadata, getExamSets, getHistories, importAllData, recordBackupMade, saveAnswer, saveExamSet } from './storage/indexedDb';
-import type { AnswerState, BackupMetadata, BackupPayload, ExamSetRecord, HistoryEntry, StorageSafetyInfo, TemplateId } from './types';
-import { currentAnswerCsvRows, dashboardCsvRows, downloadCsv, downloadText, examSetCsvRows, historyCsvRows, missReasonCsvRows, problemStatsCsvRows, reviewTargetCsvRows, studyQueueCsvRows } from './utils/csv';
+import { addHistory, clearHistories, deleteHistory, deleteMistakeCard, exportAllData, getAllAnswers, getAnswer, getBackupMetadata, getExamSets, getHistories, getMistakeCards, importAllData, recordBackupMade, saveAnswer, saveExamSet, saveMistakeCard } from './storage/indexedDb';
+import type { AnswerState, BackupMetadata, BackupPayload, ExamSetRecord, HistoryEntry, MistakeCard, StorageSafetyInfo, TemplateId } from './types';
+import { currentAnswerCsvRows, dashboardCsvRows, downloadCsv, downloadText, examSetCsvRows, historyCsvRows, masteryMapCsvRows, missReasonCsvRows, mistakeCardCsvRows, problemStatsCsvRows, recoveryPlanCsvRows, reviewTargetCsvRows, studyQueueCsvRows } from './utils/csv';
 import { isDueTodayOrEarlier, nowIso, reviewDateForRank } from './utils/dates';
+import { buildMasteryMap } from './utils/mastery';
+import { buildRecoveryPlan } from './utils/recovery';
 import { draftSummary, hasMeaningfulAnswer, sumRowPoints } from './utils/scoring';
 import { getStorageSafetyInfo } from './utils/storageSafety';
 import { buildStudyQueue } from './utils/studyQueue';
@@ -107,6 +112,7 @@ export default function App() {
   const [answers, setAnswers] = useState<AnswerState[]>([]);
   const [histories, setHistories] = useState<HistoryEntry[]>([]);
   const [examSets, setExamSets] = useState<ExamSetRecord[]>([]);
+  const [mistakeCards, setMistakeCards] = useState<MistakeCard[]>([]);
   const [, setBackupMeta] = useState<BackupMetadata | null>(null);
   const [safetyInfo, setSafetyInfo] = useState<StorageSafetyInfo | null>(null);
   const [message, setMessage] = useState('待機中');
@@ -115,6 +121,8 @@ export default function App() {
   const problem = useMemo(() => getProblemById(problemId), [problemId]);
   const template = useMemo(() => getTemplateById(answer.templateId), [answer.templateId]);
   const studyQueue = useMemo(() => buildStudyQueue(histories), [histories]);
+  const masteryMap = useMemo(() => buildMasteryMap(histories), [histories]);
+  const recoveryPlan = useMemo(() => buildRecoveryPlan(histories, examSets), [histories, examSets]);
 
   async function refreshAnswers() {
     setAnswers((await getAllAnswers()).map(normalizeAnswer));
@@ -128,6 +136,10 @@ export default function App() {
     setExamSets(await getExamSets());
   }
 
+  async function loadMistakeCards() {
+    setMistakeCards(await getMistakeCards());
+  }
+
   async function refreshSafety() {
     const [historyRows, answerRows, meta] = await Promise.all([getHistories(), getAllAnswers(), getBackupMetadata()]);
     setBackupMeta(meta);
@@ -135,7 +147,7 @@ export default function App() {
   }
 
   async function refreshAll() {
-    await Promise.all([refreshAnswers(), loadHistories(), loadExamSets(), refreshSafety()]);
+    await Promise.all([refreshAnswers(), loadHistories(), loadExamSets(), loadMistakeCards(), refreshSafety()]);
   }
 
   async function loadProblem(nextProblemId: string) {
@@ -248,6 +260,19 @@ export default function App() {
     setMessage('履歴を全削除しました');
   };
 
+  const saveCard = async (card: MistakeCard) => {
+    await saveMistakeCard(card);
+    await loadMistakeCards();
+    setMessage('白紙再現・解き直しカードを保存しました');
+  };
+
+  const removeCard = async (id: string) => {
+    if (!window.confirm('この解き直しカードを削除しますか？')) return;
+    await deleteMistakeCard(id);
+    await loadMistakeCards();
+    setMessage('白紙再現・解き直しカードを削除しました');
+  };
+
   const exportCurrentCsv = () => downloadCsv('current-answer.csv', currentAnswerCsvRows(answer, problem));
   const exportHistoryCsv = () => downloadCsv('history.csv', historyCsvRows(histories));
   const exportReviewCsv = () => downloadCsv('review-targets.csv', reviewTargetCsvRows(histories.filter((history) => isDueTodayOrEarlier(history.nextReviewDate))));
@@ -256,6 +281,9 @@ export default function App() {
   const exportStudyQueueCsv = () => downloadCsv('study-queue.csv', studyQueueCsvRows(studyQueue));
   const exportDashboardCsv = () => downloadCsv('dashboard.csv', dashboardCsvRows(histories));
   const exportExamSetCsv = () => downloadCsv('exam-sets.csv', examSetCsvRows(examSets));
+  const exportMasteryCsv = () => downloadCsv('mastery-map.csv', masteryMapCsvRows(masteryMap));
+  const exportMistakeCardsCsv = () => downloadCsv('mistake-cards.csv', mistakeCardCsvRows(mistakeCards, getProblemById));
+  const exportRecoveryCsv = () => downloadCsv('recovery-plan.csv', recoveryPlanCsvRows(recoveryPlan));
 
   const exportJson = async () => {
     const [historyRows, answerRows] = await Promise.all([getHistories(), getAllAnswers()]);
@@ -334,6 +362,8 @@ export default function App() {
 
       <section className="management-stack">
         <StudyQueuePanel items={studyQueue} onStart={loadProblem} onRestoreLatest={(item) => item.latestHistory && restoreHistory(item.latestHistory)} onExportCsv={exportStudyQueueCsv} />
+        <MasteryMapPanel histories={histories} onOpenProblem={loadProblem} onExportCsv={exportMasteryCsv} />
+        <RecoveryPlanPanel histories={histories} examSets={examSets} onExportCsv={exportRecoveryCsv} />
         <BackupSafetyPanel info={safetyInfo} onBackup={exportJson} onRestoreFile={importJson} onRefresh={refreshSafety} onMessage={setMessage} />
         <DashboardPanel histories={histories} answerCount={answers.length} onExportCsv={exportDashboardCsv} />
         <ExamSetPanel histories={histories} examSets={examSets} onSave={saveExamSetRecord} onOpenProblem={loadProblem} onExportCsv={exportExamSetCsv} />
@@ -348,6 +378,7 @@ export default function App() {
             <p><strong>{problem.topic}</strong></p>
             <p>使用テンプレート：{answer.templateName}</p>
           </section>
+          <MistakeCardPanel problem={problem} answer={answer} cards={mistakeCards} onSave={saveCard} onDelete={removeCard} onExportCsv={exportMistakeCardsCsv} />
           <ExampleGuide template={template} />
           <AnswerTable answer={answer} template={template} onChange={updateAnswer} onApplyRowPoints={applyRowPoints} />
           <HistoryPanel histories={histories} filter={historyFilter} onFilter={setHistoryFilter} onRestore={restoreHistory} onDelete={deleteHistoryEntry} onClear={clearAllHistories} />

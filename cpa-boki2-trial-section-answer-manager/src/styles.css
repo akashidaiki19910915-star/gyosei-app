@@ -78,8 +78,11 @@ th { background: #e8f2ee; position: sticky; top: 0; z-index: 1; }
 .journal-table .col-amount input, .journal-table .col-points input { text-align: right; font-variant-numeric: tabular-nums; }
 .score-grid { display: grid; gap: 10px; }
 .check-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.check-list.wide { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 8px; }
 .check-list label { margin: 0; font-weight: 500; display: flex; gap: 5px; align-items: center; }
 .check-list input { width: auto; }
+.form-grid { display: grid; gap: 12px; }
+.form-grid.two-columns { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .review-box { border: 1px solid #dbe8e4; border-radius: 10px; padding: 10px; margin-bottom: 10px; background: #f7fbf9; }
 .review-row { padding: 8px 0; border-bottom: 1px dashed #cdded8; }
 .review-row:last-child { border-bottom: none; }
