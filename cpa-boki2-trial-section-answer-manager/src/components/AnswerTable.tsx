@@ -1,3 +1,4 @@
+import type { HTMLAttributes, KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { AnswerRow, AnswerState, GradeMark, TemplateDefinition } from '../types';
 import { formatAmount, isAmountColumn, isInvalidAmount, isJapaneseTextColumn, normalizeNumericInput, toHalfWidthNumber } from '../utils/numberFormat';
 import { handleTableCellKeyDown } from '../utils/tableNavigation';
@@ -29,7 +30,7 @@ function columnClass(column: string): string {
   return 'col-generic';
 }
 
-function cellInputMode(column: string): React.HTMLAttributes<HTMLInputElement>['inputMode'] {
+function cellInputMode(column: string): HTMLAttributes<HTMLInputElement>['inputMode'] {
   if (isAmountColumn(column)) return 'numeric';
   return 'text';
 }
@@ -107,7 +108,7 @@ export function AnswerTable({ answer, template, onChange, onApplyRowPoints }: Pr
       'data-answer-cell': 'true',
       'data-row-index': rowIndex,
       'data-col-index': colIndex,
-      onKeyDown: (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => handleTableCellKeyDown(event, rowIndex, colIndex),
+      onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => handleTableCellKeyDown(event, rowIndex, colIndex),
     };
 
     if (template.optionColumns?.[column]) {
