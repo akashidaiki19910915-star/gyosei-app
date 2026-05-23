@@ -85,6 +85,82 @@ export interface HistoryEntry {
   snapshot: AnswerState;
 }
 
+export type QueueStatusLabel = '期限超過' | '今日復習' | 'C判定' | 'B判定' | 'A判定' | '未着手' | '低得点' | 'ミス多い' | '日付未設定C';
+
+export interface StudyQueueItem {
+  priority: number;
+  statusLabels: QueueStatusLabel[];
+  problem: ProblemDefinition;
+  latestHistory?: HistoryEntry;
+  previousScore?: number;
+  maxScore?: number;
+  rank: ReviewRank;
+  nextReviewDate: string;
+  missReasons: MissReason[];
+  memoSummary: string;
+  reason: string;
+}
+
+export interface DashboardProblemStats {
+  problem: ProblemDefinition;
+  attempts: number;
+  latestScore: number | null;
+  highestScore: number | null;
+  lowestScore: number | null;
+  latestRank: ReviewRank;
+  latestMissReasons: MissReason[];
+  latestReviewDate: string;
+  trend: '改善' | '横ばい' | '悪化' | 'データ不足';
+}
+
+export interface BackupMetadata {
+  id: 'backupMeta';
+  lastBackupAt: string;
+  lastRestoreAt: string;
+  backupCount: number;
+  lastBackupHistoryCount: number;
+  lastBackupAnswerCount: number;
+}
+
+export interface StorageSafetyInfo {
+  saveMethod: 'IndexedDB';
+  historyCount: number;
+  answerCount: number;
+  lastBackupAt: string;
+  lastRestoreAt: string;
+  backupCount: number;
+  lastBackupHistoryCount: number;
+  lastBackupAnswerCount: number;
+  estimatedUsage: number | null;
+  estimatedQuota: number | null;
+  persistentStatus: '許可済み' | '未許可' | '非対応' | '確認不可';
+  storageManagerSupported: boolean;
+  warnings: string[];
+}
+
+export interface ExamSetProblemState {
+  problemId: string;
+  status: '未開始' | '開始' | '完了';
+  score: number;
+  rank: ReviewRank;
+}
+
+export interface ExamSetRecord {
+  id: string;
+  name: string;
+  createdAt: string;
+  startedAt: string;
+  finishedAt: string;
+  durationSeconds: number;
+  selectedProblemIds: string[];
+  problemStates: ExamSetProblemState[];
+  problemScores: Record<string, number>;
+  totalScore: number;
+  passLineReached: boolean;
+  memo: string;
+  relatedHistoryIds: string[];
+}
+
 export interface BackupPayload {
   exportedAt: string;
   appName: string;
@@ -93,4 +169,7 @@ export interface BackupPayload {
   histories: HistoryEntry[];
   settings: Record<string, unknown>[];
   templates: Record<string, unknown>[];
+  backups?: Record<string, unknown>[];
+  examSets?: ExamSetRecord[];
+  backupMetadata?: BackupMetadata | null;
 }
