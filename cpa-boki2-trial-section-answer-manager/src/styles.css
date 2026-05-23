@@ -47,13 +47,34 @@ textarea { min-height: 96px; resize: vertical; }
 .button-row, .button-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 .button-grid { margin-top: 12px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.answer-heading { align-items: flex-start; }
+.answer-actions { max-width: 100%; }
+.answer-actions button { padding: 8px 10px; }
 .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: auto; max-height: 62vh; border: 1px solid var(--border); border-radius: 10px; }
+.answer-table-wrap { max-height: 64vh; }
+.journal-table-wrap { overflow-x: hidden; }
 .answer-table { border-collapse: collapse; width: max-content; min-width: 100%; max-width: none; background: #fff; }
+.journal-table { width: 100%; min-width: 0; max-width: 100%; table-layout: fixed; }
 .history-panel table { border-collapse: collapse; width: max-content; min-width: 100%; background: #fff; }
 th, td { border: 1px solid #d9e5e1; padding: 6px; vertical-align: top; }
 th { background: #e8f2ee; position: sticky; top: 0; z-index: 1; }
-.answer-table input, .answer-table select { min-width: 118px; }
-.answer-table th input { min-width: 130px; font-weight: 700; background: #f7fbf9; }
+.answer-table th, .answer-table td { padding: 4px; }
+.answer-table input, .answer-table select, .answer-table textarea { width: 100%; min-width: 0; box-sizing: border-box; font-size: 14px; padding: 6px 8px; }
+.answer-table th input { font-weight: 700; background: #f7fbf9; }
+.answer-table input:focus, .answer-table select:focus, .answer-table textarea:focus { outline: 2px solid #7bbda6; outline-offset: 1px; }
+.memo-cell-input { min-height: 34px; max-height: 70px; resize: vertical; line-height: 1.35; }
+.invalid-amount { border-color: #d65844 !important; background: #fff4f1; }
+.answer-table .col-row-number, .answer-table col.col-row-number { width: 44px; }
+.answer-table .col-question-number, .answer-table col.col-question-number { width: 64px; }
+.answer-table .col-account, .answer-table col.col-account { width: 140px; }
+.answer-table .col-amount, .answer-table col.col-amount { width: 120px; }
+.answer-table .col-memo, .answer-table col.col-memo { width: 160px; }
+.answer-table .col-grade, .answer-table col.col-grade { width: 64px; }
+.answer-table .col-points, .answer-table col.col-points { width: 70px; }
+.answer-table .col-generic, .answer-table col.col-generic { width: 120px; }
+.journal-table .col-row-number input { text-align: center; }
+.journal-table .col-question-number input { text-align: center; }
+.journal-table .col-amount input, .journal-table .col-points input { text-align: right; font-variant-numeric: tabular-nums; }
 .score-grid { display: grid; gap: 10px; }
 .check-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .check-list label { margin: 0; font-weight: 500; display: flex; gap: 5px; align-items: center; }
@@ -116,6 +137,11 @@ th { background: #e8f2ee; position: sticky; top: 0; z-index: 1; }
   .main-grid { grid-template-columns: 1fr; }
   .sidebar { position: static; }
   .app-header { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 980px) {
+  .journal-table-wrap { overflow-x: auto; }
+  .journal-table { min-width: 922px; }
 }
 
 @media print {
