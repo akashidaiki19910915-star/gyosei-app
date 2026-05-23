@@ -15,12 +15,21 @@ export interface ProblemDefinition {
   defaultTemplateId: TemplateId;
 }
 
+export interface TemplateExampleGuide {
+  description: string;
+  howToUse: string[];
+  exampleRows: Record<string, string>[];
+  scoringExample: string;
+  notes: string[];
+}
+
 export interface TemplateDefinition {
   id: TemplateId;
   name: string;
   initialRows: number;
   columns: string[];
   optionColumns?: Record<string, string[]>;
+  exampleGuide: TemplateExampleGuide;
 }
 
 export interface AnswerRow {
