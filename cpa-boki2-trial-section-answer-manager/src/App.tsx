@@ -1,18 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnswerTable, createRows } from './components/AnswerTable';
+import { BackupSafetyPanel } from './components/BackupSafetyPanel';
+import { DashboardPanel } from './components/DashboardPanel';
+import { ExamSetPanel } from './components/ExamSetPanel';
 import { ExampleGuide } from './components/ExampleGuide';
 import { HistoryPanel } from './components/HistoryPanel';
 import { ProblemSelector } from './components/ProblemSelector';
 import { ReviewPanel } from './components/ReviewPanel';
 import { ScoringPanel } from './components/ScoringPanel';
+import { StudyQueuePanel } from './components/StudyQueuePanel';
 import { Timer } from './components/Timer';
 import { getProblemById, problemCatalog } from './data/problemCatalog';
 import { getTemplateById } from './data/templateCatalog';
-import { addHistory, clearHistories, deleteHistory, exportAllData, getAllAnswers, getAnswer, getHistories, importAllData, saveAnswer } from './storage/indexedDb';
-import type { AnswerState, BackupPayload, HistoryEntry, TemplateId } from './types';
-import { currentAnswerCsvRows, downloadCsv, downloadText, historyCsvRows, missReasonCsvRows, problemStatsCsvRows, reviewTargetCsvRows } from './utils/csv';
+import { addHistory, clearHistories, deleteHistory, exportAllData, getAllAnswers, getAnswer, getBackupMetadata, getExamSets, getHistories, importAllData, recordBackupMade, saveAnswer, saveExamSet } from './storage/indexedDb';
+import type { AnswerState, BackupMetadata, BackupPayload, ExamSetRecord, HistoryEntry, StorageSafetyInfo, TemplateId } from './types';
+import { currentAnswerCsvRows, dashboardCsvRows, downloadCsv, downloadText, examSetCsvRows, historyCsvRows, missReasonCsvRows, problemStatsCsvRows, reviewTargetCsvRows, studyQueueCsvRows } from './utils/csv';
 import { isDueTodayOrEarlier, nowIso } from './utils/dates';
 import { draftSummary, hasMeaningfulAnswer, sumRowPoints } from './utils/scoring';
+import { getStorageSafetyInfo } from './utils/storageSafety';
+import { buildStudyQueue } from './utils/studyQueue';
 import './styles.css';
 
 type HistoryFilter = 'all' | 'today' | 'overdue' | 'c' | 'b';
@@ -98,15 +104,38 @@ function buildHistory(answer: AnswerState): HistoryEntry {
 export default function App() {
   const [problemId, setProblemId] = useState(problemCatalog[0].id);
   const [answer, setAnswer] = useState<AnswerState>(() => createAnswer(problemCatalog[0].id, problemCatalog[0].defaultTemplateId));
+  const [answers, setAnswers] = useState<AnswerState[]>([]);
   const [histories, setHistories] = useState<HistoryEntry[]>([]);
+  const [examSets, setExamSets] = useState<ExamSetRecord[]>([]);
+  const [backupMeta, setBackupMeta] = useState<BackupMetadata | null>(null);
+  const [safetyInfo, setSafetyInfo] = useState<StorageSafetyInfo | null>(null);
   const [message, setMessage] = useState('待機中');
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
 
   const problem = useMemo(() => getProblemById(problemId), [problemId]);
   const template = useMemo(() => getTemplateById(answer.templateId), [answer.templateId]);
+  const studyQueue = useMemo(() => buildStudyQueue(histories), [histories]);
+
+  async function refreshAnswers() {
+    setAnswers((await getAllAnswers()).map(normalizeAnswer));
+  }
 
   async function loadHistories() {
     setHistories(await getHistories());
+  }
+
+  async function loadExamSets() {
+    setExamSets(await getExamSets());
+  }
+
+  async function refreshSafety() {
+    const [historyRows, answerRows, meta] = await Promise.all([getHistories(), getAllAnswers(), getBackupMetadata()]);
+    setBackupMeta(meta);
+    setSafetyInfo(await getStorageSafetyInfo(historyRows.length, answerRows.length, meta));
+  }
+
+  async function refreshAll() {
+    await Promise.all([refreshAnswers(), loadHistories(), loadExamSets(), refreshSafety()]);
   }
 
   async function loadProblem(nextProblemId: string) {
@@ -119,13 +148,16 @@ export default function App() {
 
   useEffect(() => {
     loadProblem(problemCatalog[0].id);
-    loadHistories();
+    refreshAll();
   }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const updated = normalizeAnswer({ ...answer, updatedAt: nowIso() });
-      saveAnswer(updated).then(() => setMessage(`自動保存済み ${new Date().toLocaleTimeString('ja-JP')}`));
+      saveAnswer(updated).then(() => {
+        setMessage(`自動保存済み ${new Date().toLocaleTimeString('ja-JP')}`);
+        refreshAnswers();
+      });
     }, 800);
     return () => window.clearTimeout(timer);
   }, [answer]);
@@ -152,6 +184,7 @@ export default function App() {
 
   const manualSave = async () => {
     await saveAnswer(normalizeAnswer({ ...answer, updatedAt: nowIso() }));
+    await refreshAll();
     setMessage('手動保存しました');
   };
 
@@ -160,20 +193,21 @@ export default function App() {
     const cleared = createAnswer(problemId, answer.templateId);
     await saveAnswer(cleared);
     setAnswer(cleared);
+    await refreshAll();
     setMessage('現在問題IDの答案を全消去しました');
   };
 
   const bulkAddAllAnswers = async () => {
-    const answers = (await getAllAnswers()).map(normalizeAnswer).filter(hasMeaningfulAnswer);
-    if (answers.length === 0) {
+    const rows = (await getAllAnswers()).map(normalizeAnswer).filter(hasMeaningfulAnswer);
+    if (rows.length === 0) {
       setMessage('履歴追加できる保存済み答案がありません');
       return;
     }
-    for (const item of answers) {
+    for (const item of rows) {
       await addHistory(buildHistory(item));
     }
-    await loadHistories();
-    setMessage(`保存済み答案 ${answers.length}件を一括で履歴追加しました`);
+    await refreshAll();
+    setMessage(`保存済み答案 ${rows.length}件を一括で履歴追加しました`);
   };
 
   const confirmScoring = async () => {
@@ -186,7 +220,7 @@ export default function App() {
     await saveAnswer(scored);
     await addHistory(buildHistory(scored));
     setAnswer(scored);
-    await loadHistories();
+    await refreshAll();
     setMessage('採点確定して履歴に追加しました');
   };
 
@@ -196,20 +230,21 @@ export default function App() {
     await saveAnswer(restored);
     setProblemId(entry.problemId);
     setAnswer(restored);
+    await refreshAll();
     setMessage('履歴を復元しました');
   };
 
   const deleteHistoryEntry = async (id: string) => {
     if (!window.confirm('この履歴を削除しますか？')) return;
     await deleteHistory(id);
-    await loadHistories();
+    await refreshAll();
     setMessage('履歴を削除しました');
   };
 
   const clearAllHistories = async () => {
     if (!window.confirm('履歴を全削除しますか？答案データは消えません。')) return;
     await clearHistories();
-    await loadHistories();
+    await refreshAll();
     setMessage('履歴を全削除しました');
   };
 
@@ -218,10 +253,17 @@ export default function App() {
   const exportReviewCsv = () => downloadCsv('review-targets.csv', reviewTargetCsvRows(histories.filter((history) => isDueTodayOrEarlier(history.nextReviewDate))));
   const exportProblemStatsCsv = () => downloadCsv('problem-stats.csv', problemStatsCsvRows(histories));
   const exportMissReasonCsv = () => downloadCsv('miss-reasons.csv', missReasonCsvRows(histories));
+  const exportStudyQueueCsv = () => downloadCsv('study-queue.csv', studyQueueCsvRows(studyQueue));
+  const exportDashboardCsv = () => downloadCsv('dashboard.csv', dashboardCsvRows(histories));
+  const exportExamSetCsv = () => downloadCsv('exam-sets.csv', examSetCsvRows(examSets));
 
   const exportJson = async () => {
     const payload = await exportAllData();
     downloadText('cpa-boki2-backup.json', JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+    const meta = await recordBackupMade(payload.histories.length, payload.answers.length);
+    setBackupMeta(meta);
+    await refreshSafety();
+    setMessage('JSONバックアップを出力しました');
   };
 
   const importJson = async (file: File | undefined) => {
@@ -230,11 +272,17 @@ export default function App() {
       const payload = JSON.parse(await file.text()) as BackupPayload;
       await importAllData(payload);
       await loadProblem(problemId);
-      await loadHistories();
+      await refreshAll();
       setMessage('JSONバックアップを復元しました');
     } catch {
       setMessage('JSONの形式が不正です');
     }
+  };
+
+  const saveExamSetRecord = async (record: ExamSetRecord) => {
+    await saveExamSet(record);
+    await loadExamSets();
+    setMessage('90分セット演習履歴を保存しました');
   };
 
   return (
@@ -261,6 +309,13 @@ export default function App() {
         <label className="import-label">JSON復元<input type="file" accept="application/json" onChange={(event) => importJson(event.target.files?.[0])} /></label>
         <button onClick={() => window.print()}>印刷</button>
       </div>
+
+      <section className="management-stack">
+        <StudyQueuePanel items={studyQueue} onStart={loadProblem} onRestoreLatest={(item) => item.latestHistory && restoreHistory(item.latestHistory)} onExportCsv={exportStudyQueueCsv} />
+        <BackupSafetyPanel info={safetyInfo} onBackup={exportJson} onRestoreFile={importJson} onRefresh={refreshSafety} onMessage={setMessage} />
+        <DashboardPanel histories={histories} answerCount={answers.length} onExportCsv={exportDashboardCsv} />
+        <ExamSetPanel histories={histories} examSets={examSets} onSave={saveExamSetRecord} onOpenProblem={loadProblem} onExportCsv={exportExamSetCsv} />
+      </section>
 
       <div className="main-grid">
         <ProblemSelector selectedProblem={problem} selectedTemplateId={answer.templateId} onSelectProblem={loadProblem} onSelectTemplate={selectTemplate} />
