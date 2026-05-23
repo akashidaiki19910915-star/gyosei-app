@@ -1,0 +1,78 @@
+:root {
+  color-scheme: light;
+  font-family: 'Yu Gothic', 'Meiryo', system-ui, sans-serif;
+  background: #eef6f2;
+  color: #1d2b28;
+  --main: #2f6f5e;
+  --main-dark: #1e4f43;
+  --accent: #0d6f86;
+  --border: #cdded8;
+  --card: #ffffff;
+  --danger: #b43f3f;
+  --warning: #c27a00;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: #eef6f2; }
+button, input, textarea, select { font: inherit; }
+button { border: none; border-radius: 8px; padding: 9px 12px; background: var(--main); color: #fff; cursor: pointer; }
+button:hover { opacity: .92; }
+button.secondary { background: #687b75; }
+button.accent { background: var(--accent); }
+button.danger { background: var(--danger); }
+input, textarea, select { width: 100%; border: 1px solid #bfd1cb; border-radius: 7px; padding: 8px; background: #fff; }
+textarea { min-height: 96px; resize: vertical; }
+
+.app-shell { width: min(1800px, 98vw); margin: 16px auto 40px; }
+.app-header { display: grid; grid-template-columns: 1fr 330px; gap: 16px; align-items: stretch; background: linear-gradient(90deg, var(--main), #4d8b78); color: #fff; padding: 20px; border-radius: 16px; box-shadow: 0 8px 24px rgba(22, 70, 56, .14); }
+.app-header h1 { margin: 0 0 8px; font-size: 26px; }
+.app-header p { margin: 0; line-height: 1.7; }
+.status-bar { margin: 12px 0; background: #e8f6ee; border: 1px solid #9fd3b3; color: #17633b; padding: 10px 12px; border-radius: 10px; }
+.top-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.import-label { display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; padding: 9px 12px; color: #fff; background: #506f69; cursor: pointer; }
+.import-label input { display: none; }
+.main-grid { display: grid; grid-template-columns: 280px minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+.center-column, .right-column { display: grid; gap: 16px; }
+.panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: 0 4px 18px rgba(28, 62, 54, .06); }
+.panel h2 { margin: 0 0 12px; color: var(--main-dark); font-size: 20px; }
+.panel h3 { margin: 14px 0 8px; color: var(--main-dark); font-size: 15px; }
+.sidebar { position: sticky; top: 12px; }
+.sidebar label, .scoring-panel label { display: block; margin-top: 12px; font-weight: 700; font-size: 13px; }
+.notice-small { margin-top: 14px; padding: 10px; background: #f7fbf9; border-left: 4px solid var(--main); font-size: 12px; line-height: 1.6; }
+.timer-card { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.34); border-radius: 14px; padding: 12px; }
+.timer-display { font-weight: 800; font-size: 38px; letter-spacing: .03em; }
+.timer-status { margin: 4px 0 8px; font-weight: 700; }
+.timer-status.warning { color: #fff3bd; }
+.button-row, .button-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.button-grid { margin-top: 12px; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.table-wrap { overflow: auto; max-height: 62vh; border: 1px solid var(--border); border-radius: 10px; }
+.answer-table, .history-panel table { border-collapse: collapse; width: max-content; min-width: 100%; background: #fff; }
+th, td { border: 1px solid #d9e5e1; padding: 6px; vertical-align: top; }
+th { background: #e8f2ee; position: sticky; top: 0; z-index: 1; }
+.answer-table input, .answer-table select { min-width: 118px; }
+.answer-table th input { min-width: 130px; font-weight: 700; background: #f7fbf9; }
+.score-grid { display: grid; gap: 10px; }
+.check-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.check-list label { margin: 0; font-weight: 500; display: flex; gap: 5px; align-items: center; }
+.check-list input { width: auto; }
+.review-box { border: 1px solid #dbe8e4; border-radius: 10px; padding: 10px; margin-bottom: 10px; background: #f7fbf9; }
+.review-row { padding: 8px 0; border-bottom: 1px dashed #cdded8; }
+.review-row:last-child { border-bottom: none; }
+.empty { color: #667; font-size: 13px; }
+.history-wrap { max-height: 360px; }
+.button-cell { min-width: 120px; }
+
+@media (max-width: 1200px) {
+  .main-grid { grid-template-columns: 1fr; }
+  .sidebar { position: static; }
+  .app-header { grid-template-columns: 1fr; }
+}
+
+@media print {
+  .top-actions, .sidebar, .timer-card, button, .import-label { display: none !important; }
+  .app-shell { width: 100%; margin: 0; }
+  .main-grid, .app-header { display: block; }
+  .panel { box-shadow: none; border: 1px solid #ddd; }
+  .table-wrap { max-height: none; overflow: visible; }
+}
