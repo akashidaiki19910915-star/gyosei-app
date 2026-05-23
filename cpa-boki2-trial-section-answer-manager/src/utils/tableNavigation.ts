@@ -1,3 +1,5 @@
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+
 type NavigableElement = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
 
 function findCell(rowIndex: number, colIndex: number): NavigableElement | null {
@@ -20,7 +22,7 @@ export function focusCell(rowIndex: number, colIndex: number): void {
 }
 
 export function handleTableCellKeyDown(
-  event: React.KeyboardEvent<NavigableElement>,
+  event: ReactKeyboardEvent<NavigableElement>,
   rowIndex: number,
   colIndex: number,
 ): void {
