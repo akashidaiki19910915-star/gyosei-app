@@ -1,0 +1,67 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Prepare existing app files
+        run: |
+          rm -rf pages-dist
+          mkdir -p pages-dist
+          rsync -a ./ pages-dist/ \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='node_modules' \
+            --exclude='pages-dist' \
+            --exclude='cpa-boki2-trial-section-answer-manager'
+          touch pages-dist/.nojekyll
+
+      - name: Build CPA boki2 trial section app
+        working-directory: cpa-boki2-trial-section-answer-manager
+        run: |
+          npm install
+          npm run build
+
+      - name: Add CPA boki2 app to Pages artifact subpath
+        run: |
+          mkdir -p pages-dist/cpa-boki2-trial-section-answer-manager
+          cp -R cpa-boki2-trial-section-answer-manager/dist/. pages-dist/cpa-boki2-trial-section-answer-manager/
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages-dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
