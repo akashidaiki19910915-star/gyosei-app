@@ -1,4 +1,4 @@
-import type { AnswerState, ExamSetRecord, HistoryEntry, ProblemDefinition, StudyQueueItem } from '../types';
+import type { AnswerState, ExamSetRecord, HistoryEntry, MasteryMapItem, MistakeCard, ProblemDefinition, RecoveryPlan, StudyQueueItem } from '../types';
 import { formatAmount, isAmountColumn } from './numberFormat';
 import { draftSummary } from './scoring';
 
@@ -94,5 +94,32 @@ export function examSetCsvRows(examSets: ExamSetRecord[]): unknown[][] {
   return [
     ['作成日時', 'セット名', '開始日時', '終了日時', '所要秒数', '選択問題ID', '合計点', '70点判定', 'メモ'],
     ...examSets.map((set) => [set.createdAt, set.name, set.startedAt, set.finishedAt, set.durationSeconds, set.selectedProblemIds.join('/'), set.totalScore, set.passLineReached ? '合格ライン到達' : '復習優先', set.memo]),
+  ];
+}
+
+export function masteryMapCsvRows(items: MasteryMapItem[]): unknown[][] {
+  return [
+    ['問題ID', '科目', '大問対策', '論点名', '最新得点', '満点', '得点率', '最新判定', '演習回数', 'A回数', 'B回数', 'C回数', '最終演習日', '次回復習日', '到達状態', '次の推奨アクション'],
+    ...items.map((item) => [item.problem.displayId, item.problem.subject, item.problem.sectionLabel, item.problem.topic, item.latestScore ?? '', item.maxScore ?? '', item.scoreRate ?? '', item.latestRank, item.attempts, item.aCount, item.bCount, item.cCount, item.lastPracticedAt, item.nextReviewDate, item.status, item.action]),
+  ];
+}
+
+export function mistakeCardCsvRows(cards: MistakeCard[], problemResolver: (problemId: string) => ProblemDefinition): unknown[][] {
+  return [
+    ['作成日', '更新日', '問題ID', '論点名', '重要度', '正しい処理の流れ', 'なぜ間違えたか', '次回最初に見る注意点', '次回確認事項', '同じミスを防ぐ一言', '関連ミス原因'],
+    ...cards.map((card) => {
+      const problem = problemResolver(card.problemId);
+      return [card.createdAt, card.updatedAt, problem.displayId, problem.topic, card.importance, card.correctFlow, card.mistakeReason, card.firstReviewPoint, card.preSolveChecklist, card.preventionPhrase, card.missReasons.join('/')];
+    }),
+  ];
+}
+
+export function recoveryPlanCsvRows(plan: RecoveryPlan): unknown[][] {
+  return [
+    ['判定元', '合計点', '満点', '70点まで', '72点まで', '80点まで', '最大失点大問', '最多ミス原因', '次回重点対策', '取り戻し候補'],
+    [plan.source, plan.totalScore, plan.maxScore, plan.shortage70, plan.shortage72, plan.shortage80, plan.biggestLossSection, plan.mostFrequentMissReason, plan.nextFocus, plan.recoveryCandidates.join('/')],
+    [],
+    ['大問', '得点', '満点', '失点'],
+    ...plan.sectionRows.map((row) => [row.sectionLabel, row.score, row.maxScore, row.lostPoints]),
   ];
 }
