@@ -27,7 +27,7 @@ export function handleTableCellKeyDown(
   colIndex: number,
 ): void {
   const native = event.nativeEvent as KeyboardEvent;
-  if (event.isComposing || native.isComposing) return;
+  if (native.isComposing) return;
 
   const key = event.key;
   const textarea = isTextArea(event.target);
