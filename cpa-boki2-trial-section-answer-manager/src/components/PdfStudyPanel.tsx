@@ -117,7 +117,7 @@ export function PdfStudyPanel({ problem, answer, pdfs, mappings, activeSession, 
       <section className="panel pdf-study-panel">
         <h2>問題PDF</h2>
         <p className="empty">この問題IDにはPDFページ紐付けがありません。PDF教材VaultにPDFを保存し、PDFページ紐付けから問題ページを登録してください。</p>
-        <button onClick={onStartCurrentSession}>PDFなしで演習セッション開始</button>
+        <button onClick={() => { void onStartCurrentSession(); }}>PDFなしで演習セッション開始</button>
       </section>
     );
   }
@@ -130,9 +130,9 @@ export function PdfStudyPanel({ problem, answer, pdfs, mappings, activeSession, 
           <p>{problem.sectionLabel} {problem.displayId} / {problem.topic} / 想定 {mapping.estimatedMinutes} / 難易度 {mapping.difficulty}</p>
         </div>
         <div className="button-row">
-          <button className={viewMode === 'problem' ? 'accent' : 'secondary'} onClick={() => openView('problem')}>問題</button>
-          <button className={viewMode === 'answer' ? 'accent' : 'secondary'} disabled={!mapping.answerPageStart} onClick={() => openView('answer')}>解答</button>
-          <button className={viewMode === 'explanation' ? 'accent' : 'secondary'} disabled={!mapping.explanationPageStart} onClick={() => openView('explanation')}>解説</button>
+          <button className={viewMode === 'problem' ? 'accent' : 'secondary'} onClick={() => { void openView('problem'); }}>問題</button>
+          <button className={viewMode === 'answer' ? 'accent' : 'secondary'} disabled={!mapping.answerPageStart} onClick={() => { void openView('answer'); }}>解答</button>
+          <button className={viewMode === 'explanation' ? 'accent' : 'secondary'} disabled={!mapping.explanationPageStart} onClick={() => { void openView('explanation'); }}>解説</button>
         </div>
       </div>
       <div className="pdf-toolbar">
@@ -152,7 +152,7 @@ export function PdfStudyPanel({ problem, answer, pdfs, mappings, activeSession, 
         <canvas ref={canvasRef} className="pdf-canvas" />
       </div>
       <div className="study-actions">
-        <button className="resume-button" onClick={answerNow}>回答する / 自己採点へ進む</button>
+        <button className="resume-button" onClick={() => { void answerNow(); }}>回答する / 自己採点へ進む</button>
       </div>
       {showSelfGrade && (
         <div className="self-grade-panel">
@@ -171,7 +171,7 @@ export function PdfStudyPanel({ problem, answer, pdfs, mappings, activeSession, 
             <label>自動提案<input readOnly value={`${proposedRank} / 次回 ${proposedReview.nextReviewDate}`} /></label>
           </div>
           <label>自己採点メモ<textarea value={memo} onChange={(event) => setMemo(event.target.value)} placeholder="解答解説を見て、自分のミス原因・次回注意点を短く記録" /></label>
-          <button className="accent" onClick={submitSelfGrade}>自己採点を履歴へ保存</button>
+          <button className="accent" onClick={() => { void submitSelfGrade(); }}>自己採点を履歴へ保存</button>
         </div>
       )}
     </section>
