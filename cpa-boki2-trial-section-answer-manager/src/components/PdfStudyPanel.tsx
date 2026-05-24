@@ -5,6 +5,7 @@ import { renderPdfPageToCanvas } from '../utils/pdfRenderer';
 import { rankFromSelfGrading, updateReviewStateFromGrading } from '../utils/reviewScheduler';
 
 type PdfViewMode = 'problem' | 'answer' | 'explanation';
+type StudyPanelMode = 'study' | 'grading';
 
 interface SelfGradeInput {
   status: GradingStatus;
@@ -20,9 +21,11 @@ interface Props {
   mappings: MaterialPdfMapping[];
   activeSession: PracticeSession | null;
   reviewState?: ReviewState;
+  panelMode?: StudyPanelMode;
   onStartCurrentSession: () => Promise<PracticeSession>;
   onSessionChange: (session: PracticeSession) => Promise<void>;
   onSelfGrade: (input: SelfGradeInput) => Promise<void>;
+  onRequestGrading?: () => void;
 }
 
 function pageRange(mapping: MaterialPdfMapping, mode: PdfViewMode): { start: number; end: number } | null {
@@ -32,35 +35,43 @@ function pageRange(mapping: MaterialPdfMapping, mode: PdfViewMode): { start: num
   return null;
 }
 
+function viewLabel(mode: PdfViewMode): string {
+  if (mode === 'answer') return '解答';
+  if (mode === 'explanation') return '解説';
+  return '問題';
+}
+
 function clamp(value: number, start: number, end: number): number {
   return Math.max(start, Math.min(end, value));
 }
 
-export function PdfStudyPanel({ problem, answer, pdfs, mappings, activeSession, reviewState, onStartCurrentSession, onSessionChange, onSelfGrade }: Props) {
+export function PdfStudyPanel({ problem, answer, pdfs, mappings, activeSession, reviewState, panelMode = 'study', onStartCurrentSession, onSessionChange, onSelfGrade, onRequestGrading }: Props) {
   const mapping = useMemo(() => mappings.find((item) => item.problemId === problem.id), [mappings, problem.id]);
   const pdf = useMemo(() => pdfs.find((item) => item.id === mapping?.materialPdfId), [pdfs, mapping?.materialPdfId]);
-  const [viewMode, setViewMode] = useState<PdfViewMode>('problem');
+  const [viewMode, setViewMode] = useState<PdfViewMode>(panelMode === 'grading' ? 'answer' : 'problem');
   const [page, setPage] = useState(1);
-  const [scale, setScale] = useState(1.15);
+  const [scale, setScale] = useState(panelMode === 'grading' ? 1.05 : 1.15);
   const [loading, setLoading] = useState(false);
   const [renderError, setRenderError] = useState('');
-  const [showSelfGrade, setShowSelfGrade] = useState(false);
+  const [showSelfGrade, setShowSelfGrade] = useState(panelMode === 'grading');
   const [status, setStatus] = useState<GradingStatus>('正解');
   const [score, setScore] = useState(answer.score || 0);
   const [maxScore, setMaxScore] = useState(answer.maxScore || 20);
-  const [memo, setMemo] = useState('');
+  const [memo, setMemo] = useState(answer.reviewMemo || '');
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const range = mapping ? pageRange(mapping, viewMode) : null;
+  const safeViewMode = panelMode === 'study' ? 'problem' : viewMode;
+  const range = mapping ? pageRange(mapping, safeViewMode) : null;
   const proposedRank: ReviewRank = rankFromSelfGrading(status, score, maxScore);
   const proposedReview = updateReviewStateFromGrading({ problemId: problem.id, previous: reviewState, status, score, maxScore });
 
   useEffect(() => {
-    setViewMode('problem');
-    setShowSelfGrade(false);
-    const nextRange = mapping ? pageRange(mapping, 'problem') : null;
+    const nextMode: PdfViewMode = panelMode === 'grading' && mapping?.answerPageStart ? 'answer' : 'problem';
+    setViewMode(nextMode);
+    setShowSelfGrade(panelMode === 'grading');
+    const nextRange = mapping ? pageRange(mapping, nextMode) : null;
     setPage(nextRange?.start ?? 1);
-  }, [problem.id, mapping?.id]);
+  }, [problem.id, mapping?.id, panelMode]);
 
   useEffect(() => {
     if (!pdf || !canvasRef.current || !range) return;
@@ -84,8 +95,8 @@ export function PdfStudyPanel({ problem, answer, pdfs, mappings, activeSession, 
 
   async function openView(nextMode: PdfViewMode) {
     if (!mapping) return;
+    if (panelMode === 'study' && nextMode !== 'problem') return;
     if (nextMode !== 'problem') {
-      if (!window.confirm('解答・解説を開きます。自己採点時のみ開いてください。')) return;
       const session = await ensureSession();
       await onSessionChange({
         ...session,
@@ -102,9 +113,8 @@ export function PdfStudyPanel({ problem, answer, pdfs, mappings, activeSession, 
   async function answerNow() {
     const session = await ensureSession();
     const submittedAt = new Date().toISOString();
-    await onSessionChange({ ...session, submittedAt, openedAnswer: true, answerSnapshot: answer });
-    setShowSelfGrade(true);
-    await openView('answer');
+    await onSessionChange({ ...session, submittedAt, openedAnswer: false, answerSnapshot: answer });
+    onRequestGrading?.();
   }
 
   async function submitSelfGrade() {
@@ -114,26 +124,29 @@ export function PdfStudyPanel({ problem, answer, pdfs, mappings, activeSession, 
 
   if (!mapping || !pdf) {
     return (
-      <section className="panel pdf-study-panel">
+      <section className="panel pdf-study-panel mode-card">
         <h2>問題PDF</h2>
-        <p className="empty">この問題IDにはPDFページ紐付けがありません。PDF教材VaultにPDFを保存し、PDFページ紐付けから問題ページを登録してください。</p>
+        <p className="empty">この問題IDにはPDFページ紐付けがありません。「教材を設定する」からPDFを開き、問題・解答・解説ページを登録してください。</p>
         <button onClick={() => { void onStartCurrentSession(); }}>PDFなしで演習セッション開始</button>
       </section>
     );
   }
 
   return (
-    <section className="panel pdf-study-panel">
+    <section className={`panel pdf-study-panel mode-card pdf-${panelMode}`}>
       <div className="section-heading">
         <div>
-          <h2>問題PDF：{pdf.title}</h2>
+          <p className="eyebrow">現在表示：{viewLabel(safeViewMode)}ページ</p>
+          <h2>{panelMode === 'grading' ? '解答・解説PDF' : '問題PDF'}：{pdf.title}</h2>
           <p>{problem.sectionLabel} {problem.displayId} / {problem.topic} / 想定 {mapping.estimatedMinutes} / 難易度 {mapping.difficulty}</p>
         </div>
-        <div className="button-row">
-          <button className={viewMode === 'problem' ? 'accent' : 'secondary'} onClick={() => { void openView('problem'); }}>問題</button>
-          <button className={viewMode === 'answer' ? 'accent' : 'secondary'} disabled={!mapping.answerPageStart} onClick={() => { void openView('answer'); }}>解答</button>
-          <button className={viewMode === 'explanation' ? 'accent' : 'secondary'} disabled={!mapping.explanationPageStart} onClick={() => { void openView('explanation'); }}>解説</button>
-        </div>
+        {panelMode === 'grading' && (
+          <div className="button-row">
+            <button className={viewMode === 'answer' ? 'accent' : 'secondary'} disabled={!mapping.answerPageStart} onClick={() => { void openView('answer'); }}>解答</button>
+            <button className={viewMode === 'explanation' ? 'accent' : 'secondary'} disabled={!mapping.explanationPageStart} onClick={() => { void openView('explanation'); }}>解説</button>
+            <button className={viewMode === 'problem' ? 'accent' : 'secondary'} onClick={() => { void openView('problem'); }}>問題を確認</button>
+          </div>
+        )}
       </div>
       <div className="pdf-toolbar">
         <button onClick={() => range && setPage(clamp(page - 1, range.start, range.end))}>前ページ</button>
@@ -151,10 +164,12 @@ export function PdfStudyPanel({ problem, answer, pdfs, mappings, activeSession, 
         {loading && <p className="empty">PDFを表示中...</p>}
         <canvas ref={canvasRef} className="pdf-canvas" />
       </div>
-      <div className="study-actions">
-        <button className="resume-button" onClick={() => { void answerNow(); }}>回答する / 自己採点へ進む</button>
-      </div>
-      {showSelfGrade && (
+      {panelMode === 'study' && (
+        <div className="study-actions">
+          <button className="resume-button" onClick={() => { void answerNow(); }}>回答する / 自己採点へ進む</button>
+        </div>
+      )}
+      {panelMode === 'grading' && showSelfGrade && (
         <div className="self-grade-panel">
           <h3>自己採点</h3>
           <div className="form-grid four-columns">
