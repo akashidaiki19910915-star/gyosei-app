@@ -1,4 +1,4 @@
-import type { AnswerRow, AnswerState, TemplateDefinition } from '../types';
+import type { AnswerRow, AnswerState, GradeMark, TemplateDefinition } from '../types';
 import { formatAmount, normalizeNumericInput, toHalfWidthNumber } from '../utils/numberFormat';
 
 interface Props {
@@ -6,6 +6,8 @@ interface Props {
   template: TemplateDefinition;
   onChange: (answer: AnswerState) => void;
 }
+
+const gradeOptions: GradeMark[] = ['未採点', '○', '△', '×'];
 
 function makeRow(columnCount: number, index: number): AnswerRow {
   const cells = Array.from({ length: columnCount }, (_, col) => (col === 0 ? String(index + 1) : ''));
@@ -23,6 +25,7 @@ export function JournalEntryCardInput({ answer, template, onChange }: Props) {
   const debitAmountIndex = findColumnIndex(columns, ['借方金額'], 3);
   const creditAccountIndex = findColumnIndex(columns, ['貸方科目'], 4);
   const creditAmountIndex = findColumnIndex(columns, ['貸方金額'], 5);
+  const memoIndex = findColumnIndex(columns, ['メモ'], 6);
 
   const updateCell = (rowIndex: number, colIndex: number, value: string, amount = false) => {
     const rows = answer.rows.map((row, index) => {
@@ -31,6 +34,17 @@ export function JournalEntryCardInput({ answer, template, onChange }: Props) {
       cells[colIndex] = amount ? normalizeNumericInput(value) : value;
       return { ...row, cells };
     });
+    onChange({ ...answer, rows });
+  };
+
+  const updateGrade = (rowIndex: number, grade: GradeMark) => {
+    const rows = answer.rows.map((row, index) => index === rowIndex ? { ...row, grade } : row);
+    onChange({ ...answer, rows });
+  };
+
+  const updatePoints = (rowIndex: number, value: string) => {
+    const points = Number(toHalfWidthNumber(value).replace(/[^0-9.-]/g, '')) || 0;
+    const rows = answer.rows.map((row, index) => index === rowIndex ? { ...row, points } : row);
     onChange({ ...answer, rows });
   };
 
@@ -55,7 +69,7 @@ export function JournalEntryCardInput({ answer, template, onChange }: Props) {
             {options.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
         ) : (
-          <input value={value} onChange={(event) => updateCell(rowIndex, colIndex, event.target.value)} placeholder="例：仕掛品" lang="ja" autoComplete="off" />
+          <input value={value} onChange={(event) => updateCell(rowIndex, colIndex, event.target.value)} placeholder="例：仕掛品" lang="ja" autoComplete="off" spellCheck={false} />
         )}
       </label>
     );
@@ -72,6 +86,7 @@ export function JournalEntryCardInput({ answer, template, onChange }: Props) {
           pattern="[0-9,\\-]*"
           placeholder="例：10,000"
           autoComplete="off"
+          spellCheck={false}
         />
       </label>
     );
@@ -91,13 +106,29 @@ export function JournalEntryCardInput({ answer, template, onChange }: Props) {
           </div>
           <div className="journal-entry-side">
             <h3>借方</h3>
-            {renderAccountInput(row, rowIndex, debitAccountIndex, '科目')}
-            {renderAmountInput(row, rowIndex, debitAmountIndex, '金額')}
+            {renderAccountInput(row, rowIndex, debitAccountIndex, '借方科目')}
+            {renderAmountInput(row, rowIndex, debitAmountIndex, '借方金額')}
           </div>
           <div className="journal-entry-side">
             <h3>貸方</h3>
-            {renderAccountInput(row, rowIndex, creditAccountIndex, '科目')}
-            {renderAmountInput(row, rowIndex, creditAmountIndex, '金額')}
+            {renderAccountInput(row, rowIndex, creditAccountIndex, '貸方科目')}
+            {renderAmountInput(row, rowIndex, creditAmountIndex, '貸方金額')}
+          </div>
+          <div className="journal-entry-side journal-entry-review-side">
+            <h3>メモ・採点</h3>
+            <label>メモ
+              <textarea value={row.cells[memoIndex] ?? ''} onChange={(event) => updateCell(rowIndex, memoIndex, event.target.value)} placeholder="必要なメモだけ入力" />
+            </label>
+            <div className="journal-entry-review-grid">
+              <label>採点
+                <select value={row.grade} onChange={(event) => updateGrade(rowIndex, event.target.value as GradeMark)}>
+                  {gradeOptions.map((grade) => <option key={grade} value={grade}>{grade}</option>)}
+                </select>
+              </label>
+              <label>得点
+                <input value={String(row.points || '')} onChange={(event) => updatePoints(rowIndex, event.target.value)} inputMode="numeric" placeholder="例：2" />
+              </label>
+            </div>
           </div>
         </article>
       ))}
