@@ -15,7 +15,7 @@ interface Props {
 }
 
 const gradingStatuses: GradingStatus[] = ['正解', '部分正解', '不正解', '迷いあり'];
-const missReasons: MissReason[] = ['論点理解不足', '仕訳ミス', '借方貸方逆', '金額ミス', '集計ミス', '転記ミス', '表の入力位置ミス', '下書き不足', '時間不足', '解答欄形式の誤認', '問題文読み落とし', 'その他'];
+const missReasons: MissReason[] = ['論点理解不足', '仕訳ミス', '借方貸方逆', '金額ミス', '集計ミス', '転記ミス', '表の入力位置ミス', '下書き不足', '時間不足', '解答形式の誤認', '問題文読み落とし', 'その他'];
 
 function nextRankFromStatus(status: GradingStatus): ReviewRank {
   if (status === '正解') return 'A';
@@ -42,14 +42,14 @@ export function FocusedGradingPanel({ problem, answer, template, onChange, onSav
       <section className="panel focused-question-card">
         <div className="focused-question-header">
           <div>
-            <p className="eyebrow">採点・復習</p>
+            <p className="eyebrow">採点する</p>
             <h2>{problem.displayId}：{problem.topic}</h2>
             <p>解答・解説はお手元の教材・PDFで確認し、この画面では自己採点、ミス原因、次回復習日だけを保存します。</p>
           </div>
           <div className="button-row focused-main-actions">
             <button className="secondary" onClick={onBackPractice}>答案入力へ戻る</button>
             <button onClick={onSave}>一時保存</button>
-            <button className="accent" onClick={() => { void onSubmitSelfGrading({ status, score: answer.score, maxScore: answer.maxScore, memo: answer.reviewMemo }); }}>保存して次へ進む</button>
+            <button className="accent" onClick={() => { void onSubmitSelfGrading({ status, score: answer.score, maxScore: answer.maxScore, memo: answer.reviewMemo }); }}>保存して次へ</button>
           </div>
         </div>
 
@@ -61,7 +61,7 @@ export function FocusedGradingPanel({ problem, answer, template, onChange, onSav
               {gradingStatuses.map((item) => <button key={item} className={status === item ? 'accent' : 'secondary'} onClick={() => applyStatus(item)}>{item}</button>)}
             </div>
             <div className="score-grid">
-              <label>得点<input type="number" value={answer.score} onChange={(event) => onChange({ ...answer, score: Number(event.target.value || 0) })} /></label>
+              <label>問題得点<input type="number" value={answer.score} onChange={(event) => onChange({ ...answer, score: Number(event.target.value || 0) })} /></label>
               <label>満点<input type="number" value={answer.maxScore} onChange={(event) => onChange({ ...answer, maxScore: Number(event.target.value || 0) })} /></label>
               <label>A/B/C判定<select value={answer.rank} onChange={(event) => setRank(event.target.value as ReviewRank)}><option value="">未選択</option><option value="A">A：自力で解けた</option><option value="B">B：手順に不安</option><option value="C">C：再復習</option></select></label>
               <label>次回復習日<input type="date" value={answer.nextReviewDate} onChange={(event) => onChange({ ...answer, nextReviewDate: event.target.value })} /></label>
@@ -76,7 +76,7 @@ export function FocusedGradingPanel({ problem, answer, template, onChange, onSav
       </section>
 
       <section className="focused-answer-area">
-        <div className="focused-answer-title"><div><p className="eyebrow">自分の回答</p><h2>{template.name}</h2></div><button className="secondary" onClick={onApplyRowPoints}>行別得点合計を反映</button></div>
+        <div className="focused-answer-title"><div><p className="eyebrow">自分の答案</p><h2>{template.name}</h2></div><button className="secondary" onClick={onApplyRowPoints}>行別得点合計を反映</button></div>
         <AnswerTable answer={answer} template={template} onChange={onChange} onApplyRowPoints={onApplyRowPoints} />
       </section>
     </section>
