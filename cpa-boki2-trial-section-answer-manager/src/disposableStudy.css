@@ -193,6 +193,150 @@
 .block-review-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 .block-miss-list { margin-top: 10px; }
 
+.first-use-steps {
+  display: grid;
+  gap: 12px;
+  border: 2px solid #f0c36d;
+  background: #fffaf0;
+}
+.first-use-steps div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 10px;
+}
+.first-use-steps span {
+  padding: 12px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #f2d49a;
+  font-weight: 900;
+}
+
+.question-practice-panel {
+  display: grid;
+  gap: 16px;
+}
+.question-practice-summary {
+  border: 2px solid #d7eadf;
+}
+.question-card {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #d8e8e4;
+}
+.question-card.active-question-card {
+  border: 3px solid #0f5c68;
+  box-shadow: 0 8px 28px rgba(15, 92, 104, .16);
+}
+.question-card-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+.question-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.question-card-meta span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eef7f4;
+  border: 1px solid #d3e7e2;
+  font-weight: 800;
+  font-size: 12px;
+}
+.answer-input-label {
+  width: fit-content;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #0f5c68;
+  color: #fff;
+  font-weight: 900;
+}
+.question-card .answer-panel {
+  border: 1px solid #d8e8e4;
+  box-shadow: none;
+}
+.question-card .answer-heading h2 {
+  font-size: 16px;
+}
+.question-card .answer-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+.question-card .journal-table .col-memo,
+.question-card .answer-table .col-memo {
+  width: 14%;
+}
+.question-card .journal-table .col-account,
+.question-card .answer-table .col-account {
+  width: 14%;
+}
+.question-card .journal-table .col-amount,
+.question-card .answer-table .col-amount {
+  width: 12%;
+}
+.question-review-details {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #d8e8e4;
+  background: #fbfdfc;
+}
+.question-review-details > summary {
+  cursor: pointer;
+  font-weight: 900;
+}
+.question-score-grid {
+  margin-top: 10px;
+}
+
+.question-pdf-preview {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid #d8e8e4;
+  background: #f7fbf9;
+}
+.question-pdf-preview-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+}
+.question-pdf-preview-header strong {
+  font-size: 16px;
+}
+.question-pdf-preview-header span {
+  font-size: 12px;
+  color: #53676a;
+  font-weight: 800;
+}
+.question-pdf-crop-window {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid #d5e5e1;
+  background: #fff;
+}
+.question-pdf-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  transform-origin: top left;
+}
+.empty-preview {
+  background: #fffaf0;
+  border-color: #f2d49a;
+}
+.compact-preview .question-pdf-crop-window {
+  max-height: 280px;
+}
+
 .progress-overview-panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(460px, auto); gap: 18px; align-items: center; }
 .progress-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; }
 .progress-summary-grid div { display: grid; gap: 4px; padding: 14px; border-radius: 14px; background: #f2f8f6; border: 1px solid #d8e8e4; }
@@ -222,8 +366,11 @@
   .mobile-study-tabs button.active { background: #0f5c68; }
   .focused-study-layout.show-answer .study-pdf-column { display: none; }
   .focused-study-layout.show-pdf .answer-main-column { display: none; }
-  .progress-summary-grid { grid-template-columns: 1fr 1fr; }
+  .progress-summary-grid,
+  .first-use-steps div { grid-template-columns: 1fr; }
   .block-review-grid { grid-template-columns: 1fr; }
+  .question-card-header { grid-template-columns: 1fr; }
+  .question-card-meta { justify-content: flex-start; }
 }
 
 @media (max-width: 760px) {
@@ -239,4 +386,6 @@
   .mode-nav { grid-template-columns: 1fr; position: static; }
   .mobile-study-tabs { top: 0; }
   .progress-summary-grid { grid-template-columns: 1fr; }
+  .question-pdf-crop-window { min-height: 160px; }
+  .question-card .answer-table { min-width: 960px; }
 }
