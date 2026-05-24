@@ -6,6 +6,7 @@ export type ReviewRank = '' | 'A' | 'B' | 'C';
 export type MissReason = '論点理解不足' | '仕訳ミス' | '借方貸方逆' | '金額ミス' | '集計ミス' | '転記ミス' | '表の入力位置ミス' | '下書き不足' | '時間不足' | '解答欄形式の誤認' | '問題文読み落とし' | 'その他';
 export type TimeMode = '1分' | '3分' | '5分' | '10分' | '30分' | '90分';
 export type GradingStatus = '正解' | '部分正解' | '不正解' | '迷いあり';
+export type BlockDifficulty = '易しい' | '標準' | 'やや難' | '難しい';
 
 export interface ProblemDefinition {
   id: string;
@@ -41,6 +42,41 @@ export interface AnswerRow {
   points: number;
 }
 
+export interface ProblemBlock {
+  id: string;
+  title: string;
+  description?: string;
+  problemPageStart?: number;
+  problemPageEnd?: number;
+  answerPageStart?: number;
+  answerPageEnd?: number;
+  explanationPageStart?: number;
+  explanationPageEnd?: number;
+  estimatedMinutes?: number;
+  difficulty?: BlockDifficulty;
+  templateId: TemplateId;
+  rows?: AnswerRow[];
+  memo?: string;
+}
+
+export interface AnswerBlockState {
+  id: string;
+  title: string;
+  description?: string;
+  templateId: TemplateId;
+  templateName: string;
+  columns: string[];
+  rows: AnswerRow[];
+  score: number;
+  maxScore: number;
+  rowPointsTotal: number;
+  rank: ReviewRank;
+  missReasons: MissReason[];
+  nextReviewPoint: string;
+  memo: string;
+  collapsed?: boolean;
+}
+
 export interface AnswerState {
   id: string;
   problemId: string;
@@ -48,6 +84,7 @@ export interface AnswerState {
   templateName: string;
   columns: string[];
   rows: AnswerRow[];
+  problemBlocks?: AnswerBlockState[];
   draftMemo: string;
   reviewMemo: string;
   score: number;
@@ -251,6 +288,7 @@ export interface MaterialPdfMapping {
   estimatedMinutes: TimeMode;
   difficulty: '易' | '標準' | '難';
   memo: string;
+  problemBlocks?: ProblemBlock[];
   createdAt: string;
   updatedAt: string;
 }
