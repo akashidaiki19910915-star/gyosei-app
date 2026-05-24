@@ -1,8 +1,8 @@
-import type { AnswerState, BackupMetadata, BackupPayload, ExamSetRecord, HistoryEntry, MaterialPdf, MaterialPdfMapping, MistakeCard, PracticeSession, ReviewState } from '../types';
+import type { AnswerState, BackupMetadata, BackupPayload, ExamSetRecord, ExtractionCandidate, ExtractionJob, HistoryEntry, MaterialPdf, MaterialPdfMapping, MistakeCard, PracticeSession, QuestionCard, ReviewState } from '../types';
 
 const DB_NAME = 'cpa-boki2-trial-section-answer-manager';
-const DB_VERSION = 4;
-const STORES = ['answers', 'histories', 'settings', 'templates', 'backups', 'examSets', 'mistakeCards', 'materialPdfs', 'materialPdfMappings', 'practiceSessions', 'reviewStates'] as const;
+const DB_VERSION = 5;
+const STORES = ['answers', 'histories', 'settings', 'templates', 'backups', 'examSets', 'mistakeCards', 'materialPdfs', 'materialPdfMappings', 'questionCards', 'extractionJobs', 'extractionCandidates', 'practiceSessions', 'reviewStates'] as const;
 
 type StoreName = (typeof STORES)[number];
 
@@ -14,6 +14,14 @@ function stripExtractedTextFromMapping(mapping: MaterialPdfMapping): MaterialPdf
     explanationText: '',
     problemBlocks: mapping.problemBlocks?.map((block) => ({ ...block, questionText: '' })),
   };
+}
+
+function stripQuestionCardText(card: QuestionCard): QuestionCard {
+  return { ...card, questionText: '', choices: [] };
+}
+
+function stripExtractionCandidateText(candidate: ExtractionCandidate): ExtractionCandidate {
+  return { ...candidate, rawTextPreview: '', questionCardDraft: stripQuestionCardText(candidate.questionCardDraft) };
 }
 
 function openDb(): Promise<IDBDatabase> {
@@ -113,11 +121,23 @@ export async function getMaterialPdfs(): Promise<MaterialPdf[]> {
 export async function deleteMaterialPdf(id: string): Promise<void> {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
-    const transaction = db.transaction(['materialPdfs', 'materialPdfMappings'], 'readwrite');
+    const transaction = db.transaction(['materialPdfs', 'materialPdfMappings', 'questionCards', 'extractionJobs', 'extractionCandidates'], 'readwrite');
     transaction.objectStore('materialPdfs').delete(id);
     const mappingsRequest = transaction.objectStore('materialPdfMappings').getAll();
     mappingsRequest.onsuccess = () => {
       (mappingsRequest.result as MaterialPdfMapping[]).filter((mapping) => mapping.materialPdfId === id).forEach((mapping) => transaction.objectStore('materialPdfMappings').delete(mapping.id));
+    };
+    const cardsRequest = transaction.objectStore('questionCards').getAll();
+    cardsRequest.onsuccess = () => {
+      (cardsRequest.result as QuestionCard[]).filter((card) => card.sourceMaterialId === id).forEach((card) => transaction.objectStore('questionCards').delete(card.id));
+    };
+    const jobsRequest = transaction.objectStore('extractionJobs').getAll();
+    jobsRequest.onsuccess = () => {
+      (jobsRequest.result as ExtractionJob[]).filter((job) => job.materialPdfId === id).forEach((job) => transaction.objectStore('extractionJobs').delete(job.id));
+    };
+    const candidatesRequest = transaction.objectStore('extractionCandidates').getAll();
+    candidatesRequest.onsuccess = () => {
+      (candidatesRequest.result as ExtractionCandidate[]).filter((candidate) => candidate.materialPdfId === id).forEach((candidate) => transaction.objectStore('extractionCandidates').delete(candidate.id));
     };
     transaction.oncomplete = () => {
       db.close();
@@ -141,6 +161,67 @@ export async function getMaterialPdfMappings(): Promise<MaterialPdfMapping[]> {
 
 export async function deleteMaterialPdfMapping(id: string): Promise<void> {
   await tx('materialPdfMappings', 'readwrite', (store) => store.delete(id));
+}
+
+export async function saveQuestionCard(card: QuestionCard): Promise<void> {
+  await tx('questionCards', 'readwrite', (store) => store.put(card));
+}
+
+export async function saveQuestionCards(cards: QuestionCard[]): Promise<void> {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction('questionCards', 'readwrite');
+    const store = transaction.objectStore('questionCards');
+    cards.forEach((card) => store.put(card));
+    transaction.oncomplete = () => { db.close(); resolve(); };
+    transaction.onerror = () => { db.close(); reject(transaction.error); };
+  });
+}
+
+export async function getQuestionCards(): Promise<QuestionCard[]> {
+  const rows = await tx<QuestionCard[]>('questionCards', 'readonly', (store) => store.getAll());
+  return rows.sort((a, b) => a.questionNumber.localeCompare(b.questionNumber, 'ja'));
+}
+
+export async function deleteQuestionCard(id: string): Promise<void> {
+  await tx('questionCards', 'readwrite', (store) => store.delete(id));
+}
+
+export async function saveExtractionJob(job: ExtractionJob): Promise<void> {
+  await tx('extractionJobs', 'readwrite', (store) => store.put(job));
+}
+
+export async function getExtractionJobs(): Promise<ExtractionJob[]> {
+  const rows = await tx<ExtractionJob[]>('extractionJobs', 'readonly', (store) => store.getAll());
+  return rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function saveExtractionCandidates(candidates: ExtractionCandidate[]): Promise<void> {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction('extractionCandidates', 'readwrite');
+    const store = transaction.objectStore('extractionCandidates');
+    candidates.forEach((candidate) => store.put(candidate));
+    transaction.oncomplete = () => { db.close(); resolve(); };
+    transaction.onerror = () => { db.close(); reject(transaction.error); };
+  });
+}
+
+export async function getExtractionCandidates(): Promise<ExtractionCandidate[]> {
+  const rows = await tx<ExtractionCandidate[]>('extractionCandidates', 'readonly', (store) => store.getAll());
+  return rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function clearExtractionCandidatesForMaterial(materialPdfId: string): Promise<void> {
+  const candidates = await getExtractionCandidates();
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction('extractionCandidates', 'readwrite');
+    const store = transaction.objectStore('extractionCandidates');
+    candidates.filter((candidate) => candidate.materialPdfId === materialPdfId).forEach((candidate) => store.delete(candidate.id));
+    transaction.oncomplete = () => { db.close(); resolve(); };
+    transaction.onerror = () => { db.close(); reject(transaction.error); };
+  });
 }
 
 export async function savePracticeSession(session: PracticeSession): Promise<void> {
@@ -201,10 +282,12 @@ export async function recordRestoreMade(): Promise<BackupMetadata> {
 export async function exportAllData(): Promise<BackupPayload> {
   const materialPdfs = await getMaterialPdfs();
   const mappings = await getMaterialPdfMappings();
+  const questionCards = await getQuestionCards();
+  const extractionCandidates = await getExtractionCandidates();
   return {
     exportedAt: new Date().toISOString(),
     appName: 'CPA日商簿記2級 試験対策編 解答・復習管理アプリ',
-    version: '1.4.0',
+    version: '1.5.0',
     answers: await getAllAnswers(),
     histories: await getHistories(),
     settings: await tx<Record<string, unknown>[]>('settings', 'readonly', (store) => store.getAll()),
@@ -214,6 +297,9 @@ export async function exportAllData(): Promise<BackupPayload> {
     mistakeCards: await getMistakeCards(),
     materialPdfMappings: mappings.map(stripExtractedTextFromMapping),
     materialPdfMetadata: materialPdfs.map(({ pdfBlob: _pdfBlob, ...metadata }) => metadata),
+    questionCards: questionCards.map(stripQuestionCardText),
+    extractionJobs: await getExtractionJobs(),
+    extractionCandidates: extractionCandidates.map(stripExtractionCandidateText),
     practiceSessions: await getPracticeSessions(),
     reviewStates: await getReviewStates(),
     backupMetadata: await getBackupMetadata(),
@@ -234,6 +320,9 @@ export async function importAllData(payload: BackupPayload): Promise<void> {
     payload.examSets?.forEach((item) => transaction.objectStore('examSets').put(item));
     payload.mistakeCards?.forEach((item) => transaction.objectStore('mistakeCards').put(item));
     payload.materialPdfMappings?.forEach((item) => transaction.objectStore('materialPdfMappings').put(item));
+    payload.questionCards?.forEach((item) => transaction.objectStore('questionCards').put(item));
+    payload.extractionJobs?.forEach((item) => transaction.objectStore('extractionJobs').put(item));
+    payload.extractionCandidates?.forEach((item) => transaction.objectStore('extractionCandidates').put(item));
     payload.practiceSessions?.forEach((item) => transaction.objectStore('practiceSessions').put(item));
     payload.reviewStates?.forEach((item) => transaction.objectStore('reviewStates').put(item));
     if (payload.backupMetadata) transaction.objectStore('backups').put(payload.backupMetadata);
