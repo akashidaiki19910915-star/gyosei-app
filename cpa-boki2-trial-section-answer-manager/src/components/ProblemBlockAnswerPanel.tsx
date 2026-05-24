@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getTemplateById } from '../data/templateCatalog';
-import type { AnswerBlockState, AnswerState, MaterialPdf, MaterialPdfMapping, MissReason, ProblemBlock, ReviewRank } from '../types';
+import type { AnswerBlockState, AnswerRow, AnswerState, MaterialPdf, MaterialPdfMapping, MissReason, ProblemBlock, ReviewRank } from '../types';
 import { sumRowPoints } from '../utils/scoring';
 import { AnswerTable, createRows } from './AnswerTable';
 import { PdfQuestionPreview } from './PdfQuestionPreview';
@@ -34,6 +34,14 @@ function questionTitle(index: number, title?: string): string {
   return trimmed;
 }
 
+function renumberRows(rows: AnswerRow[]): AnswerRow[] {
+  return rows.map((row, index) => {
+    const cells = [...row.cells];
+    if (cells.length > 0) cells[0] = String(index + 1);
+    return { ...row, cells };
+  });
+}
+
 function defaultBlockFromAnswer(answer: AnswerState): AnswerBlockState {
   return {
     id: 'legacy-main-block',
@@ -42,7 +50,7 @@ function defaultBlockFromAnswer(answer: AnswerState): AnswerBlockState {
     templateId: answer.templateId,
     templateName: answer.templateName,
     columns: answer.columns,
-    rows: answer.rows,
+    rows: renumberRows(answer.rows),
     score: answer.score,
     maxScore: answer.maxScore,
     rowPointsTotal: answer.rowPointsTotal,
@@ -73,7 +81,7 @@ function blockFromMapping(block: ProblemBlock, index: number): AnswerBlockState 
     templateId: block.templateId,
     templateName: template.name,
     columns: template.columns,
-    rows: block.rows && block.rows.length > 0 ? block.rows : createRows(template.columns.length, template.initialRows),
+    rows: block.rows && block.rows.length > 0 ? renumberRows(block.rows) : createRows(template.columns.length, template.initialRows),
     score: 0,
     maxScore: 0,
     rowPointsTotal: 0,
@@ -87,28 +95,29 @@ function blockFromMapping(block: ProblemBlock, index: number): AnswerBlockState 
 
 function normalizeBlocks(answer: AnswerState, mapping?: MaterialPdfMapping): AnswerBlockState[] {
   if (answer.problemBlocks && answer.problemBlocks.length > 0) {
-    return answer.problemBlocks.map((block, index) => ({ ...block, title: questionTitle(index, block.title) }));
+    return answer.problemBlocks.map((block, index) => ({ ...block, title: questionTitle(index, block.title), rows: renumberRows(block.rows) }));
   }
   if (mapping?.problemBlocks && mapping.problemBlocks.length > 0) return mapping.problemBlocks.map(blockFromMapping);
   return [defaultBlockFromAnswer(answer)];
 }
 
 function summarize(answer: AnswerState, blocks: AnswerBlockState[]): AnswerState {
-  const score = blocks.reduce((total, block) => total + (Number(block.score) || 0), 0);
-  const maxScore = blocks.reduce((total, block) => total + (Number(block.maxScore) || 0), 0) || answer.maxScore;
-  const rowPointsTotal = blocks.reduce((total, block) => total + (Number(block.rowPointsTotal) || 0), 0);
-  const missReasons = Array.from(new Set(blocks.flatMap((block) => block.missReasons)));
+  const normalizedBlocks = blocks.map((block) => ({ ...block, rows: renumberRows(block.rows) }));
+  const score = normalizedBlocks.reduce((total, block) => total + (Number(block.score) || 0), 0);
+  const maxScore = normalizedBlocks.reduce((total, block) => total + (Number(block.maxScore) || 0), 0) || answer.maxScore;
+  const rowPointsTotal = normalizedBlocks.reduce((total, block) => total + (Number(block.rowPointsTotal) || 0), 0);
+  const missReasons = Array.from(new Set(normalizedBlocks.flatMap((block) => block.missReasons)));
   return {
     ...answer,
-    problemBlocks: blocks,
+    problemBlocks: normalizedBlocks,
     score,
     maxScore,
     rowPointsTotal,
     missReasons,
-    rows: blocks[0]?.rows ?? answer.rows,
-    columns: blocks[0]?.columns ?? answer.columns,
-    templateId: blocks[0]?.templateId ?? answer.templateId,
-    templateName: blocks[0]?.templateName ?? answer.templateName,
+    rows: normalizedBlocks[0]?.rows ?? answer.rows,
+    columns: normalizedBlocks[0]?.columns ?? answer.columns,
+    templateId: normalizedBlocks[0]?.templateId ?? answer.templateId,
+    templateName: normalizedBlocks[0]?.templateName ?? answer.templateName,
   };
 }
 
@@ -118,7 +127,7 @@ function blockToAnswer(base: AnswerState, block: AnswerBlockState): AnswerState 
     templateId: block.templateId,
     templateName: block.templateName,
     columns: block.columns,
-    rows: block.rows,
+    rows: renumberRows(block.rows),
     score: block.score,
     maxScore: block.maxScore,
     rowPointsTotal: block.rowPointsTotal,
@@ -149,7 +158,7 @@ export function ProblemBlockAnswerPanel({ answer, mapping, pdf, mode = 'practice
       templateId: blockAnswer.templateId,
       templateName: blockAnswer.templateName,
       columns: blockAnswer.columns,
-      rows: blockAnswer.rows,
+      rows: renumberRows(blockAnswer.rows),
       score: blockAnswer.score,
       maxScore: blockAnswer.maxScore,
       rowPointsTotal: blockAnswer.rowPointsTotal,
