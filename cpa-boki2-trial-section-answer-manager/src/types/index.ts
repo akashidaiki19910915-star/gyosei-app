@@ -1,5 +1,7 @@
+export type QualificationId = 'nissho_boki2';
 export type Subject = 'commercial' | 'industrial';
 export type SectionId = 'q1' | 'q2' | 'q3' | 'q4' | 'q5';
+export type ProblemKind = 'journal' | 'calculationTable' | 'fillBlank' | 'numericInput' | 'multipleChoice' | 'shortAnswer' | 'essay' | 'oral';
 export type TemplateId = 'journal' | 'genericNumber' | 'equityStatement' | 'consolidation' | 'ledger' | 'financialStatements' | 'processCosting' | 'departmentCosting' | 'standardCosting' | 'cvp' | 'variableFullCosting' | 'freeTable';
 export type GradeMark = '未採点' | '○' | '△' | '×';
 export type ReviewRank = '' | 'A' | 'B' | 'C';
@@ -7,14 +9,19 @@ export type MissReason = '論点理解不足' | '仕訳ミス' | '借方貸方�
 export type TimeMode = '1分' | '3分' | '5分' | '10分' | '30分' | '90分';
 export type GradingStatus = '正解' | '部分正解' | '不正解' | '迷いあり';
 export type BlockDifficulty = '易しい' | '標準' | 'やや難' | '難しい';
+export type ExtractionStatus = 'autoLinked' | 'needsReview' | 'unmatched';
 
 export interface ProblemDefinition {
   id: string;
+  qualificationId?: QualificationId;
   subject: Subject;
+  subjectId?: string;
   sectionId: SectionId;
   sectionLabel: string;
+  topicId?: string;
   displayId: string;
   topic: string;
+  problemKind?: ProblemKind;
   defaultTemplateId: TemplateId;
 }
 
@@ -28,6 +35,7 @@ export interface TemplateExampleGuide {
 
 export interface TemplateDefinition {
   id: TemplateId;
+  answerTemplateKind?: ProblemKind;
   name: string;
   initialRows: number;
   columns: string[];
@@ -46,6 +54,8 @@ export interface ProblemBlock {
   id: string;
   title: string;
   description?: string;
+  questionText?: string;
+  sourcePages?: number[];
   problemPageStart?: number;
   problemPageEnd?: number;
   cropTopPercent?: number;
@@ -65,6 +75,8 @@ export interface AnswerBlockState {
   id: string;
   title: string;
   description?: string;
+  questionText?: string;
+  sourcePages?: number[];
   problemPageStart?: number;
   problemPageEnd?: number;
   cropTopPercent?: number;
@@ -286,11 +298,53 @@ export interface MaterialPdf {
 
 export type MaterialPdfMetadata = Omit<MaterialPdf, 'pdfBlob'>;
 
+export interface ExtractedPdfPage {
+  page: number;
+  text: string;
+  normalizedText: string;
+  extractedAt: string;
+}
+
+export interface PdfProblemExtractionCandidate {
+  id: string;
+  materialPdfId: string;
+  suggestedProblemId: string;
+  displayId: string;
+  subject: Subject;
+  sectionId: SectionId;
+  sectionLabel: string;
+  topic: string;
+  templateId: TemplateId;
+  problemKind: ProblemKind;
+  problemText: string;
+  answerText: string;
+  explanationText: string;
+  sourcePages: number[];
+  answerPages: number[];
+  explanationPages: number[];
+  confidence: number;
+  status: ExtractionStatus;
+  reason: string;
+}
+
 export interface MaterialPdfMapping {
   id: string;
+  qualificationId?: QualificationId;
   problemId: string;
   displayId: string;
   materialPdfId: string;
+  subjectId?: string;
+  topicId?: string;
+  problemKind?: ProblemKind;
+  problemText?: string;
+  answerText?: string;
+  explanationText?: string;
+  sourcePages?: number[];
+  answerPages?: number[];
+  explanationPages?: number[];
+  extractionConfidence?: number;
+  extractionStatus?: ExtractionStatus;
+  extractedAt?: string;
   problemPageStart: number;
   problemPageEnd: number;
   answerPageStart?: number;

@@ -2,18 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { createRows } from './components/AnswerTable';
 import { BackupSafetyPanel } from './components/BackupSafetyPanel';
 import { DashboardPanel } from './components/DashboardPanel';
-import { DisposableStudyPanel } from './components/DisposableStudyPanel';
 import { ExamSetPanel } from './components/ExamSetPanel';
-import { ExampleGuide } from './components/ExampleGuide';
+import { FocusedGradingPanel } from './components/FocusedGradingPanel';
+import { FocusedPracticePanel } from './components/FocusedPracticePanel';
 import { HistoryPanel } from './components/HistoryPanel';
 import { MasteryMapPanel } from './components/MasteryMapPanel';
 import { MaterialSetupWorkspace } from './components/MaterialSetupWorkspace';
 import { MistakeCardPanel } from './components/MistakeCardPanel';
-import { PdfStudyPanel } from './components/PdfStudyPanel';
-import { ProblemBlockAnswerPanel } from './components/ProblemBlockAnswerPanel';
 import { RecoveryPlanPanel } from './components/RecoveryPlanPanel';
 import { ReviewPanel } from './components/ReviewPanel';
-import { ScoringPanel } from './components/ScoringPanel';
 import { StudyQueuePanel } from './components/StudyQueuePanel';
 import { Timer } from './components/Timer';
 import { getProblemById, problemCatalog } from './data/problemCatalog';
@@ -48,7 +45,7 @@ import {
 } from './storage/indexedDb';
 import type { AnswerState, BackupMetadata, BackupPayload, ExamSetRecord, GradingStatus, HistoryEntry, MaterialPdf, MaterialPdfMapping, MistakeCard, PracticeSession, ReviewState, StorageSafetyInfo, TemplateId, TimeMode } from './types';
 import { currentAnswerCsvRows, dashboardCsvRows, downloadCsv, downloadText, examSetCsvRows, historyCsvRows, masteryMapCsvRows, missReasonCsvRows, mistakeCardCsvRows, problemStatsCsvRows, recoveryPlanCsvRows, reviewTargetCsvRows, studyQueueCsvRows } from './utils/csv';
-import { chooseProblemForTimeMode, chooseQuickStartProblem, latestUnfinishedSession } from './utils/disposableStudy';
+import { chooseQuickStartProblem } from './utils/disposableStudy';
 import { isDueTodayOrEarlier, nowIso, reviewDateForRank } from './utils/dates';
 import { buildMasteryMap } from './utils/mastery';
 import { buildRecoveryPlan } from './utils/recovery';
@@ -60,7 +57,6 @@ import './styles.css';
 
 type HistoryFilter = 'all' | 'today' | 'overdue' | 'c' | 'b';
 type AppMode = 'study' | 'grading' | 'materials' | 'progress';
-type StudyView = 'problem' | 'answer' | 'grading';
 
 function createAnswer(problemId: string, templateId: TemplateId): AnswerState {
   const template = getTemplateById(templateId);
@@ -92,17 +88,14 @@ function createAnswer(problemId: string, templateId: TemplateId): AnswerState {
 function normalizeAnswer(answer: AnswerState): AnswerState {
   const template = getTemplateById(answer.templateId);
   if (answer.templateId !== 'journal') return answer;
-
   const legacyIndex = answer.columns.indexOf('会社名・立場');
   const columns = template.columns;
   if (legacyIndex === -1 && answer.columns.join('|') === columns.join('|')) return answer;
-
   const rows = answer.rows.map((row) => {
     const cells = [...row.cells];
     if (legacyIndex >= 0) cells.splice(legacyIndex, 1);
     return { ...row, cells: columns.map((_, index) => cells[index] ?? '') };
   });
-
   return { ...answer, columns, rows, templateName: template.name, updatedAt: nowIso() };
 }
 
@@ -159,7 +152,6 @@ export default function App() {
   const [message, setMessage] = useState('待機中');
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
   const [mode, setMode] = useState<AppMode>('study');
-  const [studyView, setStudyView] = useState<StudyView>('answer');
 
   const problem = useMemo(() => getProblemById(problemId), [problemId]);
   const template = useMemo(() => getTemplateById(answer.templateId), [answer.templateId]);
@@ -168,19 +160,17 @@ export default function App() {
   const studyQueue = useMemo(() => buildStudyQueue(histories), [histories]);
   const masteryMap = useMemo(() => buildMasteryMap(histories), [histories]);
   const recoveryPlan = useMemo(() => buildRecoveryPlan(histories, examSets), [histories, examSets]);
-  const activeSession = useMemo(() => practiceSessions.find((session) => session.id === activeSessionId) ?? latestUnfinishedSession(practiceSessions) ?? null, [practiceSessions, activeSessionId]);
+  const activeSession = useMemo(() => practiceSessions.find((session) => session.id === activeSessionId) ?? null, [practiceSessions, activeSessionId]);
   const currentReviewState = useMemo(() => reviewStates.find((state) => state.problemId === problemId), [reviewStates, problemId]);
   const quickChoice = useMemo(() => chooseQuickStartProblem({ sessions: practiceSessions, studyQueue, masteryMap }), [practiceSessions, studyQueue, masteryMap]);
-  const quickHint = useMemo(() => {
-    const quickProblem = getProblemById(quickChoice.problemId);
-    return `推奨：${quickProblem.sectionLabel} ${quickProblem.displayId} ${quickProblem.topic}（${quickChoice.reason}）`;
-  }, [quickChoice]);
   const progressSummary = useMemo(() => ({
     dueToday: studyQueue.filter((item) => item.statusLabels.includes('今日復習')).length,
     overdue: studyQueue.filter((item) => item.statusLabels.includes('期限超過')).length,
     cRank: masteryMap.filter((item) => item.latestRank === 'C' || item.status === '危険問題').length,
     untouched: masteryMap.filter((item) => item.status === '未着手').length,
-  }), [studyQueue, masteryMap]);
+    last7Days: histories.filter((history) => Date.now() - new Date(history.savedAt).getTime() <= 7 * 24 * 60 * 60 * 1000).length,
+    last30Days: histories.filter((history) => Date.now() - new Date(history.savedAt).getTime() <= 30 * 24 * 60 * 60 * 1000).length,
+  }), [studyQueue, masteryMap, histories]);
 
   async function refreshAnswers() { setAnswers((await getAllAnswers()).map(normalizeAnswer)); }
   async function loadHistories() { setHistories(await getHistories()); }
@@ -230,48 +220,36 @@ export default function App() {
     const baseAnswer = normalizeAnswer(stored ?? createAnswer(problemIdForSession, problemDefinition.defaultTemplateId));
     const now = nowIso();
     return {
-      id: crypto.randomUUID(), examType: '日商簿記2級', problemId: problemIdForSession, startedAt: now, submittedAt: '', durationSeconds: 0,
-      selectedTimeMode, answerSnapshot: baseAnswer, gradingMode: 'self', gradingResult: { status: '', score: 0, maxScore: baseAnswer.maxScore, scoreRate: 0, autoGraded: false, detailRows: [] },
-      openedAnswer: false, openedExplanation: false, memo: '', completed: false,
+      id: crypto.randomUUID(),
+      examType: '日商簿記2級',
+      problemId: problemIdForSession,
+      startedAt: now,
+      submittedAt: '',
+      durationSeconds: 0,
+      selectedTimeMode,
+      answerSnapshot: baseAnswer,
+      gradingMode: 'self',
+      gradingResult: { status: '', score: 0, maxScore: baseAnswer.maxScore, scoreRate: 0, autoGraded: false, detailRows: [] },
+      openedAnswer: false,
+      openedExplanation: false,
+      memo: '',
+      completed: false,
     };
-  }
-
-  async function beginPractice(problemIdForSession: string, selectedTimeMode: TimeMode, reason: string): Promise<PracticeSession> {
-    const session = await createPracticeSession(problemIdForSession, selectedTimeMode);
-    await savePracticeSession(session);
-    setActiveSessionId(session.id);
-    await loadProblem(problemIdForSession);
-    await refreshAll();
-    setMode('study');
-    setStudyView('answer');
-    setMessage(`${selectedTimeMode}モードで演習開始：${getProblemById(problemIdForSession).displayId}（${reason}）`);
-    return session;
-  }
-
-  async function quickResume() {
-    const unfinished = latestUnfinishedSession(practiceSessions);
-    if (unfinished) {
-      setActiveSessionId(unfinished.id);
-      await loadProblem(unfinished.problemId);
-      setMode('study');
-      setStudyView('answer');
-      setMessage(`未完了セッションを再開しました：${getProblemById(unfinished.problemId).displayId}`);
-      return;
-    }
-    await beginPractice(quickChoice.problemId, quickChoice.mode, quickChoice.reason);
-  }
-
-  async function selectTimeMode(timeMode: TimeMode) {
-    const selectedProblemId = chooseProblemForTimeMode(timeMode, studyQueue, masteryMap, histories);
-    await beginPractice(selectedProblemId, timeMode, '空き時間から選択');
   }
 
   async function startCurrentSession(): Promise<PracticeSession> {
     if (activeSession && activeSession.problemId === problem.id && !activeSession.completed) return activeSession;
-    return beginPractice(problem.id, currentMapping?.estimatedMinutes ?? '10分', '現在の問題ID');
+    const session = await createPracticeSession(problem.id, currentMapping?.estimatedMinutes ?? '10分');
+    await savePracticeSession(session);
+    setActiveSessionId(session.id);
+    await loadPracticeSessions();
+    return session;
   }
 
-  async function updatePracticeSession(session: PracticeSession) { await savePracticeSession(session); setActiveSessionId(session.id); await loadPracticeSessions(); }
+  const applyRowPoints = () => {
+    const total = sumRowPoints(answer.rows);
+    updateAnswer({ ...answer, rowPointsTotal: total, score: total });
+  };
 
   const manualSave = async () => { await saveAnswer(normalizeAnswer({ ...answer, updatedAt: nowIso() })); await refreshAll(); setMessage('手動保存しました'); };
   const clearCurrentAnswer = async () => { if (!window.confirm('現在問題IDの答案を全消去しますか？履歴は消えません。')) return; const cleared = createAnswer(problemId, answer.templateId); await saveAnswer(cleared); setAnswer(cleared); await refreshAll(); setMessage('現在問題IDの答案を全消去しました'); };
@@ -284,19 +262,27 @@ export default function App() {
     const reviewState = updateReviewStateFromGrading({ problemId: problem.id, previous: currentReviewState, status: input.status, score: input.score, maxScore: input.maxScore });
     const scored = normalizeAnswer({ ...answer, score: input.score, maxScore: input.maxScore, scored: true, scoringStarted: true, scoredAt: submittedAt, rank, nextReviewDate: reviewState.nextReviewDate, reviewMemo: input.memo || answer.reviewMemo, updatedAt: submittedAt });
     const session = activeSession && activeSession.problemId === problem.id && !activeSession.completed ? activeSession : await startCurrentSession();
-    const completedSession: PracticeSession = { ...session, submittedAt, durationSeconds: secondsBetween(session.startedAt, submittedAt), answerSnapshot: scored, gradingResult: { status: input.status, score: input.score, maxScore: input.maxScore, scoreRate: input.maxScore > 0 ? Math.round((input.score / input.maxScore) * 1000) / 10 : 0, autoGraded: false, detailRows: [] }, reviewState, openedAnswer: true, memo: input.memo, completed: true };
-    await saveAnswer(scored); await addHistory(buildHistory(scored)); await saveReviewState(reviewState); await savePracticeSession(completedSession); setAnswer(scored); setActiveSessionId(''); setMode('progress'); await refreshAll(); setMessage(`自己採点を保存しました。判定 ${rank}、次回復習日 ${reviewState.nextReviewDate}`);
+    const completedSession: PracticeSession = { ...session, submittedAt, durationSeconds: secondsBetween(session.startedAt, submittedAt), answerSnapshot: scored, gradingResult: { status: input.status, score: input.score, maxScore: input.maxScore, scoreRate: input.maxScore > 0 ? Math.round((input.score / input.maxScore) * 1000) / 10 : 0, autoGraded: false, detailRows: [] }, reviewState, openedAnswer: true, openedExplanation: Boolean(currentMapping?.answerText || currentMapping?.explanationText), memo: input.memo, completed: true };
+    await saveAnswer(scored);
+    await addHistory(buildHistory(scored));
+    await saveReviewState(reviewState);
+    await savePracticeSession(completedSession);
+    setAnswer(scored);
+    setActiveSessionId('');
+    await refreshAll();
+    setMessage(`自己採点を保存しました。判定 ${rank}、次回復習日 ${reviewState.nextReviewDate}`);
+    await openNextProblem();
   }
 
-  const restoreHistory = async (entry: HistoryEntry) => { if (!window.confirm('現在の画面を上書きして、この履歴を復元しますか？')) return; const restored = normalizeAnswer(entry.snapshot); await saveAnswer(restored); setProblemId(entry.problemId); setAnswer(restored); setMode('study'); setStudyView('answer'); await refreshAll(); setMessage('履歴を復元しました'); };
+  const restoreHistory = async (entry: HistoryEntry) => { if (!window.confirm('現在の画面を上書きして、この履歴を復元しますか？')) return; const restored = normalizeAnswer(entry.snapshot); await saveAnswer(restored); setProblemId(entry.problemId); setAnswer(restored); setMode('study'); await refreshAll(); setMessage('履歴を復元しました'); };
   const deleteHistoryEntry = async (id: string) => { if (!window.confirm('この履歴を削除しますか？')) return; await deleteHistory(id); await refreshAll(); setMessage('履歴を削除しました'); };
   const clearAllHistories = async () => { if (!window.confirm('履歴を全削除しますか？答案データは消えません。')) return; await clearHistories(); await refreshAll(); setMessage('履歴を全削除しました'); };
   const saveCard = async (card: MistakeCard) => { await saveMistakeCard(card); await loadMistakeCards(); setMessage('白紙再現・解き直しカードを保存しました'); };
   const removeCard = async (id: string) => { if (!window.confirm('この解き直しカードを削除しますか？')) return; await deleteMistakeCard(id); await loadMistakeCards(); setMessage('白紙再現・解き直しカードを削除しました'); };
   const savePdf = async (pdf: MaterialPdf) => { await saveMaterialPdf(pdf); await loadMaterialPdfs(); };
   const removePdf = async (id: string) => { await deleteMaterialPdf(id); await Promise.all([loadMaterialPdfs(), loadPdfMappings()]); setMessage('PDF教材データと紐付けを削除しました。答案履歴・白紙再現カードは保持されています。'); };
-  const savePdfMapping = async (mapping: MaterialPdfMapping) => { await saveMaterialPdfMapping(mapping); await loadPdfMappings(); setMessage('PDFページ紐付けを保存しました'); };
-  const removePdfMapping = async (id: string) => { if (!window.confirm('このPDFページ紐付けを削除しますか？PDF教材データと答案履歴は削除されません。')) return; await deleteMaterialPdfMapping(id); await loadPdfMappings(); setMessage('PDFページ紐付けを削除しました'); };
+  const savePdfMapping = async (mapping: MaterialPdfMapping) => { await saveMaterialPdfMapping(mapping); await loadPdfMappings(); setMessage('PDF抽出テキスト紐づけを保存しました'); };
+  const removePdfMapping = async (id: string) => { if (!window.confirm('このPDF抽出テキスト紐づけを削除しますか？PDF教材データと答案履歴は削除されません。')) return; await deleteMaterialPdfMapping(id); await loadPdfMappings(); setMessage('PDF抽出テキスト紐づけを削除しました'); };
 
   const exportCurrentCsv = () => downloadCsv('current-answer.csv', currentAnswerCsvRows(answer, problem));
   const exportHistoryCsv = () => downloadCsv('history.csv', historyCsvRows(histories));
@@ -309,31 +295,28 @@ export default function App() {
   const exportMasteryCsv = () => downloadCsv('mastery-map.csv', masteryMapCsvRows(masteryMap));
   const exportMistakeCardsCsv = () => downloadCsv('mistake-cards.csv', mistakeCardCsvRows(mistakeCards, getProblemById));
   const exportRecoveryCsv = () => downloadCsv('recovery-plan.csv', recoveryPlanCsvRows(recoveryPlan));
-  const exportJson = async () => { const [historyRows, answerRows] = await Promise.all([getHistories(), getAllAnswers()]); const meta = await recordBackupMade(historyRows.length, answerRows.length); const payload = await exportAllData(); downloadText('cpa-boki2-backup.json', JSON.stringify({ ...payload, backupMetadata: meta }, null, 2), 'application/json;charset=utf-8'); setBackupMeta(meta); await refreshSafety(); setMessage('JSONバックアップを出力しました。PDF Blob本体はPR2対象のため含めていません。'); };
-  const importJson = async (file: File | undefined) => { if (!file) return; try { const payload = JSON.parse(await file.text()) as BackupPayload; await importAllData(payload); await loadProblem(problemId); await refreshAll(); setMessage('JSONバックアップを復元しました。PDF本体は端末内Vaultに残る仕様です。'); } catch { setMessage('JSONの形式が不正です'); } };
+  const exportJson = async () => { const [historyRows, answerRows] = await Promise.all([getHistories(), getAllAnswers()]); const meta = await recordBackupMade(historyRows.length, answerRows.length); const payload = await exportAllData(); downloadText('cpa-boki2-backup.json', JSON.stringify({ ...payload, backupMetadata: meta }, null, 2), 'application/json;charset=utf-8'); setBackupMeta(meta); await refreshSafety(); setMessage('JSONバックアップを出力しました。PDF本体と抽出教材本文は含めていません。'); };
+  const importJson = async (file: File | undefined) => { if (!file) return; try { const payload = JSON.parse(await file.text()) as BackupPayload; await importAllData(payload); await loadProblem(problemId); await refreshAll(); setMessage('JSONバックアップを復元しました。PDF本体・抽出テキストは端末内データを維持する仕様です。'); } catch { setMessage('JSONの形式が不正です'); } };
 
   const saveExamSetRecord = async (record: ExamSetRecord) => { const relatedHistoryIds: string[] = []; for (const problemState of record.problemStates) { if (problemState.rank !== 'B' && problemState.rank !== 'C') continue; const problemDefinition = getProblemById(problemState.problemId); const base = createAnswer(problemState.problemId, problemDefinition.defaultTemplateId); const scored = normalizeAnswer({ ...base, score: Number(problemState.score) || 0, rowPointsTotal: Number(problemState.score) || 0, rank: problemState.rank, nextReviewDate: reviewDateForRank(problemState.rank), reviewMemo: `90分セット演習「${record.name}」から登録。${record.memo}`, scored: true, scoredAt: nowIso(), updatedAt: nowIso() }); const history = buildHistory(scored); relatedHistoryIds.push(history.id); await addHistory(history); } await saveExamSet({ ...record, relatedHistoryIds }); await refreshAll(); setMessage('90分セット演習履歴を保存しました。B/C判定の問題は復習キューにも反映しました。'); };
-  const openNextProblem = async () => { const next = studyQueue[0]?.problem.id ?? quickChoice.problemId; await loadProblem(next); setMode('study'); setStudyView('answer'); };
+  const openNextProblem = async () => { const next = studyQueue[0]?.problem.id ?? quickChoice.problemId; await loadProblem(next); setMode('study'); };
 
   return (
     <main className="app-shell redesigned-shell">
-      <header className="app-header compact-header"><div><h1>CPA日商簿記2級 試験対策編 解答・復習管理アプリ</h1><p>PDFの設問を見る → 直下の答案欄に入力する → 次の設問へ進む → 最後に採点する、の流れに集中する画面です。</p></div><Timer /></header>
+      <header className="app-header compact-header"><div><h1>CPA日商簿記2級 試験対策編 解答・復習管理アプリ</h1><p>問題文を読む → 答案入力 → 採点 → 次回復習日へ回す、を最短で回すための学習画面です。</p></div><Timer /></header>
       <nav className="mode-nav" aria-label="学習モード切替"><button className={mode === 'study' ? 'active' : ''} onClick={() => setMode('study')}>今すぐ解く</button><button className={mode === 'grading' ? 'active' : ''} onClick={() => setMode('grading')}>採点する</button><button className={mode === 'materials' ? 'active' : ''} onClick={() => setMode('materials')}>教材を設定する</button><button className={mode === 'progress' ? 'active' : ''} onClick={() => setMode('progress')}>復習・進捗を見る</button></nav>
       <div className="status-bar">{message}</div>
 
       {mode === 'study' && <section className="mode-section study-mode-section">
-        {!currentMapping && <section className="panel first-use-steps"><h2>最初にやること</h2><div><span>1. 教材を設定する</span><span>2. 設問ごとにPDF範囲を登録する</span><span>3. 今すぐ解く</span></div><button className="accent" onClick={() => setMode('materials')}>教材を設定する</button></section>}
-        <DisposableStudyPanel activeSession={activeSession} quickHint={quickHint} onQuickResume={quickResume} onSelectMode={selectTimeMode} />
-        <section className="study-problem-strip panel mode-card"><div><p className="eyebrow">今解く問題</p><h2>{problem.sectionLabel} {problem.displayId}：{problem.topic}</h2><p>1. PDFの設問を読む　2. 直下の答案欄に入力する　3. 次の設問へ進む　4. 解答・解説を見る　5. 自己採点する　6. 次回復習日に回す</p><p>想定時間：{currentMapping?.estimatedMinutes ?? '未設定'} / 難易度：{currentMapping?.difficulty ?? '未設定'} / 設問数：{currentMapping?.problemBlocks?.length ?? answer.problemBlocks?.length ?? 1}</p></div><button className="secondary" onClick={() => setStudyView(studyView === 'problem' ? 'answer' : 'problem')}>{studyView === 'problem' ? '答案を大きく表示' : '問題PDFを開く'}</button></section>
-        <div className="mobile-study-tabs"><button className={studyView === 'problem' ? 'active' : ''} onClick={() => setStudyView('problem')}>問題を見る</button><button className={studyView === 'answer' ? 'active' : ''} onClick={() => setStudyView('answer')}>答案を書く</button><button onClick={() => { setMode('grading'); setStudyView('grading'); }}>採点する</button></div>
-        <div className={`focused-study-layout ${studyView === 'problem' ? 'show-pdf' : 'show-answer'}`}><div className="study-pdf-column"><PdfStudyPanel problem={problem} answer={answer} pdfs={materialPdfs} mappings={pdfMappings} activeSession={activeSession} reviewState={currentReviewState} panelMode="study" onStartCurrentSession={startCurrentSession} onSessionChange={updatePracticeSession} onSelfGrade={submitSelfGrading} onRequestGrading={() => setMode('grading')} /></div><div className="answer-main-column"><ExampleGuide template={template} /><ProblemBlockAnswerPanel answer={answer} mapping={currentMapping} pdf={currentPdf} mode="practice" onChange={updateAnswer} /></div></div>
+        {!currentMapping?.problemText && <section className="panel first-use-steps"><h2>最初にやること</h2><div><span>1. 教材を設定する</span><span>2. PDFから問題候補を抽出する</span><span>3. 今すぐ解く</span></div><button className="accent" onClick={() => setMode('materials')}>教材を設定する</button></section>}
+        <FocusedPracticePanel problem={problem} answer={answer} template={template} mapping={currentMapping} pdf={currentPdf} onChange={updateAnswer} onSave={manualSave} onGoGrading={() => setMode('grading')} onNextProblem={openNextProblem} onApplyRowPoints={applyRowPoints} />
       </section>}
 
-      {mode === 'grading' && <section className="mode-section grading-mode-section"><section className="panel mode-card study-problem-strip"><div><p className="eyebrow">採点する</p><h2>{problem.sectionLabel} {problem.displayId}：{problem.topic}</h2><p>解答・解説PDFを確認し、必要な設問だけ「採点・メモを開く」から記録します。</p></div><button className="secondary" onClick={() => setMode('study')}>答案入力へ戻る</button></section><div className="grading-layout"><div className="grading-answer-column"><h2>自分の答案</h2><ProblemBlockAnswerPanel answer={answer} mapping={currentMapping} pdf={currentPdf} mode="grading" onChange={updateAnswer} /></div><div className="grading-pdf-column"><PdfStudyPanel problem={problem} answer={answer} pdfs={materialPdfs} mappings={pdfMappings} activeSession={activeSession} reviewState={currentReviewState} panelMode="grading" onStartCurrentSession={startCurrentSession} onSessionChange={updatePracticeSession} onSelfGrade={submitSelfGrading} /><ScoringPanel answer={answer} onChange={updateAnswer} onSave={manualSave} onConfirmScoring={confirmScoring} /></div></div></section>}
+      {mode === 'grading' && <FocusedGradingPanel problem={problem} answer={answer} template={template} mapping={currentMapping} pdf={currentPdf} onChange={updateAnswer} onSave={manualSave} onApplyRowPoints={applyRowPoints} onSubmitSelfGrading={submitSelfGrading} onBackPractice={() => setMode('study')} />}
 
       {mode === 'materials' && <MaterialSetupWorkspace pdfs={materialPdfs} mappings={pdfMappings} selectedProblemId={problemId} onSavePdf={savePdf} onDeletePdf={removePdf} onSaveMapping={savePdfMapping} onDeleteMapping={removePdfMapping} onOpenProblem={loadProblem} onMessage={setMessage} />}
 
-      {mode === 'progress' && <section className="mode-section progress-mode-section"><section className="panel mode-card progress-overview-panel"><div><p className="eyebrow">復習・進捗を見る</p><h2>今日の判断だけを先に表示</h2><p>詳細な履歴、CSV、バックアップ、白紙再現、70点リカバリーは下のカードを開いた時だけ表示します。</p></div><div className="progress-summary-grid"><div><strong>{progressSummary.dueToday}</strong><span>今日やるべき問題</span></div><div><strong>{progressSummary.overdue}</strong><span>期限超過</span></div><div><strong>{progressSummary.cRank}</strong><span>C判定・危険問題</span></div><div><strong>{progressSummary.untouched}</strong><span>未着手</span></div></div><button className="resume-button" onClick={() => { void openNextProblem(); }}>次にやる問題へ</button></section><details className="panel management-panel" open><summary>今日の復習・期限超過・C/B判定</summary><StudyQueuePanel items={studyQueue} onStart={loadProblem} onRestoreLatest={(item) => item.latestHistory && restoreHistory(item.latestHistory)} onExportCsv={exportStudyQueueCsv} /></details><details className="panel management-panel"><summary>合格到達マップ</summary><MasteryMapPanel histories={histories} onOpenProblem={loadProblem} onExportCsv={exportMasteryCsv} /></details><details className="panel management-panel"><summary>白紙再現カード</summary><MistakeCardPanel problem={problem} answer={answer} cards={mistakeCards} onSave={saveCard} onDelete={removeCard} onExportCsv={exportMistakeCardsCsv} /></details><details className="panel management-panel"><summary>70点リカバリー表・90分セット</summary><RecoveryPlanPanel histories={histories} examSets={examSets} onExportCsv={exportRecoveryCsv} /><ExamSetPanel histories={histories} examSets={examSets} onSave={saveExamSetRecord} onOpenProblem={loadProblem} onExportCsv={exportExamSetCsv} /></details><details className="panel management-panel"><summary>履歴一覧・復習管理</summary><ReviewPanel histories={histories} /><HistoryPanel histories={histories} filter={historyFilter} onFilter={setHistoryFilter} onRestore={restoreHistory} onDelete={deleteHistoryEntry} onClear={clearAllHistories} /></details><details className="panel management-panel"><summary>CSV出力・JSONバックアップ・保存状態</summary><div className="top-actions management-actions"><button className="danger" onClick={clearCurrentAnswer}>現在問題IDの答案を全消去</button><button onClick={bulkAddAllAnswers}>保存済み答案を一括履歴追加</button><button onClick={exportCurrentCsv}>現在問題IDの答案CSV</button><button onClick={exportHistoryCsv}>履歴一覧CSV</button><button onClick={exportReviewCsv}>復習対象CSV</button><button onClick={exportProblemStatsCsv}>問題ID別成績CSV</button><button onClick={exportMissReasonCsv}>ミス原因別集計CSV</button><button onClick={exportDashboardCsv}>ダッシュボードCSV</button><button onClick={exportExamSetCsv}>90分セットCSV</button><button onClick={exportMasteryCsv}>合格到達マップCSV</button><button onClick={exportRecoveryCsv}>70点リカバリーCSV</button><button onClick={exportJson}>JSONバックアップ</button><label className="import-label">JSON復元<input type="file" accept="application/json" onChange={(event) => importJson(event.target.files?.[0])} /></label><button onClick={() => window.print()}>印刷</button></div><BackupSafetyPanel info={safetyInfo} onBackup={exportJson} onRestoreFile={importJson} onRefresh={refreshSafety} onMessage={setMessage} /><DashboardPanel histories={histories} answerCount={answers.length} onExportCsv={exportDashboardCsv} /></details></section>}
+      {mode === 'progress' && <section className="mode-section progress-mode-section"><section className="panel mode-card progress-overview-panel"><div><p className="eyebrow">復習・進捗を見る</p><h2>管理機能はここに集約</h2><p>通常演習画面には出さず、必要な時だけここで確認します。</p></div><div className="progress-summary-grid"><div><strong>{progressSummary.dueToday}</strong><span>今日やる問題</span></div><div><strong>{progressSummary.overdue}</strong><span>期限超過</span></div><div><strong>{progressSummary.cRank}</strong><span>C判定</span></div><div><strong>{progressSummary.untouched}</strong><span>未着手</span></div><div><strong>{progressSummary.last7Days}</strong><span>直近7日演習</span></div><div><strong>{progressSummary.last30Days}</strong><span>直近30日演習</span></div></div><button className="resume-button" onClick={() => { void openNextProblem(); }}>次にやる問題へ</button></section><details className="panel management-panel" open><summary>今日の復習・期限超過・C/B判定</summary><StudyQueuePanel items={studyQueue} onStart={loadProblem} onRestoreLatest={(item) => item.latestHistory && restoreHistory(item.latestHistory)} onExportCsv={exportStudyQueueCsv} /></details><details className="panel management-panel"><summary>合格到達マップ</summary><MasteryMapPanel histories={histories} onOpenProblem={loadProblem} onExportCsv={exportMasteryCsv} /></details><details className="panel management-panel"><summary>白紙再現カード</summary><MistakeCardPanel problem={problem} answer={answer} cards={mistakeCards} onSave={saveCard} onDelete={removeCard} onExportCsv={exportMistakeCardsCsv} /></details><details className="panel management-panel"><summary>70点リカバリー表・90分セット</summary><RecoveryPlanPanel histories={histories} examSets={examSets} onExportCsv={exportRecoveryCsv} /><ExamSetPanel histories={histories} examSets={examSets} onSave={saveExamSetRecord} onOpenProblem={loadProblem} onExportCsv={exportExamSetCsv} /></details><details className="panel management-panel"><summary>履歴一覧・復習管理</summary><ReviewPanel histories={histories} /><HistoryPanel histories={histories} filter={historyFilter} onFilter={setHistoryFilter} onRestore={restoreHistory} onDelete={deleteHistoryEntry} onClear={clearAllHistories} /></details><details className="panel management-panel"><summary>CSV出力・JSONバックアップ・保存状態</summary><div className="top-actions management-actions"><button className="danger" onClick={clearCurrentAnswer}>現在問題IDの答案を全消去</button><button onClick={bulkAddAllAnswers}>保存済み答案を一括履歴追加</button><button onClick={exportCurrentCsv}>現在問題IDの答案CSV</button><button onClick={exportHistoryCsv}>履歴一覧CSV</button><button onClick={exportReviewCsv}>復習対象CSV</button><button onClick={exportProblemStatsCsv}>問題ID別成績CSV</button><button onClick={exportMissReasonCsv}>ミス原因別集計CSV</button><button onClick={exportDashboardCsv}>ダッシュボードCSV</button><button onClick={exportExamSetCsv}>90分セットCSV</button><button onClick={exportMasteryCsv}>合格到達マップCSV</button><button onClick={exportRecoveryCsv}>70点リカバリーCSV</button><button onClick={exportJson}>JSONバックアップ</button><label className="import-label">JSON復元<input type="file" accept="application/json" onChange={(event) => importJson(event.target.files?.[0])} /></label><button onClick={() => window.print()}>印刷</button></div><BackupSafetyPanel info={safetyInfo} onBackup={exportJson} onRestoreFile={importJson} onRefresh={refreshSafety} onMessage={setMessage} /><DashboardPanel histories={histories} answerCount={answers.length} onExportCsv={exportDashboardCsv} /></details></section>}
     </main>
   );
 }
