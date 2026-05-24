@@ -1,15 +1,12 @@
 import { useState } from 'react';
-import type { AnswerState, GradingStatus, MaterialPdf, MaterialPdfMapping, MissReason, ProblemDefinition, ReviewRank, TemplateDefinition } from '../types';
+import type { AnswerState, GradingStatus, MissReason, ProblemDefinition, ReviewRank, TemplateDefinition } from '../types';
 import { reviewDateForRank } from '../utils/dates';
 import { AnswerTable } from './AnswerTable';
-import { PdfViewerPanel } from './PdfViewerPanel';
 
 interface Props {
   problem: ProblemDefinition;
   answer: AnswerState;
   template: TemplateDefinition;
-  mapping?: MaterialPdfMapping;
-  pdf?: MaterialPdf;
   onChange: (answer: AnswerState) => void;
   onSave: () => void;
   onApplyRowPoints: () => void;
@@ -20,21 +17,14 @@ interface Props {
 const gradingStatuses: GradingStatus[] = ['正解', '部分正解', '不正解', '迷いあり'];
 const missReasons: MissReason[] = ['論点理解不足', '仕訳ミス', '借方貸方逆', '金額ミス', '集計ミス', '転記ミス', '表の入力位置ミス', '下書き不足', '時間不足', '解答欄形式の誤認', '問題文読み落とし', 'その他'];
 
-function extractedAnswer(mapping?: MaterialPdfMapping): string {
-  return [mapping?.answerText, mapping?.explanationText].filter(Boolean).join('\n\n') || '教材設定画面でPDFから解答・解説テキストを抽出すると、ここに端末内データとして表示されます。未設定の場合は、原本PDFまたは教材を見ながら自己採点してください。';
-}
-
 function nextRankFromStatus(status: GradingStatus): ReviewRank {
   if (status === '正解') return 'A';
   if (status === '部分正解' || status === '迷いあり') return 'B';
   return 'C';
 }
 
-export function FocusedGradingPanel({ problem, answer, template, mapping, pdf, onChange, onSave, onApplyRowPoints, onSubmitSelfGrading, onBackPractice }: Props) {
+export function FocusedGradingPanel({ problem, answer, template, onChange, onSave, onApplyRowPoints, onSubmitSelfGrading, onBackPractice }: Props) {
   const [status, setStatus] = useState<GradingStatus>('迷いあり');
-  const [showOriginal, setShowOriginal] = useState(false);
-  const [page, setPage] = useState(mapping?.answerPageStart ?? mapping?.answerPages?.[0] ?? mapping?.explanationPages?.[0] ?? 1);
-  const explanation = extractedAnswer(mapping);
 
   const setRank = (rank: ReviewRank) => onChange({ ...answer, rank, nextReviewDate: reviewDateForRank(rank) });
   const toggleReason = (reason: MissReason) => {
@@ -48,29 +38,25 @@ export function FocusedGradingPanel({ problem, answer, template, mapping, pdf, o
   };
 
   return (
-    <section className="focused-grading-panel">
+    <section className="focused-grading-panel self-grading-only">
       <section className="panel focused-question-card">
         <div className="focused-question-header">
           <div>
-            <p className="eyebrow">採点する</p>
+            <p className="eyebrow">採点・復習</p>
             <h2>{problem.displayId}：{problem.topic}</h2>
-            <p>自分の回答を見ながら、端末内に抽出した解答・解説テキストで自己採点します。</p>
+            <p>解答・解説はお手元の教材・PDFで確認し、この画面では自己採点、ミス原因、次回復習日だけを保存します。</p>
           </div>
           <div className="button-row focused-main-actions">
             <button className="secondary" onClick={onBackPractice}>答案入力へ戻る</button>
-            {pdf && <button className="secondary" onClick={() => setShowOriginal((current) => !current)}>{showOriginal ? '原本を閉じる' : '原本を見る'}</button>}
             <button onClick={onSave}>一時保存</button>
             <button className="accent" onClick={() => { void onSubmitSelfGrading({ status, score: answer.score, maxScore: answer.maxScore, memo: answer.reviewMemo }); }}>保存して次へ進む</button>
           </div>
         </div>
 
-        <div className="grading-text-grid">
-          <div className="problem-text-box">
-            <div className="problem-text-toolbar"><strong>解答・解説テキスト</strong><span>端末内PDF抽出データ</span></div>
-            <div className="problem-text-content explanation-text-content">{explanation}</div>
-          </div>
-          <div className="grading-control-box">
+        <div className="grading-text-grid simplified-grading-grid">
+          <div className="grading-control-box self-score-box">
             <h3>自己採点</h3>
+            <p className="notice-small">自動採点は行いません。教材の解答・解説を見ながら、得点と判定を入力してください。</p>
             <div className="status-button-grid">
               {gradingStatuses.map((item) => <button key={item} className={status === item ? 'accent' : 'secondary'} onClick={() => applyStatus(item)}>{item}</button>)}
             </div>
@@ -87,8 +73,6 @@ export function FocusedGradingPanel({ problem, answer, template, mapping, pdf, o
             <label>復習メモ<textarea value={answer.reviewMemo} onChange={(event) => onChange({ ...answer, reviewMemo: event.target.value })} placeholder="次回解く前に見る注意点" /></label>
           </div>
         </div>
-
-        {showOriginal && <PdfViewerPanel pdf={pdf} title={pdf?.title ?? 'PDF原本'} label="解答・解説原本" page={page} pageStart={mapping?.answerPageStart ?? 1} pageEnd={mapping?.explanationPageEnd ?? pdf?.pageCount ?? 1} onPageChange={setPage} onClose={() => setShowOriginal(false)} />}
       </section>
 
       <section className="focused-answer-area">
