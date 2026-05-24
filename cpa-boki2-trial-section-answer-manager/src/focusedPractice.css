@@ -1,6 +1,7 @@
 .focused-practice-panel,
 .focused-grading-panel,
-.material-text-setup {
+.material-text-setup,
+.question-card-learning-flow {
   display: grid;
   gap: 16px;
 }
@@ -17,9 +18,26 @@
   align-items: start;
 }
 
-.focused-main-actions {
-  justify-content: flex-end;
+.focused-main-actions { justify-content: flex-end; }
+
+.learning-top-bar {
+  position: sticky;
+  top: 70px;
+  z-index: 12;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 6px 18px rgba(0,0,0,.08);
 }
+
+.learning-top-bar strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.learning-top-bar span { font-weight: 900; color: #0f5c68; }
+.question-label { display: inline-flex; width: fit-content; margin: 0 0 8px; padding: 5px 12px; border-radius: 999px; background: #0f5c68; color: #fff; font-weight: 900; }
+.question-card-main { overflow: hidden; }
 
 .focused-question-meta {
   display: flex;
@@ -41,6 +59,8 @@
   border: 1px solid #d3e7e2;
 }
 
+.needs-review-pill { background: #fff7df !important; color: #865b00; border-color: #e9c56c !important; }
+
 .problem-text-box {
   display: grid;
   gap: 10px;
@@ -51,19 +71,9 @@
   padding: 14px;
 }
 
-.problem-text-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.problem-text-toolbar span {
-  color: #53676a;
-  font-size: 12px;
-  font-weight: 800;
-}
+.app-like-problem-box { background: #f8fbfa; }
+.problem-text-toolbar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
+.problem-text-toolbar span { color: #53676a; font-size: 12px; font-weight: 800; }
 
 .problem-text-content {
   white-space: pre-wrap;
@@ -77,24 +87,14 @@
   border: 1px solid #dfeae6;
 }
 
-.explanation-text-content {
-  max-height: 56vh;
-  font-size: 15px;
-}
+.app-like-problem-text { font-size: 18px; line-height: 1.95; }
+.choices-box { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: #fff; border: 1px solid #dfeae6; }
+.choices-box span { display: block; padding: 7px 9px; border-radius: 8px; background: #f4f8f6; font-weight: 700; }
+.explanation-text-content { max-height: 56vh; font-size: 15px; }
 
-.focused-answer-area {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-}
-
-.focused-answer-area .answer-panel {
-  border: 2px solid #d7eadf;
-}
-
-.focused-answer-area .answer-table-wrap {
-  max-height: 68vh;
-}
+.focused-answer-area { display: grid; gap: 10px; min-width: 0; }
+.focused-answer-area .answer-panel { border: 2px solid #d7eadf; }
+.focused-answer-area .answer-table-wrap { max-height: 68vh; }
 
 .focused-practice-panel .col-memo,
 .focused-practice-panel .col-grade,
@@ -104,157 +104,81 @@
 .focused-practice-panel th.col-points,
 .focused-practice-panel td.col-memo,
 .focused-practice-panel td.col-grade,
-.focused-practice-panel td.col-points {
-  display: none;
-}
+.focused-practice-panel td.col-points,
+.question-card-learning-flow .col-memo,
+.question-card-learning-flow .col-grade,
+.question-card-learning-flow .col-points,
+.question-card-learning-flow th.col-memo,
+.question-card-learning-flow th.col-grade,
+.question-card-learning-flow th.col-points,
+.question-card-learning-flow td.col-memo,
+.question-card-learning-flow td.col-grade,
+.question-card-learning-flow td.col-points { display: none; }
 
-.focused-practice-panel .journal-table {
-  min-width: 760px;
-}
+.focused-practice-panel .journal-table,
+.question-card-learning-flow .journal-table { min-width: 760px; }
 
-.grading-text-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(360px, .85fr);
-  gap: 16px;
-  align-items: start;
-}
+.mobile-journal-input { display: none; gap: 12px; }
+.journal-entry-card { display: grid; gap: 12px; padding: 14px; border-radius: 16px; background: #fff; border: 1px solid #d8e8e4; box-shadow: 0 4px 14px rgba(28,62,54,.06); }
+.journal-entry-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.journal-entry-card-header strong { font-size: 18px; color: #0f5c68; }
+.journal-entry-side { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: #f7fbf9; border: 1px solid #dce9e4; }
+.journal-entry-side h3 { margin: 0; font-size: 15px; }
+.journal-entry-side label { display: grid; gap: 5px; font-weight: 800; }
+.add-journal-entry { width: 100%; min-height: 48px; }
+.mobile-bottom-action { display: none; }
+.pc-answer-only { display: block; }
 
-.grading-control-box {
-  display: grid;
-  gap: 12px;
-  border: 1px solid #d8e8e4;
-  border-radius: 14px;
-  padding: 14px;
-  background: #fff;
-}
+.grading-text-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(360px, .85fr); gap: 16px; align-items: start; }
+.grading-control-box { display: grid; gap: 12px; border: 1px solid #d8e8e4; border-radius: 14px; padding: 14px; background: #fff; }
+.status-button-grid { display: grid; grid-template-columns: repeat(2, minmax(140px, 1fr)); gap: 8px; }
+.compact-check-list { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 
-.status-button-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(140px, 1fr));
-  gap: 8px;
-}
-
-.compact-check-list {
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-}
-
-.material-setup-main {
-  border: 2px solid #d7eadf;
-}
-
-.setup-step-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(240px, 1fr));
-  gap: 12px;
-  align-items: start;
-}
-
+.material-setup-main { border: 2px solid #d7eadf; }
+.setup-step-grid { display: grid; grid-template-columns: repeat(3, minmax(240px, 1fr)); gap: 12px; align-items: start; }
 .setup-step-card,
-.extraction-summary-card {
-  display: grid;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid #d8e8e4;
-  border-radius: 14px;
-  background: #fbfdfc;
-}
-
-.extraction-counts {
-  grid-template-columns: repeat(4, minmax(110px, 1fr));
-}
-
-.candidate-review-panel {
-  border: 2px solid #d7eadf;
-}
-
-.candidate-review-layout {
-  display: grid;
-  grid-template-columns: minmax(240px, 330px) minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-}
-
-.candidate-list {
-  display: grid;
-  gap: 8px;
-  max-height: 68vh;
-  overflow: auto;
-}
-
-.candidate-list-item {
-  display: grid;
-  gap: 4px;
-  text-align: left;
-  background: #eef7f4;
-  color: #173f35;
-  border: 1px solid #d8e8e4;
-}
-
-.candidate-list-item.active {
-  outline: 3px solid #0f5c68;
-  background: #fff;
-}
-
-.candidate-list-item small {
-  color: #53676a;
-}
-
+.extraction-summary-card { display: grid; gap: 10px; padding: 14px; border: 1px solid #d8e8e4; border-radius: 14px; background: #fbfdfc; }
+.extraction-counts { grid-template-columns: repeat(4, minmax(110px, 1fr)); }
+.candidate-review-panel { border: 2px solid #d7eadf; }
+.candidate-review-layout { display: grid; grid-template-columns: minmax(240px, 330px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.candidate-list { display: grid; gap: 8px; max-height: 68vh; overflow: auto; }
+.candidate-list-item { display: grid; gap: 4px; text-align: left; background: #eef7f4; color: #173f35; border: 1px solid #d8e8e4; }
+.candidate-list-item.active { outline: 3px solid #0f5c68; background: #fff; }
+.candidate-list-item small { color: #53676a; }
 .status-pill.good { background: #e6f6ea; color: #17633b; border-color: #a8d8b3; }
 .status-pill.warn { background: #fff7df; color: #865b00; border-color: #e9c56c; }
 .status-pill.danger { background: #fff0ef; color: #9d2f2f; border-color: #e5aaa6; }
-
-.candidate-editor {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-}
-
-.large-textarea {
-  min-height: 160px;
-  line-height: 1.65;
-}
-
-.compact-material-grid {
-  grid-template-columns: minmax(0, 1fr);
-}
+.candidate-editor { display: grid; gap: 12px; min-width: 0; }
+.large-textarea { min-height: 160px; line-height: 1.65; }
+.compact-material-grid { grid-template-columns: minmax(0, 1fr); }
 
 @media (max-width: 1100px) {
   .focused-question-header,
   .focused-answer-title,
   .grading-text-grid,
   .setup-step-grid,
-  .candidate-review-layout {
-    grid-template-columns: 1fr;
-  }
-  .focused-main-actions {
-    justify-content: stretch;
-  }
-  .focused-main-actions button {
-    flex: 1 1 160px;
-  }
+  .candidate-review-layout { grid-template-columns: 1fr; }
+  .focused-main-actions { justify-content: stretch; }
+  .focused-main-actions button { flex: 1 1 160px; }
 }
 
 @media (max-width: 760px) {
-  .problem-text-content {
-    font-size: 16px;
-    max-height: none;
-  }
-  .focused-answer-area .answer-table-wrap {
-    max-height: none;
-  }
+  .problem-text-content { font-size: 16px; max-height: none; }
+  .app-like-problem-text { font-size: 17px; line-height: 1.9; padding: 16px; }
+  .focused-answer-area .answer-table-wrap { max-height: none; }
   .focused-practice-panel .journal-table,
-  .focused-grading-panel .journal-table {
-    min-width: 720px;
-  }
-  .mode-nav {
-    position: static;
-  }
-  .app-shell {
-    width: min(100vw, 100%);
-    margin: 0 auto 32px;
-  }
+  .focused-grading-panel .journal-table,
+  .question-card-learning-flow .journal-table { min-width: 720px; }
+  .mode-nav { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .learning-top-bar { top: 0; border-radius: 0; margin: -4px -8px 0; }
+  .desktop-only-actions { display: none; }
+  .pc-answer-only { display: none; }
+  .mobile-journal-input { display: grid; }
+  .mobile-bottom-action { display: block; position: sticky; bottom: 0; z-index: 18; padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); background: linear-gradient(180deg, rgba(238,246,242,.1), #eef6f2 35%); }
+  .mobile-bottom-action button { width: 100%; min-height: 58px; font-size: 18px; font-weight: 900; border-radius: 14px; }
+  .question-card-main { padding: 14px; }
+  .focused-question-meta.subtle-meta span { font-size: 11px; padding: 4px 7px; }
+  .app-shell { width: min(100vw, 100%); margin: 0 auto 32px; padding: 0 8px; }
   .app-header,
-  .panel {
-    border-radius: 10px;
-  }
+  .panel { border-radius: 10px; }
 }
