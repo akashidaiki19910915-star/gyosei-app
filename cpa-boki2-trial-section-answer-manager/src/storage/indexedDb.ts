@@ -1,8 +1,8 @@
-import type { AnswerState, BackupMetadata, BackupPayload, ExamSetRecord, HistoryEntry, MistakeCard } from '../types';
+import type { AnswerState, BackupMetadata, BackupPayload, ExamSetRecord, HistoryEntry, MaterialPdf, MaterialPdfMapping, MistakeCard, PracticeSession, ReviewState } from '../types';
 
 const DB_NAME = 'cpa-boki2-trial-section-answer-manager';
-const DB_VERSION = 3;
-const STORES = ['answers', 'histories', 'settings', 'templates', 'backups', 'examSets', 'mistakeCards'] as const;
+const DB_VERSION = 4;
+const STORES = ['answers', 'histories', 'settings', 'templates', 'backups', 'examSets', 'mistakeCards', 'materialPdfs', 'materialPdfMappings', 'practiceSessions', 'reviewStates'] as const;
 
 type StoreName = (typeof STORES)[number];
 
@@ -91,6 +91,66 @@ export async function deleteMistakeCard(id: string): Promise<void> {
   await tx('mistakeCards', 'readwrite', (store) => store.delete(id));
 }
 
+export async function saveMaterialPdf(pdf: MaterialPdf): Promise<void> {
+  await tx('materialPdfs', 'readwrite', (store) => store.put(pdf));
+}
+
+export async function getMaterialPdfs(): Promise<MaterialPdf[]> {
+  const rows = await tx<MaterialPdf[]>('materialPdfs', 'readonly', (store) => store.getAll());
+  return rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function deleteMaterialPdf(id: string): Promise<void> {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(['materialPdfs', 'materialPdfMappings'], 'readwrite');
+    transaction.objectStore('materialPdfs').delete(id);
+    const mappingsRequest = transaction.objectStore('materialPdfMappings').getAll();
+    mappingsRequest.onsuccess = () => {
+      (mappingsRequest.result as MaterialPdfMapping[]).filter((mapping) => mapping.materialPdfId === id).forEach((mapping) => transaction.objectStore('materialPdfMappings').delete(mapping.id));
+    };
+    transaction.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error);
+    };
+  });
+}
+
+export async function saveMaterialPdfMapping(mapping: MaterialPdfMapping): Promise<void> {
+  await tx('materialPdfMappings', 'readwrite', (store) => store.put(mapping));
+}
+
+export async function getMaterialPdfMappings(): Promise<MaterialPdfMapping[]> {
+  const rows = await tx<MaterialPdfMapping[]>('materialPdfMappings', 'readonly', (store) => store.getAll());
+  return rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function deleteMaterialPdfMapping(id: string): Promise<void> {
+  await tx('materialPdfMappings', 'readwrite', (store) => store.delete(id));
+}
+
+export async function savePracticeSession(session: PracticeSession): Promise<void> {
+  await tx('practiceSessions', 'readwrite', (store) => store.put(session));
+}
+
+export async function getPracticeSessions(): Promise<PracticeSession[]> {
+  const rows = await tx<PracticeSession[]>('practiceSessions', 'readonly', (store) => store.getAll());
+  return rows.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+
+export async function saveReviewState(reviewState: ReviewState): Promise<void> {
+  await tx('reviewStates', 'readwrite', (store) => store.put(reviewState));
+}
+
+export async function getReviewStates(): Promise<ReviewState[]> {
+  const rows = await tx<ReviewState[]>('reviewStates', 'readonly', (store) => store.getAll());
+  return rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
 export async function getBackupMetadata(): Promise<BackupMetadata | null> {
   const row = await tx<BackupMetadata | undefined>('backups', 'readonly', (store) => store.get('backupMeta'));
   return row ?? null;
@@ -129,10 +189,11 @@ export async function recordRestoreMade(): Promise<BackupMetadata> {
 }
 
 export async function exportAllData(): Promise<BackupPayload> {
+  const materialPdfs = await getMaterialPdfs();
   return {
     exportedAt: new Date().toISOString(),
     appName: 'CPA日商簿記2級 試験対策編 解答・復習管理アプリ',
-    version: '1.2.0',
+    version: '1.3.0',
     answers: await getAllAnswers(),
     histories: await getHistories(),
     settings: await tx<Record<string, unknown>[]>('settings', 'readonly', (store) => store.getAll()),
@@ -140,6 +201,10 @@ export async function exportAllData(): Promise<BackupPayload> {
     backups: await tx<Record<string, unknown>[]>('backups', 'readonly', (store) => store.getAll()),
     examSets: await getExamSets(),
     mistakeCards: await getMistakeCards(),
+    materialPdfMappings: await getMaterialPdfMappings(),
+    materialPdfMetadata: materialPdfs.map(({ pdfBlob: _pdfBlob, ...metadata }) => metadata),
+    practiceSessions: await getPracticeSessions(),
+    reviewStates: await getReviewStates(),
     backupMetadata: await getBackupMetadata(),
   };
 }
@@ -147,8 +212,9 @@ export async function exportAllData(): Promise<BackupPayload> {
 export async function importAllData(payload: BackupPayload): Promise<void> {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
-    const transaction = db.transaction([...STORES], 'readwrite');
-    STORES.forEach((name) => transaction.objectStore(name).clear());
+    const importStores = STORES.filter((name) => name !== 'materialPdfs');
+    const transaction = db.transaction([...importStores], 'readwrite');
+    importStores.forEach((name) => transaction.objectStore(name).clear());
     payload.answers?.forEach((item) => transaction.objectStore('answers').put(item));
     payload.histories?.forEach((item) => transaction.objectStore('histories').put(item));
     payload.settings?.forEach((item) => transaction.objectStore('settings').put(item));
@@ -156,6 +222,9 @@ export async function importAllData(payload: BackupPayload): Promise<void> {
     payload.backups?.forEach((item) => transaction.objectStore('backups').put(item));
     payload.examSets?.forEach((item) => transaction.objectStore('examSets').put(item));
     payload.mistakeCards?.forEach((item) => transaction.objectStore('mistakeCards').put(item));
+    payload.materialPdfMappings?.forEach((item) => transaction.objectStore('materialPdfMappings').put(item));
+    payload.practiceSessions?.forEach((item) => transaction.objectStore('practiceSessions').put(item));
+    payload.reviewStates?.forEach((item) => transaction.objectStore('reviewStates').put(item));
     if (payload.backupMetadata) transaction.objectStore('backups').put(payload.backupMetadata);
     transaction.oncomplete = () => {
       db.close();
