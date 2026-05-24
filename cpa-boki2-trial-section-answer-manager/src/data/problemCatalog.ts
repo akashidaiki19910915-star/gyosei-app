@@ -1,4 +1,4 @@
-import type { ProblemDefinition, SectionId, Subject, TemplateId } from '../types';
+import type { ProblemDefinition, ProblemKind, SectionId, Subject, TemplateId } from '../types';
 
 type Row = [Subject, SectionId, string, string, string, TemplateId];
 
@@ -26,13 +26,23 @@ const rows: Row[] = [
   ['industrial', 'q5', '第5問対策', '5-3', '全部原価計算と直接原価計算', 'variableFullCosting'],
 ];
 
+function problemKindFromTemplate(templateId: TemplateId): ProblemKind {
+  if (templateId === 'journal') return 'journal';
+  if (templateId === 'genericNumber') return 'numericInput';
+  return 'calculationTable';
+}
+
 export const problemCatalog: ProblemDefinition[] = rows.map(([subject, sectionId, sectionLabel, displayId, topic, defaultTemplateId]) => ({
   id: `${subject}-${displayId}`,
+  qualificationId: 'nissho_boki2',
   subject,
+  subjectId: subject,
   sectionId,
   sectionLabel,
   displayId,
   topic,
+  topicId: displayId,
+  problemKind: problemKindFromTemplate(defaultTemplateId),
   defaultTemplateId,
 }));
 
