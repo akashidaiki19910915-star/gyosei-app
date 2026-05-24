@@ -1,0 +1,205 @@
+.disposable-panel {
+  margin-bottom: 12px;
+  border: 2px solid #b8dfc2;
+}
+
+.disposable-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+.resume-button {
+  min-height: 56px;
+  padding: 14px 20px;
+  font-size: 18px;
+  font-weight: 900;
+  background: #c95422;
+  box-shadow: 0 6px 16px rgba(201, 84, 34, .22);
+}
+
+.time-mode-panel {
+  margin-top: 16px;
+}
+
+.time-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.time-mode-button {
+  display: grid;
+  gap: 6px;
+  min-height: 92px;
+  align-content: start;
+  text-align: left;
+  background: #174f5e;
+}
+
+.time-mode-button strong {
+  font-size: 22px;
+}
+
+.time-mode-button span {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e4f4f1;
+}
+
+.legal-notice {
+  margin: 14px 0 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: #fff9e8;
+  border-left: 4px solid #c27a00;
+  line-height: 1.7;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.legal-notice.compact {
+  margin-top: 0;
+}
+
+.pdf-import-label {
+  width: fit-content;
+}
+
+.form-grid.three-columns {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.form-grid.four-columns {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.form-grid.six-columns {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.practice-workspace {
+  display: grid;
+  grid-template-columns: minmax(420px, .9fr) minmax(0, 1.1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.answer-workspace {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.pdf-study-panel {
+  min-width: 0;
+  position: sticky;
+  top: 12px;
+  align-self: start;
+}
+
+.pdf-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+  margin: 10px 0;
+}
+
+.pdf-toolbar label {
+  display: grid;
+  gap: 4px;
+  font-weight: 700;
+  min-width: 90px;
+}
+
+.pdf-toolbar input {
+  max-width: 96px;
+}
+
+.pdf-canvas-wrap {
+  width: 100%;
+  max-height: 72vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f8fbfa;
+  padding: 8px;
+}
+
+.pdf-canvas {
+  display: block;
+  max-width: none;
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(0,0,0,.08);
+}
+
+.study-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.self-grade-panel {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #dbe8e4;
+  border-radius: 12px;
+  background: #f7fbf9;
+}
+
+.self-grade-panel h3 {
+  margin-top: 0;
+}
+
+@media (max-width: 1500px) {
+  .time-mode-grid {
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
+  }
+
+  .practice-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .pdf-study-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 760px) {
+  .disposable-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .resume-button {
+    width: 100%;
+  }
+
+  .time-mode-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .time-mode-button {
+    min-height: 86px;
+  }
+
+  .pdf-canvas-wrap {
+    max-height: 58vh;
+  }
+
+  .study-actions {
+    justify-content: stretch;
+  }
+
+  .study-actions .resume-button {
+    width: 100%;
+  }
+}
