@@ -96,7 +96,7 @@ export function PdfMappingPanel({ pdfs, mappings, selectedProblemId, onSave, onD
           <label>メモ<input value={draft.memo} onChange={(event) => update({ memo: event.target.value })} placeholder="教材本文は入れず、ページ確認用の短いメモだけ" /></label>
         </div>
         <div className="button-row">
-          <button className="accent" disabled={!draft.materialPdfId} onClick={save}>紐付け保存</button>
+          <button className="accent" disabled={!draft.materialPdfId} onClick={() => { void save(); }}>紐付け保存</button>
           <button className="secondary" onClick={() => setDraft(blankMapping(selectedProblemId, pdfs[0]?.id ?? ''))}>新規作成</button>
         </div>
         <div className="table-wrap short-wrap">
@@ -113,7 +113,7 @@ export function PdfMappingPanel({ pdfs, mappings, selectedProblemId, onSave, onD
                     <td>{mapping.answerPageStart ? `${mapping.answerPageStart}-${mapping.answerPageEnd ?? mapping.answerPageStart}` : '-'}</td>
                     <td>{mapping.explanationPageStart ? `${mapping.explanationPageStart}-${mapping.explanationPageEnd ?? mapping.explanationPageStart}` : '-'}</td>
                     <td>{mapping.estimatedMinutes}</td><td>{mapping.difficulty}</td>
-                    <td><button onClick={() => { setDraft(mapping); onOpenProblem(mapping.problemId); }}>編集</button> <button className="danger" onClick={() => onDelete(mapping.id)}>削除</button></td>
+                    <td><button onClick={() => { setDraft(mapping); onOpenProblem(mapping.problemId); }}>編集</button> <button className="danger" onClick={() => { void onDelete(mapping.id); }}>削除</button></td>
                   </tr>
                 );
               })}
