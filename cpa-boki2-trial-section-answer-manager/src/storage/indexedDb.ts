@@ -6,6 +6,16 @@ const STORES = ['answers', 'histories', 'settings', 'templates', 'backups', 'exa
 
 type StoreName = (typeof STORES)[number];
 
+function stripExtractedTextFromMapping(mapping: MaterialPdfMapping): MaterialPdfMapping {
+  return {
+    ...mapping,
+    problemText: '',
+    answerText: '',
+    explanationText: '',
+    problemBlocks: mapping.problemBlocks?.map((block) => ({ ...block, questionText: '' })),
+  };
+}
+
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -190,10 +200,11 @@ export async function recordRestoreMade(): Promise<BackupMetadata> {
 
 export async function exportAllData(): Promise<BackupPayload> {
   const materialPdfs = await getMaterialPdfs();
+  const mappings = await getMaterialPdfMappings();
   return {
     exportedAt: new Date().toISOString(),
     appName: 'CPA日商簿記2級 試験対策編 解答・復習管理アプリ',
-    version: '1.3.0',
+    version: '1.4.0',
     answers: await getAllAnswers(),
     histories: await getHistories(),
     settings: await tx<Record<string, unknown>[]>('settings', 'readonly', (store) => store.getAll()),
@@ -201,7 +212,7 @@ export async function exportAllData(): Promise<BackupPayload> {
     backups: await tx<Record<string, unknown>[]>('backups', 'readonly', (store) => store.getAll()),
     examSets: await getExamSets(),
     mistakeCards: await getMistakeCards(),
-    materialPdfMappings: await getMaterialPdfMappings(),
+    materialPdfMappings: mappings.map(stripExtractedTextFromMapping),
     materialPdfMetadata: materialPdfs.map(({ pdfBlob: _pdfBlob, ...metadata }) => metadata),
     practiceSessions: await getPracticeSessions(),
     reviewStates: await getReviewStates(),
