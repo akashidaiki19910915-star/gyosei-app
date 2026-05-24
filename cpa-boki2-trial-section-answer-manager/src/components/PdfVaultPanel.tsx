@@ -77,7 +77,7 @@ export function PdfVaultPanel({ pdfs, onSavePdf, onDeletePdf, onMessage }: Props
           </label>
         </div>
         <label className="import-label pdf-import-label">PDFを選択して端末内に保存
-          <input type="file" accept="application/pdf" disabled={loading} onChange={(event) => importPdf(event.target.files?.[0])} />
+          <input type="file" accept="application/pdf" disabled={loading} onChange={(event) => { void importPdf(event.target.files?.[0]); }} />
         </label>
         <div className="table-wrap short-wrap">
           <table className="compact-table">
@@ -91,7 +91,7 @@ export function PdfVaultPanel({ pdfs, onSavePdf, onDeletePdf, onMessage }: Props
                   <td>{pdf.pageCount || '-'}</td>
                   <td>{formatFileSize(pdf.size)}</td>
                   <td>{formatDateTime(pdf.createdAt)}</td>
-                  <td><button className="danger" onClick={() => removePdf(pdf)}>削除</button></td>
+                  <td><button className="danger" onClick={() => { void removePdf(pdf); }}>削除</button></td>
                 </tr>
               ))}
               {pdfs.length === 0 && <tr><td colSpan={7}>PDF教材は未登録です。端末内のPDFを選択してください。</td></tr>}
