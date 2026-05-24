@@ -4,6 +4,8 @@ export type TemplateId = 'journal' | 'genericNumber' | 'equityStatement' | 'cons
 export type GradeMark = '未採点' | '○' | '△' | '×';
 export type ReviewRank = '' | 'A' | 'B' | 'C';
 export type MissReason = '論点理解不足' | '仕訳ミス' | '借方貸方逆' | '金額ミス' | '集計ミス' | '転記ミス' | '表の入力位置ミス' | '下書き不足' | '時間不足' | '解答欄形式の誤認' | '問題文読み落とし' | 'その他';
+export type TimeMode = '1分' | '3分' | '5分' | '10分' | '30分' | '90分';
+export type GradingStatus = '正解' | '部分正解' | '不正解' | '迷いあり';
 
 export interface ProblemDefinition {
   id: string;
@@ -218,6 +220,81 @@ export interface RecoveryPlan {
   latestExamSet?: ExamSetRecord;
 }
 
+export interface MaterialPdf {
+  id: string;
+  title: string;
+  sourceName: string;
+  examType: '日商簿記2級';
+  bookType: '商業簿記' | '工業簿記' | 'その他';
+  fileName: string;
+  mimeType: string;
+  size: number;
+  pageCount: number;
+  pdfBlob: Blob;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MaterialPdfMetadata = Omit<MaterialPdf, 'pdfBlob'>;
+
+export interface MaterialPdfMapping {
+  id: string;
+  problemId: string;
+  displayId: string;
+  materialPdfId: string;
+  problemPageStart: number;
+  problemPageEnd: number;
+  answerPageStart?: number;
+  answerPageEnd?: number;
+  explanationPageStart?: number;
+  explanationPageEnd?: number;
+  estimatedMinutes: TimeMode;
+  difficulty: '易' | '標準' | '難';
+  memo: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReviewState {
+  id: string;
+  problemId: string;
+  correctStreak: number;
+  wrongStreak: number;
+  lastResult: GradingStatus | '';
+  lastReviewedAt: string;
+  nextReviewDate: string;
+  intervalDays: number;
+  easeLevel: number;
+  updatedAt: string;
+}
+
+export interface GradingResult {
+  status: GradingStatus | '';
+  score: number;
+  maxScore: number;
+  scoreRate: number;
+  autoGraded: false;
+  detailRows: string[];
+}
+
+export interface PracticeSession {
+  id: string;
+  examType: '日商簿記2級';
+  problemId: string;
+  startedAt: string;
+  submittedAt: string;
+  durationSeconds: number;
+  selectedTimeMode: TimeMode;
+  answerSnapshot?: AnswerState;
+  gradingMode: 'self';
+  gradingResult: GradingResult;
+  reviewState?: ReviewState;
+  openedAnswer: boolean;
+  openedExplanation: boolean;
+  memo: string;
+  completed: boolean;
+}
+
 export interface BackupPayload {
   exportedAt: string;
   appName: string;
@@ -229,5 +306,9 @@ export interface BackupPayload {
   backups?: Record<string, unknown>[];
   examSets?: ExamSetRecord[];
   mistakeCards?: MistakeCard[];
+  materialPdfMappings?: MaterialPdfMapping[];
+  materialPdfMetadata?: MaterialPdfMetadata[];
+  practiceSessions?: PracticeSession[];
+  reviewStates?: ReviewState[];
   backupMetadata?: BackupMetadata | null;
 }
