@@ -2,11 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { AnswerTable, createRows } from './components/AnswerTable';
 import { BackupSafetyPanel } from './components/BackupSafetyPanel';
 import { DashboardPanel } from './components/DashboardPanel';
+import { DisposableStudyPanel } from './components/DisposableStudyPanel';
 import { ExamSetPanel } from './components/ExamSetPanel';
 import { ExampleGuide } from './components/ExampleGuide';
 import { HistoryPanel } from './components/HistoryPanel';
 import { MasteryMapPanel } from './components/MasteryMapPanel';
 import { MistakeCardPanel } from './components/MistakeCardPanel';
+import { PdfMappingPanel } from './components/PdfMappingPanel';
+import { PdfStudyPanel } from './components/PdfStudyPanel';
+import { PdfVaultPanel } from './components/PdfVaultPanel';
 import { ProblemSelector } from './components/ProblemSelector';
 import { RecoveryPlanPanel } from './components/RecoveryPlanPanel';
 import { ReviewPanel } from './components/ReviewPanel';
@@ -15,12 +19,41 @@ import { StudyQueuePanel } from './components/StudyQueuePanel';
 import { Timer } from './components/Timer';
 import { getProblemById, problemCatalog } from './data/problemCatalog';
 import { getTemplateById } from './data/templateCatalog';
-import { addHistory, clearHistories, deleteHistory, deleteMistakeCard, exportAllData, getAllAnswers, getAnswer, getBackupMetadata, getExamSets, getHistories, getMistakeCards, importAllData, recordBackupMade, saveAnswer, saveExamSet, saveMistakeCard } from './storage/indexedDb';
-import type { AnswerState, BackupMetadata, BackupPayload, ExamSetRecord, HistoryEntry, MistakeCard, StorageSafetyInfo, TemplateId } from './types';
+import {
+  addHistory,
+  clearHistories,
+  deleteHistory,
+  deleteMaterialPdf,
+  deleteMaterialPdfMapping,
+  deleteMistakeCard,
+  exportAllData,
+  getAllAnswers,
+  getAnswer,
+  getBackupMetadata,
+  getExamSets,
+  getHistories,
+  getMaterialPdfMappings,
+  getMaterialPdfs,
+  getMistakeCards,
+  getPracticeSessions,
+  getReviewStates,
+  importAllData,
+  recordBackupMade,
+  saveAnswer,
+  saveExamSet,
+  saveMaterialPdf,
+  saveMaterialPdfMapping,
+  saveMistakeCard,
+  savePracticeSession,
+  saveReviewState,
+} from './storage/indexedDb';
+import type { AnswerState, BackupMetadata, BackupPayload, ExamSetRecord, GradingStatus, HistoryEntry, MaterialPdf, MaterialPdfMapping, MistakeCard, PracticeSession, ReviewState, StorageSafetyInfo, TemplateId, TimeMode } from './types';
 import { currentAnswerCsvRows, dashboardCsvRows, downloadCsv, downloadText, examSetCsvRows, historyCsvRows, masteryMapCsvRows, missReasonCsvRows, mistakeCardCsvRows, problemStatsCsvRows, recoveryPlanCsvRows, reviewTargetCsvRows, studyQueueCsvRows } from './utils/csv';
+import { chooseProblemForTimeMode, chooseQuickStartProblem, latestUnfinishedSession } from './utils/disposableStudy';
 import { isDueTodayOrEarlier, nowIso, reviewDateForRank } from './utils/dates';
 import { buildMasteryMap } from './utils/mastery';
 import { buildRecoveryPlan } from './utils/recovery';
+import { rankFromSelfGrading, updateReviewStateFromGrading } from './utils/reviewScheduler';
 import { draftSummary, hasMeaningfulAnswer, sumRowPoints } from './utils/scoring';
 import { getStorageSafetyInfo } from './utils/storageSafety';
 import { buildStudyQueue } from './utils/studyQueue';
@@ -106,6 +139,13 @@ function buildHistory(answer: AnswerState): HistoryEntry {
   };
 }
 
+function secondsBetween(start: string, end: string): number {
+  const startMs = new Date(start).getTime();
+  const endMs = new Date(end).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return 0;
+  return Math.max(0, Math.round((endMs - startMs) / 1000));
+}
+
 export default function App() {
   const [problemId, setProblemId] = useState(problemCatalog[0].id);
   const [answer, setAnswer] = useState<AnswerState>(() => createAnswer(problemCatalog[0].id, problemCatalog[0].defaultTemplateId));
@@ -113,6 +153,11 @@ export default function App() {
   const [histories, setHistories] = useState<HistoryEntry[]>([]);
   const [examSets, setExamSets] = useState<ExamSetRecord[]>([]);
   const [mistakeCards, setMistakeCards] = useState<MistakeCard[]>([]);
+  const [materialPdfs, setMaterialPdfs] = useState<MaterialPdf[]>([]);
+  const [pdfMappings, setPdfMappings] = useState<MaterialPdfMapping[]>([]);
+  const [practiceSessions, setPracticeSessions] = useState<PracticeSession[]>([]);
+  const [reviewStates, setReviewStates] = useState<ReviewState[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState('');
   const [, setBackupMeta] = useState<BackupMetadata | null>(null);
   const [safetyInfo, setSafetyInfo] = useState<StorageSafetyInfo | null>(null);
   const [message, setMessage] = useState('待機中');
@@ -123,6 +168,13 @@ export default function App() {
   const studyQueue = useMemo(() => buildStudyQueue(histories), [histories]);
   const masteryMap = useMemo(() => buildMasteryMap(histories), [histories]);
   const recoveryPlan = useMemo(() => buildRecoveryPlan(histories, examSets), [histories, examSets]);
+  const activeSession = useMemo(() => practiceSessions.find((session) => session.id === activeSessionId) ?? latestUnfinishedSession(practiceSessions) ?? null, [practiceSessions, activeSessionId]);
+  const currentReviewState = useMemo(() => reviewStates.find((state) => state.problemId === problemId), [reviewStates, problemId]);
+  const quickChoice = useMemo(() => chooseQuickStartProblem({ sessions: practiceSessions, studyQueue, masteryMap }), [practiceSessions, studyQueue, masteryMap]);
+  const quickHint = useMemo(() => {
+    const quickProblem = getProblemById(quickChoice.problemId);
+    return `推奨：${quickProblem.sectionLabel} ${quickProblem.displayId} ${quickProblem.topic}（${quickChoice.reason}）`;
+  }, [quickChoice]);
 
   async function refreshAnswers() {
     setAnswers((await getAllAnswers()).map(normalizeAnswer));
@@ -140,6 +192,22 @@ export default function App() {
     setMistakeCards(await getMistakeCards());
   }
 
+  async function loadMaterialPdfs() {
+    setMaterialPdfs(await getMaterialPdfs());
+  }
+
+  async function loadPdfMappings() {
+    setPdfMappings(await getMaterialPdfMappings());
+  }
+
+  async function loadPracticeSessions() {
+    setPracticeSessions(await getPracticeSessions());
+  }
+
+  async function loadReviewStates() {
+    setReviewStates(await getReviewStates());
+  }
+
   async function refreshSafety() {
     const [historyRows, answerRows, meta] = await Promise.all([getHistories(), getAllAnswers(), getBackupMetadata()]);
     setBackupMeta(meta);
@@ -147,7 +215,7 @@ export default function App() {
   }
 
   async function refreshAll() {
-    await Promise.all([refreshAnswers(), loadHistories(), loadExamSets(), loadMistakeCards(), refreshSafety()]);
+    await Promise.all([refreshAnswers(), loadHistories(), loadExamSets(), loadMistakeCards(), loadMaterialPdfs(), loadPdfMappings(), loadPracticeSessions(), loadReviewStates(), refreshSafety()]);
   }
 
   async function loadProblem(nextProblemId: string) {
@@ -188,6 +256,67 @@ export default function App() {
       rows: createRows(nextTemplate.columns.length, nextTemplate.initialRows),
     });
   };
+
+  async function createPracticeSession(problemIdForSession: string, selectedTimeMode: TimeMode): Promise<PracticeSession> {
+    const problemDefinition = getProblemById(problemIdForSession);
+    const stored = await getAnswer(problemIdForSession);
+    const baseAnswer = normalizeAnswer(stored ?? createAnswer(problemIdForSession, problemDefinition.defaultTemplateId));
+    const now = nowIso();
+    return {
+      id: crypto.randomUUID(),
+      examType: '日商簿記2級',
+      problemId: problemIdForSession,
+      startedAt: now,
+      submittedAt: '',
+      durationSeconds: 0,
+      selectedTimeMode,
+      answerSnapshot: baseAnswer,
+      gradingMode: 'self',
+      gradingResult: { status: '', score: 0, maxScore: baseAnswer.maxScore, scoreRate: 0, autoGraded: false, detailRows: [] },
+      openedAnswer: false,
+      openedExplanation: false,
+      memo: '',
+      completed: false,
+    };
+  }
+
+  async function beginPractice(problemIdForSession: string, mode: TimeMode, reason: string): Promise<PracticeSession> {
+    const session = await createPracticeSession(problemIdForSession, mode);
+    await savePracticeSession(session);
+    setActiveSessionId(session.id);
+    await loadProblem(problemIdForSession);
+    await refreshAll();
+    setMessage(`${mode}モードで演習開始：${getProblemById(problemIdForSession).displayId}（${reason}）`);
+    return session;
+  }
+
+  async function quickResume() {
+    const unfinished = latestUnfinishedSession(practiceSessions);
+    if (unfinished) {
+      setActiveSessionId(unfinished.id);
+      await loadProblem(unfinished.problemId);
+      setMessage(`未完了セッションを再開しました：${getProblemById(unfinished.problemId).displayId}`);
+      return;
+    }
+    await beginPractice(quickChoice.problemId, quickChoice.mode, quickChoice.reason);
+  }
+
+  async function selectTimeMode(mode: TimeMode) {
+    const selectedProblemId = chooseProblemForTimeMode(mode, studyQueue, masteryMap, histories);
+    await beginPractice(selectedProblemId, mode, '空き時間から選択');
+  }
+
+  async function startCurrentSession(): Promise<PracticeSession> {
+    if (activeSession && activeSession.problemId === problem.id && !activeSession.completed) return activeSession;
+    const mapping = pdfMappings.find((item) => item.problemId === problem.id);
+    return beginPractice(problem.id, mapping?.estimatedMinutes ?? '10分', '現在の問題ID');
+  }
+
+  async function updatePracticeSession(session: PracticeSession) {
+    await savePracticeSession(session);
+    setActiveSessionId(session.id);
+    await loadPracticeSessions();
+  }
 
   const applyRowPoints = () => {
     const total = sumRowPoints(answer.rows);
@@ -236,6 +365,51 @@ export default function App() {
     setMessage('採点確定して履歴に追加しました');
   };
 
+  async function submitSelfGrading(input: { status: GradingStatus; score: number; maxScore: number; memo: string }) {
+    const submittedAt = nowIso();
+    const rank = rankFromSelfGrading(input.status, input.score, input.maxScore);
+    const reviewState = updateReviewStateFromGrading({ problemId: problem.id, previous: currentReviewState, status: input.status, score: input.score, maxScore: input.maxScore });
+    const scored = normalizeAnswer({
+      ...answer,
+      score: input.score,
+      maxScore: input.maxScore,
+      scored: true,
+      scoringStarted: true,
+      scoredAt: submittedAt,
+      rank,
+      nextReviewDate: reviewState.nextReviewDate,
+      reviewMemo: input.memo || answer.reviewMemo,
+      updatedAt: submittedAt,
+    });
+    const session = activeSession && activeSession.problemId === problem.id && !activeSession.completed ? activeSession : await startCurrentSession();
+    const completedSession: PracticeSession = {
+      ...session,
+      submittedAt,
+      durationSeconds: secondsBetween(session.startedAt, submittedAt),
+      answerSnapshot: scored,
+      gradingResult: {
+        status: input.status,
+        score: input.score,
+        maxScore: input.maxScore,
+        scoreRate: input.maxScore > 0 ? Math.round((input.score / input.maxScore) * 1000) / 10 : 0,
+        autoGraded: false,
+        detailRows: [],
+      },
+      reviewState,
+      openedAnswer: true,
+      memo: input.memo,
+      completed: true,
+    };
+    await saveAnswer(scored);
+    await addHistory(buildHistory(scored));
+    await saveReviewState(reviewState);
+    await savePracticeSession(completedSession);
+    setAnswer(scored);
+    setActiveSessionId('');
+    await refreshAll();
+    setMessage(`自己採点を保存しました。判定 ${rank}、次回復習日 ${reviewState.nextReviewDate}`);
+  }
+
   const restoreHistory = async (entry: HistoryEntry) => {
     if (!window.confirm('現在の画面を上書きして、この履歴を復元しますか？')) return;
     const restored = normalizeAnswer(entry.snapshot);
@@ -273,6 +447,30 @@ export default function App() {
     setMessage('白紙再現・解き直しカードを削除しました');
   };
 
+  const savePdf = async (pdf: MaterialPdf) => {
+    await saveMaterialPdf(pdf);
+    await loadMaterialPdfs();
+  };
+
+  const removePdf = async (id: string) => {
+    await deleteMaterialPdf(id);
+    await Promise.all([loadMaterialPdfs(), loadPdfMappings()]);
+    setMessage('PDF教材データと紐付けを削除しました。答案履歴・白紙再現カードは保持されています。');
+  };
+
+  const savePdfMapping = async (mapping: MaterialPdfMapping) => {
+    await saveMaterialPdfMapping(mapping);
+    await loadPdfMappings();
+    setMessage('PDFページ紐付けを保存しました');
+  };
+
+  const removePdfMapping = async (id: string) => {
+    if (!window.confirm('このPDFページ紐付けを削除しますか？PDF教材データと答案履歴は削除されません。')) return;
+    await deleteMaterialPdfMapping(id);
+    await loadPdfMappings();
+    setMessage('PDFページ紐付けを削除しました');
+  };
+
   const exportCurrentCsv = () => downloadCsv('current-answer.csv', currentAnswerCsvRows(answer, problem));
   const exportHistoryCsv = () => downloadCsv('history.csv', historyCsvRows(histories));
   const exportReviewCsv = () => downloadCsv('review-targets.csv', reviewTargetCsvRows(histories.filter((history) => isDueTodayOrEarlier(history.nextReviewDate))));
@@ -292,7 +490,7 @@ export default function App() {
     downloadText('cpa-boki2-backup.json', JSON.stringify({ ...payload, backupMetadata: meta }, null, 2), 'application/json;charset=utf-8');
     setBackupMeta(meta);
     await refreshSafety();
-    setMessage('JSONバックアップを出力しました');
+    setMessage('JSONバックアップを出力しました。PDF Blob本体はPR2対象のため含めていません。');
   };
 
   const importJson = async (file: File | undefined) => {
@@ -302,7 +500,7 @@ export default function App() {
       await importAllData(payload);
       await loadProblem(problemId);
       await refreshAll();
-      setMessage('JSONバックアップを復元しました');
+      setMessage('JSONバックアップを復元しました。PDF本体は端末内Vaultに残る仕様です。');
     } catch {
       setMessage('JSONの形式が不正です');
     }
@@ -347,6 +545,8 @@ export default function App() {
 
       <div className="status-bar">{message}</div>
 
+      <DisposableStudyPanel activeSession={activeSession} quickHint={quickHint} onQuickResume={quickResume} onSelectMode={selectTimeMode} />
+
       <div className="top-actions">
         <button className="danger" onClick={clearCurrentAnswer}>現在問題IDの答案を全消去</button>
         <button onClick={bulkAddAllAnswers}>保存済み答案を一括履歴追加</button>
@@ -362,6 +562,8 @@ export default function App() {
 
       <section className="management-stack">
         <StudyQueuePanel items={studyQueue} onStart={loadProblem} onRestoreLatest={(item) => item.latestHistory && restoreHistory(item.latestHistory)} onExportCsv={exportStudyQueueCsv} />
+        <PdfVaultPanel pdfs={materialPdfs} onSavePdf={savePdf} onDeletePdf={removePdf} onMessage={setMessage} />
+        <PdfMappingPanel pdfs={materialPdfs} mappings={pdfMappings} selectedProblemId={problemId} onSave={savePdfMapping} onDelete={removePdfMapping} onOpenProblem={loadProblem} />
         <MasteryMapPanel histories={histories} onOpenProblem={loadProblem} onExportCsv={exportMasteryCsv} />
         <RecoveryPlanPanel histories={histories} examSets={examSets} onExportCsv={exportRecoveryCsv} />
         <BackupSafetyPanel info={safetyInfo} onBackup={exportJson} onRestoreFile={importJson} onRefresh={refreshSafety} onMessage={setMessage} />
@@ -379,8 +581,13 @@ export default function App() {
             <p>使用テンプレート：{answer.templateName}</p>
           </section>
           <MistakeCardPanel problem={problem} answer={answer} cards={mistakeCards} onSave={saveCard} onDelete={removeCard} onExportCsv={exportMistakeCardsCsv} />
-          <ExampleGuide template={template} />
-          <AnswerTable answer={answer} template={template} onChange={updateAnswer} onApplyRowPoints={applyRowPoints} />
+          <div className="practice-workspace">
+            <PdfStudyPanel problem={problem} answer={answer} pdfs={materialPdfs} mappings={pdfMappings} activeSession={activeSession} reviewState={currentReviewState} onStartCurrentSession={startCurrentSession} onSessionChange={updatePracticeSession} onSelfGrade={submitSelfGrading} />
+            <div className="answer-workspace">
+              <ExampleGuide template={template} />
+              <AnswerTable answer={answer} template={template} onChange={updateAnswer} onApplyRowPoints={applyRowPoints} />
+            </div>
+          </div>
           <HistoryPanel histories={histories} filter={historyFilter} onFilter={setHistoryFilter} onRestore={restoreHistory} onDelete={deleteHistoryEntry} onClear={clearAllHistories} />
         </section>
 
