@@ -1,7 +1,12 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
+import type { ExtractedPdfPage } from '../types';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+function normalizePdfText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
 
 export async function getPdfPageCount(blob: Blob): Promise<number> {
   const data = new Uint8Array(await blob.arrayBuffer());
@@ -33,7 +38,23 @@ export async function extractPdfPageText(blob: Blob, pageNumber: number): Promis
   const safePage = Math.max(1, Math.min(pageNumber, pdf.numPages));
   const page = await pdf.getPage(safePage);
   const textContent = await page.getTextContent();
-  return textContent.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+  return normalizePdfText(textContent.items.map((item) => ('str' in item ? item.str : '')).join(' '));
+}
+
+export async function extractAllPdfPageTexts(blob: Blob, onProgress?: (page: number, pageCount: number) => void): Promise<ExtractedPdfPage[]> {
+  const data = new Uint8Array(await blob.arrayBuffer());
+  const task = pdfjsLib.getDocument({ data });
+  const pdf = await task.promise;
+  const extractedAt = new Date().toISOString();
+  const pages: ExtractedPdfPage[] = [];
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const textContent = await page.getTextContent();
+    const text = normalizePdfText(textContent.items.map((item) => ('str' in item ? item.str : '')).join(' '));
+    pages.push({ page: pageNumber, text, normalizedText: text.toLowerCase(), extractedAt });
+    onProgress?.(pageNumber, pdf.numPages);
+  }
+  return pages;
 }
 
 export function formatFileSize(size: number): string {
