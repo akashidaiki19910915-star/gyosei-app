@@ -12,6 +12,7 @@ interface Props {
   pdf?: MaterialPdf;
   onChange: (answer: AnswerState) => void;
   onSave: () => void;
+  onApplyRowPoints: () => void;
   onSubmitSelfGrading: (input: { status: GradingStatus; score: number; maxScore: number; memo: string }) => void | Promise<void>;
   onBackPractice: () => void;
 }
@@ -29,7 +30,7 @@ function nextRankFromStatus(status: GradingStatus): ReviewRank {
   return 'C';
 }
 
-export function FocusedGradingPanel({ problem, answer, template, mapping, pdf, onChange, onSave, onSubmitSelfGrading, onBackPractice }: Props) {
+export function FocusedGradingPanel({ problem, answer, template, mapping, pdf, onChange, onSave, onApplyRowPoints, onSubmitSelfGrading, onBackPractice }: Props) {
   const [status, setStatus] = useState<GradingStatus>('迷いあり');
   const [showOriginal, setShowOriginal] = useState(false);
   const [page, setPage] = useState(mapping?.answerPageStart ?? mapping?.answerPages?.[0] ?? mapping?.explanationPages?.[0] ?? 1);
@@ -91,8 +92,8 @@ export function FocusedGradingPanel({ problem, answer, template, mapping, pdf, o
       </section>
 
       <section className="focused-answer-area">
-        <div className="focused-answer-title"><div><p className="eyebrow">自分の回答</p><h2>{template.name}</h2></div></div>
-        <AnswerTable answer={answer} template={template} onChange={onChange} onApplyRowPoints={() => onChange({ ...answer, rowPointsTotal: answer.rowPointsTotal })} />
+        <div className="focused-answer-title"><div><p className="eyebrow">自分の回答</p><h2>{template.name}</h2></div><button className="secondary" onClick={onApplyRowPoints}>行別得点合計を反映</button></div>
+        <AnswerTable answer={answer} template={template} onChange={onChange} onApplyRowPoints={onApplyRowPoints} />
       </section>
     </section>
   );
