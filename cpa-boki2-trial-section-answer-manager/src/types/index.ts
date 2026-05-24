@@ -1,7 +1,10 @@
-export type QualificationId = 'nissho_boki2';
+export type QualificationId = 'nissho_boki2' | (string & {});
+export type ExamType = '日商簿記2級' | (string & {});
 export type Subject = 'commercial' | 'industrial';
 export type SectionId = 'q1' | 'q2' | 'q3' | 'q4' | 'q5';
 export type ProblemKind = 'journal' | 'calculationTable' | 'fillBlank' | 'numericInput' | 'multipleChoice' | 'shortAnswer' | 'essay' | 'oral';
+export type AnswerInputType = 'journalEntry' | 'singleChoice' | 'multipleChoice' | 'shortText' | 'numeric' | 'memoOnly';
+export type AnswerTemplateType = '仕訳テーブル' | '選択式' | '短答式' | '金額計算' | '記述式' | 'メモのみ';
 export type TemplateId = 'journal' | 'genericNumber' | 'equityStatement' | 'consolidation' | 'ledger' | 'financialStatements' | 'processCosting' | 'departmentCosting' | 'standardCosting' | 'cvp' | 'variableFullCosting' | 'freeTable';
 export type GradeMark = '未採点' | '○' | '△' | '×';
 export type ReviewRank = '' | 'A' | 'B' | 'C';
@@ -23,6 +26,65 @@ export interface ProblemDefinition {
   topic: string;
   problemKind?: ProblemKind;
   defaultTemplateId: TemplateId;
+}
+
+export interface QuestionCard {
+  id: string;
+  examType: ExamType;
+  subject: string;
+  section: string;
+  topic: string;
+  title: string;
+  questionNumber: string;
+  questionText: string;
+  choices: string[];
+  answerInputType: AnswerInputType;
+  answerTemplateType: AnswerTemplateType;
+  estimatedMinutes: number;
+  difficulty: '易' | '標準' | '難';
+  sourceMaterialId: string;
+  sourcePageStart: number;
+  sourcePageEnd: number;
+  answerPageStart?: number;
+  answerPageEnd?: number;
+  explanationPageStart?: number;
+  explanationPageEnd?: number;
+  extractionConfidence: number;
+  needsReview: boolean;
+  sourceProblemId?: string;
+  sourceMappingId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExtractionJob {
+  id: string;
+  materialPdfId: string;
+  examType: ExamType;
+  status: 'created' | 'extracting' | 'ready' | 'failed';
+  totalPages: number;
+  extractedPages: number;
+  candidateCount: number;
+  autoLinkedCount: number;
+  needsReviewCount: number;
+  unmatchedCount: number;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExtractionCandidate {
+  id: string;
+  jobId: string;
+  materialPdfId: string;
+  suggestedProblemId: string;
+  questionCardDraft: QuestionCard;
+  rawTextPreview: string;
+  confidence: number;
+  needsReview: boolean;
+  reason: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TemplateExampleGuide {
@@ -412,6 +474,9 @@ export interface BackupPayload {
   mistakeCards?: MistakeCard[];
   materialPdfMappings?: MaterialPdfMapping[];
   materialPdfMetadata?: MaterialPdfMetadata[];
+  questionCards?: QuestionCard[];
+  extractionJobs?: ExtractionJob[];
+  extractionCandidates?: ExtractionCandidate[];
   practiceSessions?: PracticeSession[];
   reviewStates?: ReviewState[];
   backupMetadata?: BackupMetadata | null;
