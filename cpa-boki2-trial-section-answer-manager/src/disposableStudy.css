@@ -86,13 +86,7 @@
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
 }
 
-.practice-workspace {
-  display: grid;
-  grid-template-columns: minmax(420px, .9fr) minmax(0, 1.1fr);
-  gap: 16px;
-  align-items: start;
-}
-
+.practice-workspace,
 .answer-workspace {
   display: grid;
   gap: 16px;
@@ -101,8 +95,6 @@
 
 .pdf-study-panel {
   min-width: 0;
-  position: sticky;
-  top: 12px;
   align-self: start;
 }
 
@@ -160,22 +152,249 @@
   margin-top: 0;
 }
 
+.redesigned-shell {
+  max-width: 1880px;
+}
+
+.compact-header {
+  margin-bottom: 10px;
+}
+
+.mode-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .08);
+}
+
+.mode-nav button {
+  min-height: 52px;
+  font-size: 16px;
+  font-weight: 900;
+  background: #ebf3f1;
+  color: #143a40;
+}
+
+.mode-nav button.active {
+  background: #0f5c68;
+  color: #fff;
+}
+
+.mode-section {
+  display: grid;
+  gap: 14px;
+}
+
+.mode-card {
+  border: 1px solid #d6e4e1;
+  box-shadow: 0 6px 18px rgba(23, 79, 94, .08);
+}
+
+.study-problem-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+}
+
+.mobile-study-tabs {
+  display: none;
+}
+
+.focused-study-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 26%) minmax(0, 74%);
+  gap: 16px;
+  align-items: start;
+}
+
+.focused-study-layout.show-pdf {
+  grid-template-columns: minmax(520px, 54%) minmax(0, 46%);
+}
+
+.study-pdf-column {
+  min-width: 0;
+}
+
+.study-pdf-column .pdf-study-panel {
+  position: sticky;
+  top: 88px;
+}
+
+.answer-main-column {
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+}
+
+.focused-study-layout.show-answer .study-pdf-column .pdf-canvas-wrap {
+  max-height: 38vh;
+}
+
+.focused-study-layout.show-answer .answer-main-column {
+  font-size: 1.02rem;
+}
+
+.focused-study-layout.show-answer .answer-main-column .panel,
+.grading-answer-column .panel {
+  border: 2px solid #b8dfc2;
+}
+
+.grading-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 58%) minmax(420px, 42%);
+  gap: 16px;
+  align-items: start;
+}
+
+.grading-answer-column,
+.grading-pdf-column {
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+}
+
+.material-setup-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, .95fr) minmax(520px, 1.05fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.setup-control-panel,
+.setup-preview-panel {
+  min-width: 0;
+}
+
+.setup-preview-panel {
+  position: sticky;
+  top: 88px;
+}
+
+.setup-canvas-wrap {
+  max-height: 76vh;
+}
+
+.mapping-list-panel {
+  grid-column: 1 / -1;
+}
+
+.progress-overview-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(460px, auto);
+  gap: 18px;
+  align-items: center;
+}
+
+.progress-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.progress-summary-grid div {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #f2f8f6;
+  border: 1px solid #d8e8e4;
+}
+
+.progress-summary-grid strong {
+  font-size: 28px;
+  color: #0f5c68;
+}
+
+.progress-summary-grid span {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.management-panel > summary,
+.mapping-list-panel > summary {
+  cursor: pointer;
+  font-weight: 900;
+  font-size: 18px;
+  padding: 8px 0;
+}
+
+.management-actions {
+  margin-top: 8px;
+}
+
+.sticky-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  padding: 10px 0;
+  background: linear-gradient(180deg, rgba(255,255,255,.75), #fff 35%);
+}
+
 @media (max-width: 1500px) {
   .time-mode-grid {
     grid-template-columns: repeat(3, minmax(160px, 1fr));
   }
 
-  .practice-workspace {
+  .focused-study-layout,
+  .focused-study-layout.show-pdf,
+  .grading-layout,
+  .material-setup-grid,
+  .progress-overview-panel {
     grid-template-columns: 1fr;
   }
 
-  .pdf-study-panel {
+  .study-pdf-column .pdf-study-panel,
+  .setup-preview-panel {
     position: static;
   }
 }
 
+@media (max-width: 900px) {
+  .mode-nav {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mobile-study-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    position: sticky;
+    top: 86px;
+    z-index: 15;
+    padding: 8px;
+    border-radius: 14px;
+    background: rgba(255,255,255,.96);
+    box-shadow: 0 4px 14px rgba(0,0,0,.08);
+  }
+
+  .mobile-study-tabs button.active {
+    background: #0f5c68;
+  }
+
+  .focused-study-layout.show-answer .study-pdf-column {
+    display: none;
+  }
+
+  .focused-study-layout.show-pdf .answer-main-column {
+    display: none;
+  }
+
+  .progress-summary-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 @media (max-width: 760px) {
-  .disposable-hero {
+  .disposable-hero,
+  .study-problem-strip {
     grid-template-columns: 1fr;
   }
 
@@ -201,5 +420,18 @@
 
   .study-actions .resume-button {
     width: 100%;
+  }
+
+  .mode-nav {
+    grid-template-columns: 1fr;
+    position: static;
+  }
+
+  .mobile-study-tabs {
+    top: 0;
+  }
+
+  .progress-summary-grid {
+    grid-template-columns: 1fr;
   }
 }
