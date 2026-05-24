@@ -5,8 +5,8 @@ import { formatDateTime } from '../utils/dates';
 interface Props {
   activeSession: PracticeSession | null;
   quickHint: string;
-  onQuickResume: () => void;
-  onSelectMode: (mode: TimeMode) => void;
+  onQuickResume: () => void | Promise<void>;
+  onSelectMode: (mode: TimeMode) => void | Promise<void>;
 }
 
 export function DisposableStudyPanel({ activeSession, quickHint, onQuickResume, onSelectMode }: Props) {
@@ -18,13 +18,13 @@ export function DisposableStudyPanel({ activeSession, quickHint, onQuickResume, 
           <h2>30秒以内に演習開始</h2>
           <p>{activeSession ? `未完了セッション：${activeSession.selectedTimeMode} / ${formatDateTime(activeSession.startedAt)}` : quickHint}</p>
         </div>
-        <button className="resume-button" onClick={onQuickResume}>今すぐ再開</button>
+        <button className="resume-button" onClick={() => { void onQuickResume(); }}>今すぐ再開</button>
       </div>
       <div className="time-mode-panel">
         <h3>空き時間から選ぶ</h3>
         <div className="time-mode-grid">
           {timeModes.map((mode) => (
-            <button key={mode} className="time-mode-button" onClick={() => onSelectMode(mode)}>
+            <button key={mode} className="time-mode-button" onClick={() => { void onSelectMode(mode); }}>
               <strong>{mode}</strong>
               <span>{timeModeDescription(mode)}</span>
             </button>
