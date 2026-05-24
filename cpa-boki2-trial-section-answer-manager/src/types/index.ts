@@ -48,6 +48,8 @@ export interface ProblemBlock {
   description?: string;
   problemPageStart?: number;
   problemPageEnd?: number;
+  cropTopPercent?: number;
+  cropBottomPercent?: number;
   answerPageStart?: number;
   answerPageEnd?: number;
   explanationPageStart?: number;
@@ -63,6 +65,16 @@ export interface AnswerBlockState {
   id: string;
   title: string;
   description?: string;
+  problemPageStart?: number;
+  problemPageEnd?: number;
+  cropTopPercent?: number;
+  cropBottomPercent?: number;
+  answerPageStart?: number;
+  answerPageEnd?: number;
+  explanationPageStart?: number;
+  explanationPageEnd?: number;
+  estimatedMinutes?: number;
+  difficulty?: BlockDifficulty;
   templateId: TemplateId;
   templateName: string;
   columns: string[];
