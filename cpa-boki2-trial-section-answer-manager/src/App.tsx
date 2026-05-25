@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
+import type { ChangeEvent as ReactChangeEvent, CompositionEvent as ReactCompositionEvent, FocusEvent as ReactFocusEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { externalProblemRefs } from './data/cpaTrialSections';
 import { approvedOriginalQuestions, originalQuestions } from './data/originalQuestions';
 import type { AnswerAttempt, AnswerLine, AnswerTemplateId, ExternalProblemRef, MissReason, PracticeItem, QuestionItem, ReviewRank, ReviewSchedule, StudyBackupPayload } from './originalStudyTypes';
@@ -10,142 +10,33 @@ type AppMode = 'solve' | 'grading' | 'review' | 'management';
 type ActiveStudyChoice = 'external_material' | 'built_in_question';
 type JournalField = 'debitAccount' | 'debitAmount' | 'creditAccount' | 'creditAmount' | 'memo';
 type EditingCell = { row: number; col: number } | null;
-
-type StorageSummary = {
-  questionCount: number;
-  externalRefCount: number;
-  attemptCount: number;
-  reviewCount: number;
-  usage: number | null;
-  quota: number | null;
-};
+type StorageSummary = { questionCount: number; externalRefCount: number; attemptCount: number; reviewCount: number; usage: number | null; quota: number | null };
+type AmountDrafts = Record<string, string>;
 
 const missReasons: MissReason[] = ['論点理解不足', '仕訳ミス', '借方貸方逆', '金額ミス', '集計ミス', '転記ミス', '表の入力位置ミス', '下書き不足', '時間不足', '解答形式の誤認', '問題文読み落とし', 'その他'];
 const templateLabels: Record<AnswerTemplateId, string> = { journal: '仕訳テンプレート', numeric: '数値入力テンプレート', statementTable: '表形式テンプレート', accountLedger: '勘定記入テンプレート', free: '自由テンプレート' };
 const journalFields: JournalField[] = ['debitAccount', 'debitAmount', 'creditAccount', 'creditAmount', 'memo'];
+const amountFields = new Set<JournalField | 'value' | 'value1' | 'value2' | 'value3' | 'value4'>(['debitAmount', 'creditAmount', 'value', 'value1', 'value2', 'value3', 'value4']);
 const imeBypassKeys = new Set(['Process', 'Hankaku', 'Zenkaku', 'Hiragana', 'Katakana', 'Eisu', 'KanaMode', 'Convert', 'NonConvert']);
 
-function todayString(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function addDays(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-function normalizeNumberText(value = ''): string {
-  return value
-    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
-    .replace(/[,，円\s　]/g, '')
-    .replace(/[^0-9.-]/g, '');
-}
-
-function formatAmount(value = ''): string {
-  const n = normalizeNumberText(value);
-  if (!n || n === '-' || n === '.') return n;
-  const num = Number(n);
-  return Number.isFinite(num) ? num.toLocaleString('ja-JP') : n;
-}
-
-function normalizeAccount(value = ''): string {
-  return value.replace(/[\s　]/g, '').trim();
-}
-
-function toNumber(value = ''): number | null {
-  const n = normalizeNumberText(value);
-  if (!n) return null;
-  const parsed = Number(n);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function isBuiltIn(item: PracticeItem): item is QuestionItem {
-  return item.studyMode === 'built_in_question';
-}
-
-function newLine(itemName = ''): AnswerLine {
-  return {
-    id: crypto.randomUUID(),
-    itemName,
-    debitDate: '',
-    debitSummary: '',
-    debitAccount: '',
-    debitAmount: '',
-    creditDate: '',
-    creditSummary: '',
-    creditAccount: '',
-    creditAmount: '',
-    value: '',
-    value1: '',
-    value2: '',
-    value3: '',
-    value4: '',
-    memo: '',
-    grade: '未採点',
-    points: 0,
-  };
-}
-
-function lineCountForTemplate(t: AnswerTemplateId): number {
-  return t === 'journal' ? 4 : t === 'accountLedger' ? 6 : t === 'statementTable' ? 8 : 4;
-}
-
-function emptyRows(item: PracticeItem): AnswerLine[] {
-  const source = isBuiltIn(item) && item.modelAnswer.length ? item.modelAnswer : Array.from({ length: lineCountForTemplate(item.answerTemplateId) }, () => newLine(''));
-  return source.map((row) => ({ ...newLine(row.itemName ?? ''), id: crypto.randomUUID() }));
-}
-
-function rowPointsTotal(rows: AnswerLine[]): number {
-  return rows.reduce((sum, row) => sum + (Number(row.points) || 0), 0);
-}
-
-function labelOf(item: PracticeItem): string {
-  return `${item.id}　${item.topic || item.title}`;
-}
-
-function itemKey(item: PracticeItem): string {
-  return `${item.studyMode}:${item.id}`;
-}
-
-function nextReviewDateFor(rank: ReviewRank, prev?: ReviewSchedule): string {
-  const a = rank === 'A' ? (prev?.aStreak ?? 0) + 1 : 0;
-  return addDays(rank === 'A' ? (a >= 3 ? 30 : a >= 2 ? 14 : 7) : rank === 'B' ? 3 : 1);
-}
-
-function buildReviewSchedule(item: PracticeItem, rank: ReviewRank, score: number, prev?: ReviewSchedule, manualDate?: string): ReviewSchedule {
-  const aStreak = rank === 'A' ? (prev?.aStreak ?? 0) + 1 : 0;
-  const cStreak = rank === 'C' ? (prev?.cStreak ?? 0) + 1 : 0;
-  return {
-    id: itemKey(item),
-    examType: 'boki2',
-    studyMode: item.studyMode,
-    questionId: item.id,
-    cpaTrialSectionRef: item.cpaTrialSectionRef,
-    nextReviewDate: manualDate || nextReviewDateFor(rank, prev),
-    latestRank: rank,
-    latestScore: score,
-    maxScore: item.maxScore,
-    aStreak,
-    cStreak,
-    attempts: (prev?.attempts ?? 0) + 1,
-    isWeak: cStreak >= 2 || prev?.isWeak === true,
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-function isEmptyJournalRow(row: AnswerLine): boolean {
-  return !normalizeAccount(row.debitAccount) && toNumber(row.debitAmount) === null && !normalizeAccount(row.creditAccount) && toNumber(row.creditAmount) === null;
-}
-
-function modelAnswerText(item: PracticeItem): string {
-  if (!isBuiltIn(item)) return '';
-  return item.modelAnswer
-    .map((r, i) => (item.answerTemplateId === 'journal'
-      ? `${i + 1}. 借方 ${r.debitAccount || '-'} ${formatAmount(r.debitAmount)} / 貸方 ${r.creditAccount || '-'} ${formatAmount(r.creditAmount)}`
-      : `${i + 1}. ${r.itemName || '項目'}：${formatAmount(r.value ?? r.value1)}${r.value2 ? ` / ${formatAmount(r.value2)}` : ''}`))
-    .join('\n');
-}
+function todayString(): string { return new Date().toISOString().slice(0, 10); }
+function addDays(days: number): string { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); }
+function normalizeNumberText(value = ''): string { return value.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/，/g, ',').replace(/[,円￥¥\s　]/g, '').replace(/[^0-9.-]/g, ''); }
+function formatAmount(value = ''): string { const n = normalizeNumberText(value); if (!n || n === '-' || n === '.') return n; const num = Number(n); return Number.isFinite(num) ? num.toLocaleString('ja-JP') : n; }
+function normalizeAccount(value = ''): string { return value.replace(/[\s　]/g, '').trim(); }
+function toNumber(value = ''): number | null { const n = normalizeNumberText(value); if (!n) return null; const parsed = Number(n); return Number.isFinite(parsed) ? parsed : null; }
+function isBuiltIn(item: PracticeItem): item is QuestionItem { return item.studyMode === 'built_in_question'; }
+function newLine(itemName = ''): AnswerLine { return { id: crypto.randomUUID(), itemName, debitDate: '', debitSummary: '', debitAccount: '', debitAmount: '', creditDate: '', creditSummary: '', creditAccount: '', creditAmount: '', value: '', value1: '', value2: '', value3: '', value4: '', memo: '', grade: '未採点', points: 0 }; }
+function lineCountForTemplate(t: AnswerTemplateId): number { return t === 'journal' ? 4 : t === 'accountLedger' ? 6 : t === 'statementTable' ? 8 : 4; }
+function emptyRows(item: PracticeItem): AnswerLine[] { const source = isBuiltIn(item) && item.modelAnswer.length ? item.modelAnswer : Array.from({ length: lineCountForTemplate(item.answerTemplateId) }, () => newLine('')); return source.map((row) => ({ ...newLine(row.itemName ?? ''), id: crypto.randomUUID() })); }
+function rowPointsTotal(rows: AnswerLine[]): number { return rows.reduce((sum, row) => sum + (Number(row.points) || 0), 0); }
+function labelOf(item: PracticeItem): string { return `${item.id}　${item.topic || item.title}`; }
+function itemKey(item: PracticeItem): string { return `${item.studyMode}:${item.id}`; }
+function nextReviewDateFor(rank: ReviewRank, prev?: ReviewSchedule): string { const a = rank === 'A' ? (prev?.aStreak ?? 0) + 1 : 0; return addDays(rank === 'A' ? (a >= 3 ? 30 : a >= 2 ? 14 : 7) : rank === 'B' ? 3 : 1); }
+function buildReviewSchedule(item: PracticeItem, rank: ReviewRank, score: number, prev?: ReviewSchedule, manualDate?: string): ReviewSchedule { const aStreak = rank === 'A' ? (prev?.aStreak ?? 0) + 1 : 0; const cStreak = rank === 'C' ? (prev?.cStreak ?? 0) + 1 : 0; return { id: itemKey(item), examType: 'boki2', studyMode: item.studyMode, questionId: item.id, cpaTrialSectionRef: item.cpaTrialSectionRef, nextReviewDate: manualDate || nextReviewDateFor(rank, prev), latestRank: rank, latestScore: score, maxScore: item.maxScore, aStreak, cStreak, attempts: (prev?.attempts ?? 0) + 1, isWeak: cStreak >= 2 || prev?.isWeak === true, updatedAt: new Date().toISOString() }; }
+function isEmptyJournalRow(row: AnswerLine): boolean { return !normalizeAccount(row.debitAccount) && toNumber(row.debitAmount) === null && !normalizeAccount(row.creditAccount) && toNumber(row.creditAmount) === null; }
+function modelAnswerText(item: PracticeItem): string { if (!isBuiltIn(item)) return ''; return item.modelAnswer.map((r, i) => item.answerTemplateId === 'journal' ? `${i + 1}. 借方 ${r.debitAccount || '-'} ${formatAmount(r.debitAmount)} / 貸方 ${r.creditAccount || '-'} ${formatAmount(r.creditAmount)}` : `${i + 1}. ${r.itemName || '項目'}：${formatAmount(r.value ?? r.value1)}${r.value2 ? ` / ${formatAmount(r.value2)}` : ''}`).join('\n'); }
+function amountKey(row: number, field: string): string { return `${row}:${field}`; }
 
 export default function App() {
   const [mode, setMode] = useState<AppMode>('solve');
@@ -159,6 +50,8 @@ export default function App() {
   const [rows, setRows] = useState<AnswerLine[]>(() => emptyRows(externalProblemRefs[0]));
   const [editingCell, setEditingCell] = useState<EditingCell>(null);
   const [isComposingInput, setIsComposingInput] = useState(false);
+  const [amountDrafts, setAmountDrafts] = useState<AmountDrafts>({});
+  const [activeAmountKey, setActiveAmountKey] = useState<string | null>(null);
   const [score, setScore] = useState(0);
   const [rank, setRank] = useState<ReviewRank>('B');
   const [manualReviewDate, setManualReviewDate] = useState('');
@@ -171,356 +64,90 @@ export default function App() {
   const [summary, setSummary] = useState<StorageSummary | null>(null);
 
   const approvedQuestions = useMemo(() => questions.filter((q) => q.verificationStatus === 'approved'), [questions]);
-  const selectedItem: PracticeItem = useMemo(() => (
-    choice === 'external_material'
-      ? (externalRefs.find((i) => i.id === selectedExternalId) ?? externalRefs[0])
-      : (approvedQuestions.find((i) => i.id === selectedQuestionId) ?? approvedQuestions[0] ?? questions[0])
-  ), [approvedQuestions, choice, externalRefs, questions, selectedExternalId, selectedQuestionId]);
+  const selectedItem: PracticeItem = useMemo(() => choice === 'external_material' ? (externalRefs.find((i) => i.id === selectedExternalId) ?? externalRefs[0]) : (approvedQuestions.find((i) => i.id === selectedQuestionId) ?? approvedQuestions[0] ?? questions[0]), [approvedQuestions, choice, externalRefs, questions, selectedExternalId, selectedQuestionId]);
   const canAutoGrade = isBuiltIn(selectedItem) && selectedItem.sourceType === 'initial_original' && selectedItem.verificationStatus === 'approved' && selectedItem.modelAnswer.length > 0 && (selectedItem.answerTemplateId === 'journal' || selectedItem.answerTemplateId === 'numeric');
   const latestReview = useMemo(() => reviews.find((r) => r.id === itemKey(selectedItem)), [reviews, selectedItem]);
   const dueCards = useMemo(() => {
     const today = todayString();
     const items: PracticeItem[] = [...externalRefs, ...approvedQuestions];
-    return reviews
-      .map((review) => ({ review, item: items.find((candidate) => itemKey(candidate) === review.id) }))
-      .filter((x): x is { review: ReviewSchedule; item: PracticeItem } => Boolean(x.item))
-      .sort((a, b) => (a.review.nextReviewDate < today ? 0 : 1) - (b.review.nextReviewDate < today ? 0 : 1) || (a.review.isWeak === b.review.isWeak ? 0 : a.review.isWeak ? -1 : 1) || a.review.nextReviewDate.localeCompare(b.review.nextReviewDate));
+    return reviews.map((review) => ({ review, item: items.find((candidate) => itemKey(candidate) === review.id) })).filter((x): x is { review: ReviewSchedule; item: PracticeItem } => Boolean(x.item)).sort((a, b) => (a.review.nextReviewDate < today ? 0 : 1) - (b.review.nextReviewDate < today ? 0 : 1) || (a.review.isWeak === b.review.isWeak ? 0 : a.review.isWeak ? -1 : 1) || a.review.nextReviewDate.localeCompare(b.review.nextReviewDate));
   }, [approvedQuestions, externalRefs, reviews]);
   const untouchedItems = useMemo(() => [...externalRefs, ...approvedQuestions].filter((item) => !attempts.some((a) => a.studyMode === item.studyMode && a.questionId === item.id)), [approvedQuestions, attempts, externalRefs]);
 
   async function refreshAll() {
     const [storedQuestions, storedRefs, attemptRows, reviewRows, storage] = await Promise.all([getStoredQuestions(), getStoredExternalProblemRefs(), getAttempts(), getReviewSchedules(), storageSummary()]);
-    const qMap = new Map<string, QuestionItem>();
-    originalQuestions.forEach((q) => qMap.set(q.id, q));
-    storedQuestions.forEach((q) => qMap.set(q.id, q));
-    const rMap = new Map<string, ExternalProblemRef>();
-    externalProblemRefs.forEach((r) => rMap.set(r.id, r));
-    storedRefs.forEach((r) => rMap.set(r.id, r));
-    setQuestions(Array.from(qMap.values()).sort((a, b) => a.id.localeCompare(b.id, 'ja')));
-    setExternalRefs(Array.from(rMap.values()).sort((a, b) => a.id.localeCompare(b.id, 'ja')));
-    setAttempts(attemptRows);
-    setReviews(reviewRows);
-    setSummary(storage);
+    const qMap = new Map<string, QuestionItem>(); originalQuestions.forEach((q) => qMap.set(q.id, q)); storedQuestions.forEach((q) => qMap.set(q.id, q));
+    const rMap = new Map<string, ExternalProblemRef>(); externalProblemRefs.forEach((r) => rMap.set(r.id, r)); storedRefs.forEach((r) => rMap.set(r.id, r));
+    setQuestions(Array.from(qMap.values()).sort((a, b) => a.id.localeCompare(b.id, 'ja'))); setExternalRefs(Array.from(rMap.values()).sort((a, b) => a.id.localeCompare(b.id, 'ja'))); setAttempts(attemptRows); setReviews(reviewRows); setSummary(storage);
   }
-
   useEffect(() => { void refreshAll(); }, []);
-  useEffect(() => {
-    setRows(emptyRows(selectedItem));
+  useEffect(() => { resetWorkingState(selectedItem); }, [selectedItem.id, selectedItem.studyMode]);
+
+  function resetWorkingState(item: PracticeItem) {
+    setRows(emptyRows(item));
     setEditingCell(null);
     setIsComposingInput(false);
+    setAmountDrafts({});
+    setActiveAmountKey(null);
     setScore(0);
     setRank('B');
     setManualReviewDate('');
     setSelectedReasons([]);
     setReviewMemo('');
     setGradingSummary('自己採点で進めてください。');
-  }, [selectedItem.id, selectedItem.studyMode]);
-
-  function updateRow(i: number, patch: Partial<AnswerLine>) {
-    setRows((cur) => cur.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
   }
-
-  function addRow() {
-    setRows((cur) => [...cur, newLine('')]);
-  }
-
-  function applyRowPoints() {
-    setScore(rowPointsTotal(rows));
-  }
-
-  function toggleReason(reason: MissReason) {
-    setSelectedReasons((cur) => (cur.includes(reason) ? cur.filter((x) => x !== reason) : [...cur, reason]));
-  }
-
-  function placeCaretAtEnd(input: HTMLInputElement) {
-    try {
-      const end = input.value.length;
-      input.setSelectionRange(end, end);
-    } catch {
-      // number-like or unsupported input types are ignored. All grid inputs are text inputs.
-    }
-  }
-
-  function focusInputElement(input: HTMLInputElement, options?: { keepClickPosition?: boolean }) {
-    input.focus({ preventScroll: true });
-    if (!options?.keepClickPosition) requestAnimationFrame(() => placeCaretAtEnd(input));
-  }
-
-  function focusGridCell(row: number, col: number) {
-    setTimeout(() => {
-      const input = document.querySelector(`[data-answer-grid="journal"][data-row-index="${row}"][data-col-index="${col}"]`) as HTMLInputElement | null;
-      if (input) focusInputElement(input);
-    }, 0);
-  }
-
-  function moveGridCell(row: number, col: number) {
-    const nextRow = Math.max(0, row);
-    const nextCol = Math.max(0, Math.min(journalFields.length - 1, col));
-    if (nextRow >= rows.length) setRows((cur) => [...cur, newLine('')]);
-    setEditingCell(null);
-    focusGridCell(nextRow, nextCol);
-  }
-
-  function shouldBypassGridKey(event: ReactKeyboardEvent<HTMLInputElement>): boolean {
-    const native = event.nativeEvent as KeyboardEvent & { keyCode?: number; which?: number };
-    return Boolean(
-      isComposingInput
-      || native.isComposing
-      || native.keyCode === 229
-      || native.which === 229
-      || imeBypassKeys.has(event.key)
-      || event.altKey
-      || event.ctrlKey
-      || event.metaKey,
-    );
-  }
-
-  function handleJournalKeyDown(event: ReactKeyboardEvent<HTMLInputElement>, row: number, col: number) {
+  function updateRow(i: number, patch: Partial<AnswerLine>) { setRows((cur) => cur.map((row, idx) => idx === i ? { ...row, ...patch } : row)); }
+  function addRow() { setRows((cur) => [...cur, newLine('')]); }
+  function applyRowPoints() { setScore(rowPointsTotal(rows)); }
+  function toggleReason(reason: MissReason) { setSelectedReasons((cur) => cur.includes(reason) ? cur.filter((x) => x !== reason) : [...cur, reason]); }
+  function removeAmountDraft(key: string) { setAmountDrafts((cur) => { const next = { ...cur }; delete next[key]; return next; }); }
+  function valueWithCommittedDrafts(sourceRows = rows): AnswerLine[] { return sourceRows.map((row, index) => { const next = { ...row }; (['debitAmount', 'creditAmount', 'value', 'value1', 'value2', 'value3', 'value4'] as const).forEach((field) => { const key = amountKey(index, field); if (amountDrafts[key] !== undefined) (next[field] as string | undefined) = normalizeNumberText(amountDrafts[key]); }); return next; }); }
+  function commitAmountDraft(rowIndex: number, field: JournalField | 'value' | 'value1' | 'value2' | 'value3' | 'value4') { const key = amountKey(rowIndex, field); const raw = amountDrafts[key]; if (raw === undefined) return; const normalized = normalizeNumberText(raw); updateRow(rowIndex, { [field]: normalized } as Partial<AnswerLine>); removeAmountDraft(key); if (activeAmountKey === key) setActiveAmountKey(null); }
+  function commitAllAmountDrafts(): AnswerLine[] { const committed = valueWithCommittedDrafts(); setRows(committed); setAmountDrafts({}); setActiveAmountKey(null); return committed; }
+  function placeCaretAtEnd(input: HTMLInputElement) { try { const end = input.value.length; input.setSelectionRange(end, end); } catch { /* text inputs only */ } }
+  function focusInputElement(input: HTMLInputElement, options?: { keepClickPosition?: boolean }) { input.focus({ preventScroll: true }); if (!options?.keepClickPosition) requestAnimationFrame(() => placeCaretAtEnd(input)); }
+  function focusGridCell(row: number, col: number) { setTimeout(() => { const input = document.querySelector(`[data-answer-grid="journal"][data-row-index="${row}"][data-col-index="${col}"]`) as HTMLInputElement | null; if (input) focusInputElement(input); }, 0); }
+  function moveGridCell(row: number, col: number) { const nextRow = Math.max(0, row); const nextCol = Math.max(0, Math.min(journalFields.length - 1, col)); if (nextRow >= rows.length) setRows((cur) => [...cur, newLine('')]); setEditingCell(null); focusGridCell(nextRow, nextCol); }
+  function shouldBypassGridKey(event: ReactKeyboardEvent<HTMLInputElement>): boolean { const native = event.nativeEvent as KeyboardEvent & { keyCode?: number; which?: number }; return Boolean(isComposingInput || native.isComposing || native.keyCode === 229 || native.which === 229 || imeBypassKeys.has(event.key) || event.altKey || event.ctrlKey || event.metaKey); }
+  function handleJournalKeyDown(event: ReactKeyboardEvent<HTMLInputElement>, row: number, col: number, field: JournalField) {
     if (shouldBypassGridKey(event)) return;
     const editing = editingCell?.row === row && editingCell?.col === col;
-
     if (editing) {
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'Home' || event.key === 'End') return;
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        setEditingCell(null);
-        moveGridCell(event.shiftKey ? row - 1 : row + 1, col);
-      }
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        setEditingCell(null);
-      }
-      if (event.key === 'F2') {
-        event.preventDefault();
-        setEditingCell(null);
-      }
+      if (event.key === 'Enter') { event.preventDefault(); if (amountFields.has(field)) commitAmountDraft(row, field); setEditingCell(null); moveGridCell(event.shiftKey ? row - 1 : row + 1, col); }
+      if (event.key === 'Escape') { event.preventDefault(); setEditingCell(null); }
+      if (event.key === 'F2') { event.preventDefault(); setEditingCell(null); }
       return;
     }
-
-    if (event.key === 'F2') {
-      event.preventDefault();
-      setEditingCell({ row, col });
-      const input = event.currentTarget;
-      requestAnimationFrame(() => focusInputElement(input));
-      return;
-    }
-    if (event.key === 'ArrowRight') { event.preventDefault(); moveGridCell(row, col + 1); return; }
-    if (event.key === 'ArrowLeft') { event.preventDefault(); moveGridCell(row, col - 1); return; }
-    if (event.key === 'ArrowDown') { event.preventDefault(); moveGridCell(row + 1, col); return; }
-    if (event.key === 'ArrowUp') { event.preventDefault(); moveGridCell(row - 1, col); return; }
-    if (event.key === 'Enter') { event.preventDefault(); moveGridCell(event.shiftKey ? row - 1 : row + 1, col); }
+    if (event.key === 'F2') { event.preventDefault(); setEditingCell({ row, col }); requestAnimationFrame(() => focusInputElement(event.currentTarget)); return; }
+    if (event.key === 'ArrowRight') { event.preventDefault(); if (amountFields.has(field)) commitAmountDraft(row, field); moveGridCell(row, col + 1); return; }
+    if (event.key === 'ArrowLeft') { event.preventDefault(); if (amountFields.has(field)) commitAmountDraft(row, field); moveGridCell(row, col - 1); return; }
+    if (event.key === 'ArrowDown') { event.preventDefault(); if (amountFields.has(field)) commitAmountDraft(row, field); moveGridCell(row + 1, col); return; }
+    if (event.key === 'ArrowUp') { event.preventDefault(); if (amountFields.has(field)) commitAmountDraft(row, field); moveGridCell(row - 1, col); return; }
+    if (event.key === 'Enter') { event.preventDefault(); if (amountFields.has(field)) commitAmountDraft(row, field); moveGridCell(event.shiftKey ? row - 1 : row + 1, col); }
   }
-
-  function handleJournalFocus(event: React.FocusEvent<HTMLInputElement>, row: number, col: number) {
-    if (editingCell?.row !== row || editingCell?.col !== col) {
-      requestAnimationFrame(() => placeCaretAtEnd(event.currentTarget));
-    }
-  }
-
-  function handleJournalClick(event: ReactMouseEvent<HTMLInputElement>, row: number, col: number) {
-    setEditingCell((current) => (current?.row === row && current?.col === col ? current : null));
-    focusInputElement(event.currentTarget, { keepClickPosition: false });
-  }
-
-  function handleJournalDoubleClick(event: ReactMouseEvent<HTMLInputElement>, row: number, col: number) {
-    setEditingCell({ row, col });
-    focusInputElement(event.currentTarget, { keepClickPosition: true });
-  }
-
-  function selectPracticeItem(item: PracticeItem) {
-    setChoice(item.studyMode);
-    if (item.studyMode === 'external_material') setSelectedExternalId(item.id);
-    else setSelectedQuestionId(item.id);
-    setMode('solve');
-  }
-
-  function autoGradeJournal(): { gradedRows: AnswerLine[]; total: number; summary: string } {
-    if (!isBuiltIn(selectedItem)) return { gradedRows: rows, total: rowPointsTotal(rows), summary: '自動採点対象外です。' };
-    const used = new Set<number>();
-    let total = 0;
-    const model = selectedItem.modelAnswer;
-    const gradedRows = rows.map((row) => {
-      if (isEmptyJournalRow(row)) return { ...row, grade: '要確認' as const, points: 0, memo: row.memo || '空行のため採点対象外' };
-      const matchIndex = model.findIndex((m, idx) => !used.has(idx) && normalizeAccount(row.debitAccount) === normalizeAccount(m.debitAccount) && toNumber(row.debitAmount) === toNumber(m.debitAmount) && normalizeAccount(row.creditAccount) === normalizeAccount(m.creditAccount) && toNumber(row.creditAmount) === toNumber(m.creditAmount));
-      if (matchIndex >= 0) {
-        used.add(matchIndex);
-        total += Number(model[matchIndex].points) || 0;
-        return { ...row, grade: '正解' as const, points: Number(model[matchIndex].points) || 0, memo: row.memo || '自動採点：正解' };
-      }
-      const reversed = model.some((m) => normalizeAccount(row.debitAccount) === normalizeAccount(m.creditAccount) && toNumber(row.debitAmount) === toNumber(m.creditAmount) && normalizeAccount(row.creditAccount) === normalizeAccount(m.debitAccount) && toNumber(row.creditAmount) === toNumber(m.debitAmount));
-      return { ...row, grade: '不正解' as const, points: 0, memo: reversed ? '借方貸方逆の可能性' : '勘定科目または金額が一致しません' };
-    });
-    return { gradedRows, total, summary: `仕訳テンプレートを自動採点しました。${total}/${selectedItem.maxScore}点` };
-  }
-
-  function autoGradeNumeric(): { gradedRows: AnswerLine[]; total: number; summary: string } {
-    if (!isBuiltIn(selectedItem)) return { gradedRows: rows, total: rowPointsTotal(rows), summary: '自動採点対象外です。' };
-    let total = 0;
-    const gradedRows = rows.map((row, index) => {
-      const model = selectedItem.modelAnswer[index];
-      if (!model) return { ...row, grade: '要確認' as const, points: 0, memo: row.memo || '模範解答行がありません' };
-      const ok = toNumber(row.value ?? row.value1) === toNumber(model.value ?? model.value1);
-      if (ok) total += Number(model.points) || 0;
-      return { ...row, grade: ok ? '正解' as const : '不正解' as const, points: ok ? Number(model.points) || 0 : 0, memo: row.memo || (ok ? '自動採点：正解' : '入力値が一致しません') };
-    });
-    return { gradedRows, total, summary: `数値入力テンプレートを自動採点しました。${total}/${selectedItem.maxScore}点` };
-  }
-
-  function autoGradeAndProceed() {
-    const result = selectedItem.answerTemplateId === 'journal' ? autoGradeJournal() : selectedItem.answerTemplateId === 'numeric' ? autoGradeNumeric() : { gradedRows: rows.map((r) => ({ ...r, grade: '要確認' as const })), total: rowPointsTotal(rows), summary: 'このテンプレートは自動採点未対応です。自己採点で確認してください。' };
-    setRows(result.gradedRows);
-    setScore(result.total);
-    setGradingSummary(result.summary);
-    const nextRank: ReviewRank = result.total === selectedItem.maxScore ? 'A' : result.total > 0 ? 'B' : 'C';
-    setRank(nextRank);
-    setManualReviewDate(nextReviewDateFor(nextRank, latestReview));
-    setMode('grading');
-  }
-
-  function proceedToGrading() {
-    applyRowPoints();
-    setGradingSummary(canAutoGrade ? '模範解答がありますが、今回は自己採点で進みました。' : '自己採点で進めてください。');
-    setMode('grading');
-  }
-
-  async function saveCurrentAttempt() {
-    const finalScore = score || rowPointsTotal(rows);
-    const review = buildReviewSchedule(selectedItem, rank, finalScore, latestReview, manualReviewDate);
-    const attempt: AnswerAttempt = {
-      id: crypto.randomUUID(),
-      examType: 'boki2',
-      studyMode: selectedItem.studyMode,
-      questionId: selectedItem.id,
-      questionTitle: selectedItem.title,
-      subject: selectedItem.subject,
-      section: selectedItem.section,
-      topic: selectedItem.topic,
-      cpaTrialSectionRef: selectedItem.cpaTrialSectionRef,
-      answeredAt: new Date().toISOString(),
-      answerTemplateId: selectedItem.answerTemplateId,
-      rows,
-      score: finalScore,
-      maxScore: selectedItem.maxScore,
-      rank,
-      missReasons: selectedReasons,
-      reviewMemo,
-      nextReviewDate: review.nextReviewDate,
-    };
-    await saveAttempt(attempt);
-    await saveReviewSchedule(review);
-    await refreshAll();
-    setMessage(`保存しました。次回復習日：${review.nextReviewDate}${review.isWeak ? '（苦手固定）' : ''}`);
-    const list = selectedItem.studyMode === 'external_material' ? externalRefs : approvedQuestions;
-    const next = list[(list.findIndex((i) => i.id === selectedItem.id) + 1) % list.length];
-    selectPracticeItem(next);
-  }
-
-  async function saveQuestionJson() {
-    try {
-      const parsed = JSON.parse(questionJson) as QuestionItem;
-      if (parsed.studyMode !== 'built_in_question') throw new Error('studyMode');
-      await saveQuestion({ ...parsed, sourceType: parsed.sourceType === 'initial_original' ? 'user_created' : parsed.sourceType, updatedAt: new Date().toISOString() });
-      await refreshAll();
-      setMessage('オリジナル問題を保存しました');
-    } catch {
-      setMessage('オリジナル問題JSONの保存に失敗しました');
-    }
-  }
-
-  async function saveExternalJson() {
-    try {
-      const parsed = JSON.parse(externalJson) as ExternalProblemRef;
-      if (parsed.studyMode !== 'external_material') throw new Error('studyMode');
-      await saveExternalProblemRef({ ...parsed, updatedAt: new Date().toISOString() });
-      await refreshAll();
-      setMessage('外部教材モード用問題IDを保存しました');
-    } catch {
-      setMessage('外部教材モード用JSONの保存に失敗しました');
-    }
-  }
-
-  async function handleExport() {
-    const payload = await exportStudyData(originalQuestions, externalProblemRefs);
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'cross-qualification-study-backup.json';
-    a.click();
-    URL.revokeObjectURL(url);
-    setMessage('JSONバックアップを作成しました');
-  }
-
-  async function handleImport(file?: File) {
-    if (!file) return;
-    try {
-      await importStudyData(JSON.parse(await file.text()) as StudyBackupPayload);
-      await refreshAll();
-      setMessage('JSON復元が完了しました');
-    } catch {
-      setMessage('JSON復元に失敗しました');
-    }
-  }
-
-  function renderStudyChoice() {
-    return <section className="study-choice-grid"><button className={choice === 'external_material' ? 'study-choice active' : 'study-choice'} onClick={() => setChoice('external_material')}><strong>CPA教材を見ながら解く</strong><span>手元の問題集・PDFを見ながら答案を入力し、自己採点と復習管理を行います。</span></button><button className={choice === 'built_in_question' ? 'study-choice active' : 'study-choice'} onClick={() => setChoice('built_in_question')}><strong>教材なしで解く</strong><span>検証済みのオリジナル短問を解き、解答解説を見て復習できます。</span></button></section>;
-  }
-
-  function renderProblemSelector() {
-    const options = choice === 'external_material' ? externalRefs : approvedQuestions;
-    const value = choice === 'external_material' ? selectedExternalId : selectedQuestionId;
-    return <section className="panel answer-summary-card"><label>{choice === 'external_material' ? '外部教材の問題ID' : 'approved オリジナル短問'}<select value={value} onChange={(e) => choice === 'external_material' ? setSelectedExternalId(e.target.value) : setSelectedQuestionId(e.target.value)}>{options.map((item) => <option key={item.id} value={item.id}>{labelOf(item)}</option>)}</select></label></section>;
-  }
-
-  function renderQuestionCard() {
-    return <section className="panel question-reference-card original-question-card"><p className="eyebrow">{choice === 'external_material' ? '外部教材モード' : '教材なしモード'}</p><h2>{labelOf(selectedItem)}</h2>{choice === 'external_material' ? <p className="readable-question-text">問題文・解答・解説はお手元のCPAラーニング問題集・PDF・紙教材で確認してください。この画面では、問題ID、答案入力、自己採点、復習管理だけを行います。</p> : <p className="readable-question-text">{isBuiltIn(selectedItem) ? selectedItem.questionText : ''}</p>}{isBuiltIn(selectedItem) && selectedItem.conditions.length > 0 && <div className="condition-list"><strong>条件</strong>{selectedItem.conditions.map((c) => <span key={c}>{c}</span>)}</div>}<div className="answer-summary-grid compact-meta-grid"><div><span>資格</span><strong>日商簿記2級</strong></div><div><span>科目</span><strong>{selectedItem.subject}</strong></div><div><span>大問対策</span><strong>{selectedItem.section}</strong></div><div><span>論点</span><strong>{selectedItem.topic}</strong></div><div><span>cpaTrialSectionRef</span><strong>{selectedItem.cpaTrialSectionRef}</strong></div><div><span>答案</span><strong>{templateLabels[selectedItem.answerTemplateId]}</strong></div>{choice === 'external_material' && <div><span>ページメモ</span><strong>{(selectedItem as ExternalProblemRef).pageMemo || '未設定'}</strong></div>}{isBuiltIn(selectedItem) && <div><span>検証</span><strong>{selectedItem.verificationStatus}</strong></div>}</div></section>;
-  }
-
-  function gradeOptions() {
-    return <><option>未採点</option><option>正解</option><option>不正解</option><option>要確認</option><option>○</option><option>△</option><option>×</option></>;
-  }
-
-  function journalInput(row: AnswerLine, index: number, field: JournalField, col: number, readOnly: boolean) {
-    const amount = field.includes('Amount');
-    const value = amount ? formatAmount(row[field] as string) : (row[field] as string) ?? '';
-    return <input
-      data-answer-grid="journal"
-      data-row-index={index}
-      data-col-index={col}
-      data-field={field}
-      value={value}
-      readOnly={readOnly}
-      disabled={readOnly}
-      lang={amount ? undefined : 'ja'}
-      inputMode={amount ? 'numeric' : 'text'}
-      autoComplete="off"
-      spellCheck={false}
-      onClick={(event) => handleJournalClick(event, index, col)}
-      onDoubleClick={(event) => handleJournalDoubleClick(event, index, col)}
-      onFocus={(event) => handleJournalFocus(event, index, col)}
-      onCompositionStart={() => setIsComposingInput(true)}
-      onCompositionEnd={(event) => { setIsComposingInput(false); if (amount) updateRow(index, { [field]: normalizeNumberText(event.currentTarget.value) } as Partial<AnswerLine>); }}
-      onKeyDown={(event) => handleJournalKeyDown(event, index, col)}
-      onChange={(event) => updateRow(index, { [field]: amount ? normalizeNumberText(event.target.value) : event.target.value } as Partial<AnswerLine>)}
-    />;
-  }
-
-  function renderAnswerInput(readOnly = false) {
-    if (selectedItem.answerTemplateId === 'journal') {
-      return <section className="answer-input-main original-answer-input"><div className="pc-answer-only"><table className="answer-table"><thead><tr><th>行</th><th>借方科目</th><th>借方金額</th><th>貸方科目</th><th>貸方金額</th><th>メモ</th><th>採点</th><th>得点</th></tr></thead><tbody>{rows.map((r, i) => <tr key={r.id}><td>{i + 1}</td><td>{journalInput(r, i, 'debitAccount', 0, readOnly)}</td><td>{journalInput(r, i, 'debitAmount', 1, readOnly)}</td><td>{journalInput(r, i, 'creditAccount', 2, readOnly)}</td><td>{journalInput(r, i, 'creditAmount', 3, readOnly)}</td><td>{journalInput(r, i, 'memo', 4, readOnly)}</td><td><select value={r.grade} disabled={readOnly} onChange={(e) => updateRow(i, { grade: e.target.value as AnswerLine['grade'] })}>{gradeOptions()}</select></td><td><input value={String(r.points || '')} disabled={readOnly} onChange={(e) => updateRow(i, { points: Number(normalizeNumberText(e.target.value)) || 0 })} /></td></tr>)}</tbody></table></div><div className="mobile-journal-input">{rows.map((r, i) => <article className="journal-entry-card" key={r.id}><h3>仕訳{i + 1}</h3><div className="journal-entry-side"><h4>借方</h4><label>借方科目<input value={r.debitAccount ?? ''} disabled={readOnly} onChange={(e) => updateRow(i, { debitAccount: e.target.value })} /></label><label>借方金額<input value={formatAmount(r.debitAmount)} disabled={readOnly} inputMode="numeric" onChange={(e) => updateRow(i, { debitAmount: normalizeNumberText(e.target.value) })} /></label></div><div className="journal-entry-side"><h4>貸方</h4><label>貸方科目<input value={r.creditAccount ?? ''} disabled={readOnly} onChange={(e) => updateRow(i, { creditAccount: e.target.value })} /></label><label>貸方金額<input value={formatAmount(r.creditAmount)} disabled={readOnly} inputMode="numeric" onChange={(e) => updateRow(i, { creditAmount: normalizeNumberText(e.target.value) })} /></label></div><label>メモ<input value={r.memo ?? ''} disabled={readOnly} onChange={(e) => updateRow(i, { memo: e.target.value })} /></label><label>採点<select value={r.grade} disabled={readOnly} onChange={(e) => updateRow(i, { grade: e.target.value as AnswerLine['grade'] })}>{gradeOptions()}</select></label><label>得点<input value={String(r.points || '')} disabled={readOnly} inputMode="numeric" onChange={(e) => updateRow(i, { points: Number(normalizeNumberText(e.target.value)) || 0 })} /></label></article>)}</div></section>;
-    }
-    return <section className="answer-input-main original-answer-input"><table className="answer-table"><thead><tr><th>行</th><th>項目名</th><th>入力値</th><th>メモ</th><th>採点</th><th>得点</th></tr></thead><tbody>{rows.map((r, i) => <tr key={r.id}><td>{i + 1}</td><td><input value={r.itemName ?? ''} disabled={readOnly} onChange={(e) => updateRow(i, { itemName: e.target.value })} /></td><td><input value={formatAmount(r.value ?? r.value1)} disabled={readOnly} onChange={(e) => updateRow(i, selectedItem.answerTemplateId === 'numeric' ? { value: normalizeNumberText(e.target.value) } : { value1: normalizeNumberText(e.target.value) })} /></td><td><input value={r.memo ?? ''} disabled={readOnly} onChange={(e) => updateRow(i, { memo: e.target.value })} /></td><td><select value={r.grade} disabled={readOnly} onChange={(e) => updateRow(i, { grade: e.target.value as AnswerLine['grade'] })}>{gradeOptions()}</select></td><td><input value={String(r.points || '')} disabled={readOnly} onChange={(e) => updateRow(i, { points: Number(normalizeNumberText(e.target.value)) || 0 })} /></td></tr>)}</tbody></table></section>;
-  }
-
-  function renderActionBar() {
-    const label = canAutoGrade ? '自動採点して採点へ進む' : isBuiltIn(selectedItem) ? '自己採点へ進む' : '採点へ進む';
-    return <div className="button-row answer-action-bar"><button className="secondary" onClick={addRow}>＋ 行を追加</button><button className="secondary" onClick={applyRowPoints}>行別得点合計を問題得点へ反映</button><button onClick={() => setMessage('一時保存しました。採点保存は「保存して次へ」で履歴に残ります。')}>一時保存</button><button className="accent" onClick={canAutoGrade ? autoGradeAndProceed : proceedToGrading}>{label}</button>{isBuiltIn(selectedItem) && !canAutoGrade && <p className="warning-text">この問題は自動採点用の模範解答が未登録です。自己採点で進めてください。</p>}</div>;
-  }
-
-  function renderModelAnswer() {
-    if (!isBuiltIn(selectedItem)) return null;
-    return <section className="panel model-answer-card"><p className="eyebrow">模範解答・解説</p><pre>{modelAnswerText(selectedItem)}</pre><p className="readable-question-text">{selectedItem.explanation}</p></section>;
-  }
-
-  return <main className="app-shell simplified-shell original-study-app"><header className="app-header compact-header"><div><h1>資格横断型 問題演習・採点・復習管理アプリ</h1><p>簿記2級では「CPA教材を見ながら解く」と「教材なしで解く」の2モードを使います。PDF抽出・教材本文取り込みは行いません。</p></div><div className="practice-progress-box"><strong>{externalRefs.length}</strong><span>外部教材区分</span></div></header><nav className="mode-nav"><button className={mode === 'solve' ? 'active' : ''} onClick={() => setMode('solve')}>今すぐ解く</button><button className={mode === 'grading' ? 'active' : ''} onClick={() => setMode('grading')}>採点する</button><button className={mode === 'review' ? 'active' : ''} onClick={() => setMode('review')}>復習する</button><button className={mode === 'management' ? 'active' : ''} onClick={() => setMode('management')}>管理</button></nav><div className="status-bar">{message}</div>{mode === 'solve' && <section className="mode-section solve-mode-section">{renderStudyChoice()}{renderProblemSelector()}{renderQuestionCard()}<section className="focused-answer-area answer-only-main"><div className="focused-answer-title"><div><p className="eyebrow">答案入力</p><h2>{templateLabels[selectedItem.answerTemplateId]}</h2></div></div>{renderAnswerInput(false)}{renderActionBar()}</section></section>}{mode === 'grading' && <section className="mode-section grading-mode-section">{renderQuestionCard()}<section className="focused-answer-area"><div className="focused-answer-title"><div><p className="eyebrow">自分の答案・行別採点</p><h2>{selectedItem.title}</h2></div><strong>{gradingSummary}</strong></div>{renderAnswerInput(false)}</section>{renderModelAnswer()}<section className="panel self-score-box"><h2>自己採点</h2><div className="score-grid"><label>問題得点<input type="number" value={score} onChange={(e) => setScore(Number(e.target.value || 0))} /></label><label>満点<input type="number" value={selectedItem.maxScore} disabled /></label><label>A/B/C判定<select value={rank} onChange={(e) => { const next = e.target.value as ReviewRank; setRank(next); setManualReviewDate(nextReviewDateFor(next, latestReview)); }}><option value="A">A：自力で解けた・説明できる</option><option value="B">B：正解または惜しいが手順に不安</option><option value="C">C：不正解・解説なしでは再現できない</option></select></label><label>次回復習日<input type="date" value={manualReviewDate || nextReviewDateFor(rank, latestReview)} onChange={(e) => setManualReviewDate(e.target.value)} /></label></div><h3>ミス原因</h3><div className="check-list compact-check-list">{missReasons.map((reason) => <label key={reason}><input type="checkbox" checked={selectedReasons.includes(reason)} onChange={() => toggleReason(reason)} />{reason}</label>)}</div><label>復習メモ<textarea value={reviewMemo} onChange={(e) => setReviewMemo(e.target.value)} placeholder="次回解く前に見る注意点" /></label><button className="accent" onClick={() => void saveCurrentAttempt()}>保存して次へ</button></section></section>}{mode === 'review' && <section className="mode-section review-mode-section"><section className="panel progress-overview-panel"><div><p className="eyebrow">復習する</p><h2>今日やる問題をカードで確認</h2></div><div className="progress-summary-grid"><div><strong>{dueCards.filter(({ review }) => review.nextReviewDate <= todayString()).length}</strong><span>今日の復習</span></div><div><strong>{dueCards.filter(({ review }) => review.nextReviewDate < todayString()).length}</strong><span>期限超過</span></div><div><strong>{reviews.filter((r) => r.isWeak).length}</strong><span>苦手固定</span></div><div><strong>{reviews.filter((r) => r.latestRank === 'C').length}</strong><span>C判定</span></div><div><strong>{reviews.filter((r) => r.latestRank === 'B').length}</strong><span>B判定</span></div><div><strong>{untouchedItems.length}</strong><span>未着手</span></div></div></section>{dueCards.length === 0 && <section className="panel"><h2>今日の復習はありません</h2><button className="accent" onClick={() => selectPracticeItem(untouchedItems[0] ?? externalRefs[0])}>未着手問題を解く</button></section>}{dueCards.map(({ item, review }) => <article className="panel priority-card" key={review.id}><p className="eyebrow">{item.studyMode === 'external_material' ? '外部教材' : '教材なし'} / {review.isWeak ? '苦手固定' : review.nextReviewDate <= todayString() ? '今日の復習' : '復習候補'}</p><h3>{item.id}　{item.topic}</h3><p>Ref：{item.cpaTrialSectionRef} / 前回：{review.latestRank || '未判定'} / {review.latestScore}点 / 復習日：{review.nextReviewDate}</p><button onClick={() => selectPracticeItem(item)}>解く</button></article>)}</section>}{mode === 'management' && <section className="mode-section progress-mode-section"><section className="panel"><p className="eyebrow">管理</p><h2>低頻度機能</h2><p>通常学習では開かなくてよい画面です。PDF抽出・PDF範囲指定は今回実装していません。</p></section><details className="panel management-panel" open><summary>問題ID一覧・品質状態</summary><div className="progress-summary-grid"><div><strong>{externalRefs.length}</strong><span>外部教材区分</span></div><div><strong>{questions.filter((q) => q.verificationStatus === 'approved').length}</strong><span>approved</span></div><div><strong>{questions.filter((q) => q.verificationStatus === 'draft').length}</strong><span>draft</span></div><div><strong>{questions.filter((q) => q.verificationStatus === 'rejected').length}</strong><span>rejected</span></div></div><div className="management-list">{externalRefs.map((item) => <button key={item.id} onClick={() => { setExternalJson(JSON.stringify(item, null, 2)); selectPracticeItem(item); }}>{item.id}｜{item.topic}｜{item.cpaTrialSectionRef}</button>)}{questions.map((item) => <button key={item.id} onClick={() => { setQuestionJson(JSON.stringify(item, null, 2)); if (item.verificationStatus === 'approved') selectPracticeItem(item); }}>{item.id}｜{item.topic}｜{item.cpaTrialSectionRef}｜{item.verificationStatus}</button>)}</div></details><details className="panel management-panel"><summary>外部教材モード用問題ID追加</summary><textarea className="json-editor" value={externalJson} onChange={(e) => setExternalJson(e.target.value)} placeholder="ExternalProblemRef JSON" /><button className="accent" onClick={() => void saveExternalJson()}>外部教材問題IDを保存</button></details><details className="panel management-panel"><summary>オリジナル問題追加・編集・verificationStatus変更</summary><p>通常演習に出るのは verificationStatus が approved の問題だけです。draft は管理画面でのみ確認できます。</p><textarea className="json-editor" value={questionJson} onChange={(e) => setQuestionJson(e.target.value)} placeholder="QuestionItem JSON" /><button className="accent" onClick={() => void saveQuestionJson()}>オリジナル問題を保存</button></details><details className="panel management-panel"><summary>JSONバックアップ・JSON復元 / CSV出力</summary><div className="button-row"><button onClick={() => void handleExport()}>JSONバックアップ</button><label className="import-label">JSON復元<input type="file" accept="application/json" onChange={(e) => void handleImport(e.target.files?.[0])} /></label><button onClick={() => { const csv = attempts.map((a) => [a.answeredAt, a.studyMode, a.questionId, a.cpaTrialSectionRef, a.score, a.maxScore, a.rank, a.nextReviewDate].join(',')).join('\n'); const blob = new Blob([`日時,モード,問題ID,cpaTrialSectionRef,得点,満点,判定,次回復習日\n${csv}`], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'study-attempts.csv'; a.click(); URL.revokeObjectURL(url); }}>CSV出力</button></div></details><details className="panel management-panel"><summary>履歴一覧</summary><div className="history-list">{attempts.map((attempt) => <div key={attempt.id}><strong>{attempt.studyMode === 'external_material' ? '外部教材' : '教材なし'}｜{attempt.questionId}</strong><span>{attempt.cpaTrialSectionRef}｜{attempt.score}/{attempt.maxScore}点｜{attempt.rank}｜{attempt.nextReviewDate}</span></div>)}</div></details><details className="panel management-panel"><summary>PDF補助取込</summary><p className="warning-text">PDF抽出、PDF範囲指定、PDF画像表示改善は今回実装していません。CPA教材本文・解答・解説・数値・表構成はアプリに収録しません。</p></details><details className="panel management-panel"><summary>保存状態確認</summary><p>IndexedDBに questions / externalProblemRefs / answerAttempts / reviewSchedules / settings / userProblems / histories を保存します。</p><p>問題数：{summary?.questionCount ?? '-'} / 外部教材区分：{summary?.externalRefCount ?? '-'} / 履歴：{summary?.attemptCount ?? '-'} / 復習予定：{summary?.reviewCount ?? '-'}</p><button onClick={() => void refreshAll()}>保存状態を再確認</button></details></section>}</main>;
+  function handleJournalFocus(event: ReactFocusEvent<HTMLInputElement>, row: number, col: number, field: JournalField) { const key = amountKey(row, field); if (amountFields.has(field)) { setActiveAmountKey(key); setAmountDrafts((cur) => ({ ...cur, [key]: cur[key] ?? (rows[row]?.[field] as string | undefined) ?? '' })); } if (editingCell?.row !== row || editingCell?.col !== col) requestAnimationFrame(() => placeCaretAtEnd(event.currentTarget)); }
+  function handleJournalClick(event: ReactMouseEvent<HTMLInputElement>, row: number, col: number) { setEditingCell((current) => current?.row === row && current?.col === col ? current : null); focusInputElement(event.currentTarget, { keepClickPosition: false }); }
+  function handleJournalDoubleClick(event: ReactMouseEvent<HTMLInputElement>, row: number, col: number) { setEditingCell({ row, col }); focusInputElement(event.currentTarget, { keepClickPosition: true }); }
+  function selectPracticeItem(item: PracticeItem) { setChoice(item.studyMode); if (item.studyMode === 'external_material') setSelectedExternalId(item.id); else setSelectedQuestionId(item.id); setMode('solve'); }
+  function autoGradeJournal(sourceRows = rows): { gradedRows: AnswerLine[]; total: number; summary: string } { if (!isBuiltIn(selectedItem)) return { gradedRows: sourceRows, total: rowPointsTotal(sourceRows), summary: '自動採点対象外です。' }; const used = new Set<number>(); let total = 0; const model = selectedItem.modelAnswer; const gradedRows = sourceRows.map((row) => { if (isEmptyJournalRow(row)) return { ...row, grade: '要確認' as const, points: 0, memo: row.memo || '空行のため採点対象外' }; const matchIndex = model.findIndex((m, idx) => !used.has(idx) && normalizeAccount(row.debitAccount) === normalizeAccount(m.debitAccount) && toNumber(row.debitAmount) === toNumber(m.debitAmount) && normalizeAccount(row.creditAccount) === normalizeAccount(m.creditAccount) && toNumber(row.creditAmount) === toNumber(m.creditAmount)); if (matchIndex >= 0) { used.add(matchIndex); total += Number(model[matchIndex].points) || 0; return { ...row, grade: '正解' as const, points: Number(model[matchIndex].points) || 0, memo: row.memo || '自動採点：正解' }; } const reversed = model.some((m) => normalizeAccount(row.debitAccount) === normalizeAccount(m.creditAccount) && toNumber(row.debitAmount) === toNumber(m.creditAmount) && normalizeAccount(row.creditAccount) === normalizeAccount(m.debitAccount) && toNumber(row.creditAmount) === toNumber(m.debitAmount)); return { ...row, grade: '不正解' as const, points: 0, memo: reversed ? '借方貸方逆の可能性' : '勘定科目または金額が一致しません' }; }); return { gradedRows, total, summary: `仕訳テンプレートを自動採点しました。${total}/${selectedItem.maxScore}点` }; }
+  function autoGradeNumeric(sourceRows = rows): { gradedRows: AnswerLine[]; total: number; summary: string } { if (!isBuiltIn(selectedItem)) return { gradedRows: sourceRows, total: rowPointsTotal(sourceRows), summary: '自動採点対象外です。' }; let total = 0; const gradedRows = sourceRows.map((row, index) => { const model = selectedItem.modelAnswer[index]; if (!model) return { ...row, grade: '要確認' as const, points: 0, memo: row.memo || '模範解答行がありません' }; const ok = toNumber(row.value ?? row.value1) === toNumber(model.value ?? model.value1); if (ok) total += Number(model.points) || 0; return { ...row, grade: ok ? '正解' as const : '不正解' as const, points: ok ? Number(model.points) || 0 : 0, memo: row.memo || (ok ? '自動採点：正解' : '入力値が一致しません') }; }); return { gradedRows, total, summary: `数値入力テンプレートを自動採点しました。${total}/${selectedItem.maxScore}点` }; }
+  function autoGradeAndProceed() { if (isComposingInput) { setMessage('入力確定後に採点してください。'); return; } const committedRows = commitAllAmountDrafts(); const result = selectedItem.answerTemplateId === 'journal' ? autoGradeJournal(committedRows) : selectedItem.answerTemplateId === 'numeric' ? autoGradeNumeric(committedRows) : { gradedRows: committedRows.map((r) => ({ ...r, grade: '要確認' as const })), total: rowPointsTotal(committedRows), summary: 'このテンプレートは自動採点未対応です。自己採点で確認してください。' }; setRows(result.gradedRows); setScore(result.total); setGradingSummary(result.summary); const nextRank: ReviewRank = result.total === selectedItem.maxScore ? 'A' : result.total > 0 ? 'B' : 'C'; setRank(nextRank); setManualReviewDate(nextReviewDateFor(nextRank, latestReview)); setMode('grading'); }
+  function proceedToGrading() { if (isComposingInput) { setMessage('入力確定後に採点してください。'); return; } const committedRows = commitAllAmountDrafts(); setScore(rowPointsTotal(committedRows)); setGradingSummary(canAutoGrade ? '模範解答がありますが、今回は自己採点で進みました。' : '自己採点で進めてください。'); setMode('grading'); }
+  function retryCurrentProblem() { if (mode === 'grading' && !window.confirm('現在の採点結果はまだ保存されていません。保存せずに同じ問題をもう一度解きますか？')) return; resetWorkingState(selectedItem); setMode('solve'); setMessage('同じ問題を新しい答案で解き直します。未保存の採点結果は保存されていません。'); }
+  async function saveCurrentAttempt() { const finalRows = commitAllAmountDrafts(); const finalScore = score || rowPointsTotal(finalRows); const review = buildReviewSchedule(selectedItem, rank, finalScore, latestReview, manualReviewDate); const attempt: AnswerAttempt = { id: crypto.randomUUID(), examType: 'boki2', studyMode: selectedItem.studyMode, questionId: selectedItem.id, questionTitle: selectedItem.title, subject: selectedItem.subject, section: selectedItem.section, topic: selectedItem.topic, cpaTrialSectionRef: selectedItem.cpaTrialSectionRef, answeredAt: new Date().toISOString(), answerTemplateId: selectedItem.answerTemplateId, rows: finalRows, score: finalScore, maxScore: selectedItem.maxScore, rank, missReasons: selectedReasons, reviewMemo, nextReviewDate: review.nextReviewDate }; await saveAttempt(attempt); await saveReviewSchedule(review); await refreshAll(); setMessage(`保存しました。次回復習日：${review.nextReviewDate}${review.isWeak ? '（苦手固定）' : ''}`); const list = selectedItem.studyMode === 'external_material' ? externalRefs : approvedQuestions; const next = list[(list.findIndex((i) => i.id === selectedItem.id) + 1) % list.length]; selectPracticeItem(next); }
+  async function saveQuestionJson() { try { const parsed = JSON.parse(questionJson) as QuestionItem; if (parsed.studyMode !== 'built_in_question') throw new Error('studyMode'); await saveQuestion({ ...parsed, sourceType: parsed.sourceType === 'initial_original' ? 'user_created' : parsed.sourceType, updatedAt: new Date().toISOString() }); await refreshAll(); setMessage('オリジナル問題を保存しました'); } catch { setMessage('オリジナル問題JSONの保存に失敗しました'); } }
+  async function saveExternalJson() { try { const parsed = JSON.parse(externalJson) as ExternalProblemRef; if (parsed.studyMode !== 'external_material') throw new Error('studyMode'); await saveExternalProblemRef({ ...parsed, updatedAt: new Date().toISOString() }); await refreshAll(); setMessage('外部教材モード用問題IDを保存しました'); } catch { setMessage('外部教材モード用JSONの保存に失敗しました'); } }
+  async function handleExport() { const payload = await exportStudyData(originalQuestions, externalProblemRefs); const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'cross-qualification-study-backup.json'; a.click(); URL.revokeObjectURL(url); setMessage('JSONバックアップを作成しました'); }
+  async function handleImport(file?: File) { if (!file) return; try { await importStudyData(JSON.parse(await file.text()) as StudyBackupPayload); await refreshAll(); setMessage('JSON復元が完了しました'); } catch { setMessage('JSON復元に失敗しました'); } }
+  function renderStudyChoice() { return <section className="study-choice-grid"><button className={choice === 'external_material' ? 'study-choice active' : 'study-choice'} onClick={() => setChoice('external_material')}><strong>CPA教材を見ながら解く</strong><span>手元の問題集・PDFを見ながら答案を入力し、自己採点と復習管理を行います。</span></button><button className={choice === 'built_in_question' ? 'study-choice active' : 'study-choice'} onClick={() => setChoice('built_in_question')}><strong>教材なしで解く</strong><span>検証済みのオリジナル短問を解き、解答解説を見て復習できます。</span></button></section>; }
+  function renderProblemSelector() { const options = choice === 'external_material' ? externalRefs : approvedQuestions; const value = choice === 'external_material' ? selectedExternalId : selectedQuestionId; return <section className="panel answer-summary-card"><label>{choice === 'external_material' ? '外部教材の問題ID' : 'approved オリジナル短問'}<select value={value} onChange={(e) => choice === 'external_material' ? setSelectedExternalId(e.target.value) : setSelectedQuestionId(e.target.value)}>{options.map((item) => <option key={item.id} value={item.id}>{labelOf(item)}</option>)}</select></label></section>; }
+  function renderQuestionCard() { return <section className="panel question-reference-card original-question-card"><p className="eyebrow">{choice === 'external_material' ? '外部教材モード' : '教材なしモード'}</p><h2>{labelOf(selectedItem)}</h2>{choice === 'external_material' ? <p className="readable-question-text">問題文・解答・解説はお手元のCPAラーニング問題集・PDF・紙教材で確認してください。この画面では、問題ID、答案入力、自己採点、復習管理だけを行います。</p> : <p className="readable-question-text">{isBuiltIn(selectedItem) ? selectedItem.questionText : ''}</p>}{isBuiltIn(selectedItem) && selectedItem.conditions.length > 0 && <div className="condition-list"><strong>条件</strong>{selectedItem.conditions.map((c) => <span key={c}>{c}</span>)}</div>}<div className="answer-summary-grid compact-meta-grid"><div><span>資格</span><strong>日商簿記2級</strong></div><div><span>科目</span><strong>{selectedItem.subject}</strong></div><div><span>大問対策</span><strong>{selectedItem.section}</strong></div><div><span>論点</span><strong>{selectedItem.topic}</strong></div><div><span>cpaTrialSectionRef</span><strong>{selectedItem.cpaTrialSectionRef}</strong></div><div><span>答案</span><strong>{templateLabels[selectedItem.answerTemplateId]}</strong></div>{choice === 'external_material' && <div><span>ページメモ</span><strong>{(selectedItem as ExternalProblemRef).pageMemo || '未設定'}</strong></div>}{isBuiltIn(selectedItem) && <div><span>検証</span><strong>{selectedItem.verificationStatus}</strong></div>}</div></section>; }
+  function gradeOptions() { return <><option>未採点</option><option>正解</option><option>不正解</option><option>要確認</option><option>○</option><option>△</option><option>×</option></>; }
+  function amountDisplay(row: AnswerLine, index: number, field: JournalField | 'value' | 'value1'): string { const key = amountKey(index, field); if (amountDrafts[key] !== undefined || activeAmountKey === key) return amountDrafts[key] ?? (row[field] as string | undefined) ?? ''; return formatAmount((row[field] as string | undefined) ?? ''); }
+  function journalInput(row: AnswerLine, index: number, field: JournalField, col: number, readOnly: boolean) { const amount = amountFields.has(field); const value = amount ? amountDisplay(row, index, field) : (row[field] as string) ?? ''; return <input data-answer-grid="journal" data-row-index={index} data-col-index={col} data-field={field} value={value} readOnly={readOnly} disabled={readOnly} lang={amount ? undefined : 'ja'} inputMode={amount ? 'numeric' : 'text'} autoComplete="off" spellCheck={false} onClick={(event) => handleJournalClick(event, index, col)} onDoubleClick={(event) => handleJournalDoubleClick(event, index, col)} onFocus={(event) => handleJournalFocus(event, index, col, field)} onBlur={() => { if (amount && !isComposingInput) commitAmountDraft(index, field); }} onCompositionStart={() => setIsComposingInput(true)} onCompositionUpdate={(event: ReactCompositionEvent<HTMLInputElement>) => { if (amount) setAmountDrafts((cur) => ({ ...cur, [amountKey(index, field)]: event.currentTarget.value })); }} onCompositionEnd={(event: ReactCompositionEvent<HTMLInputElement>) => { setIsComposingInput(false); if (amount) { const key = amountKey(index, field); const raw = event.currentTarget.value; setAmountDrafts((cur) => ({ ...cur, [key]: raw })); updateRow(index, { [field]: normalizeNumberText(raw) } as Partial<AnswerLine>); } }} onKeyDown={(event) => handleJournalKeyDown(event, index, col, field)} onChange={(event: ReactChangeEvent<HTMLInputElement>) => { if (amount) { setAmountDrafts((cur) => ({ ...cur, [amountKey(index, field)]: event.target.value })); if (!isComposingInput) updateRow(index, { [field]: normalizeNumberText(event.target.value) } as Partial<AnswerLine>); return; } updateRow(index, { [field]: event.target.value } as Partial<AnswerLine>); }} />; }
+  function renderAnswerInput(readOnly = false) { if (selectedItem.answerTemplateId === 'journal') return <section className="answer-input-main original-answer-input"><div className="pc-answer-only"><table className="answer-table"><thead><tr><th>行</th><th>借方科目</th><th>借方金額</th><th>貸方科目</th><th>貸方金額</th><th>メモ</th><th>採点</th><th>得点</th></tr></thead><tbody>{rows.map((r, i) => <tr key={r.id}><td>{i + 1}</td><td>{journalInput(r, i, 'debitAccount', 0, readOnly)}</td><td>{journalInput(r, i, 'debitAmount', 1, readOnly)}</td><td>{journalInput(r, i, 'creditAccount', 2, readOnly)}</td><td>{journalInput(r, i, 'creditAmount', 3, readOnly)}</td><td>{journalInput(r, i, 'memo', 4, readOnly)}</td><td><select value={r.grade} disabled={readOnly} onChange={(e) => updateRow(i, { grade: e.target.value as AnswerLine['grade'] })}>{gradeOptions()}</select></td><td><input value={String(r.points || '')} disabled={readOnly} onChange={(e) => updateRow(i, { points: Number(normalizeNumberText(e.target.value)) || 0 })} /></td></tr>)}</tbody></table></div><div className="mobile-journal-input">{rows.map((r, i) => <article className="journal-entry-card" key={r.id}><h3>仕訳{i + 1}</h3><div className="journal-entry-side"><h4>借方</h4><label>借方科目<input value={r.debitAccount ?? ''} disabled={readOnly} onChange={(e) => updateRow(i, { debitAccount: e.target.value })} /></label><label>借方金額<input value={formatAmount(r.debitAmount)} disabled={readOnly} inputMode="numeric" onChange={(e) => updateRow(i, { debitAmount: normalizeNumberText(e.target.value) })} /></label></div><div className="journal-entry-side"><h4>貸方</h4><label>貸方科目<input value={r.creditAccount ?? ''} disabled={readOnly} onChange={(e) => updateRow(i, { creditAccount: e.target.value })} /></label><label>貸方金額<input value={formatAmount(r.creditAmount)} disabled={readOnly} inputMode="numeric" onChange={(e) => updateRow(i, { creditAmount: normalizeNumberText(e.target.value) })} /></label></div><label>メモ<input value={r.memo ?? ''} disabled={readOnly} onChange={(e) => updateRow(i, { memo: e.target.value })} /></label><label>採点<select value={r.grade} disabled={readOnly} onChange={(e) => updateRow(i, { grade: e.target.value as AnswerLine['grade'] })}>{gradeOptions()}</select></label><label>得点<input value={String(r.points || '')} disabled={readOnly} inputMode="numeric" onChange={(e) => updateRow(i, { points: Number(normalizeNumberText(e.target.value)) || 0 })} /></label></article>)}</div></section>; return <section className="answer-input-main original-answer-input"><table className="answer-table"><thead><tr><th>行</th><th>項目名</th><th>入力値</th><th>メモ</th><th>採点</th><th>得点</th></tr></thead><tbody>{rows.map((r, i) => <tr key={r.id}><td>{i + 1}</td><td><input value={r.itemName ?? ''} disabled={readOnly} onChange={(e) => updateRow(i, { itemName: e.target.value })} /></td><td><input type="text" inputMode="numeric" value={amountDisplay(r, i, selectedItem.answerTemplateId === 'numeric' ? 'value' : 'value1')} disabled={readOnly} onFocus={() => { const field = selectedItem.answerTemplateId === 'numeric' ? 'value' : 'value1'; const key = amountKey(i, field); setActiveAmountKey(key); setAmountDrafts((cur) => ({ ...cur, [key]: cur[key] ?? (r[field] as string | undefined) ?? '' })); }} onBlur={() => { const field = selectedItem.answerTemplateId === 'numeric' ? 'value' : 'value1'; if (!isComposingInput) commitAmountDraft(i, field); }} onCompositionStart={() => setIsComposingInput(true)} onCompositionEnd={(e) => { const field = selectedItem.answerTemplateId === 'numeric' ? 'value' : 'value1'; setIsComposingInput(false); setAmountDrafts((cur) => ({ ...cur, [amountKey(i, field)]: e.currentTarget.value })); updateRow(i, { [field]: normalizeNumberText(e.currentTarget.value) }); }} onChange={(e) => { const field = selectedItem.answerTemplateId === 'numeric' ? 'value' : 'value1'; setAmountDrafts((cur) => ({ ...cur, [amountKey(i, field)]: e.target.value })); if (!isComposingInput) updateRow(i, { [field]: normalizeNumberText(e.target.value) }); }} /></td><td><input value={r.memo ?? ''} disabled={readOnly} onChange={(e) => updateRow(i, { memo: e.target.value })} /></td><td><select value={r.grade} disabled={readOnly} onChange={(e) => updateRow(i, { grade: e.target.value as AnswerLine['grade'] })}>{gradeOptions()}</select></td><td><input value={String(r.points || '')} disabled={readOnly} onChange={(e) => updateRow(i, { points: Number(normalizeNumberText(e.target.value)) || 0 })} /></td></tr>)}</tbody></table></section>; }
+  function renderActionBar() { const label = canAutoGrade ? '自動採点して採点へ進む' : isBuiltIn(selectedItem) ? '自己採点へ進む' : '採点へ進む'; return <div className="button-row answer-action-bar"><button className="secondary" onClick={addRow}>＋ 行を追加</button><button className="secondary" onClick={applyRowPoints}>行別得点合計を問題得点へ反映</button><button onClick={() => setMessage('一時保存しました。採点保存は「保存して次へ」で履歴に残ります。')}>一時保存</button><button className="accent" onClick={canAutoGrade ? autoGradeAndProceed : proceedToGrading}>{label}</button>{isBuiltIn(selectedItem) && !canAutoGrade && <p className="warning-text">この問題は自動採点用の模範解答が未登録です。自己採点で進めてください。</p>}</div>; }
+  function renderModelAnswer() { if (!isBuiltIn(selectedItem)) return null; return <section className="panel model-answer-card"><p className="eyebrow">模範解答・解説</p><pre>{modelAnswerText(selectedItem)}</pre><p className="readable-question-text">{selectedItem.explanation}</p></section>; }
+  return <main className="app-shell simplified-shell original-study-app"><header className="app-header compact-header"><div><h1>資格横断型 問題演習・採点・復習管理アプリ</h1><p>簿記2級では「CPA教材を見ながら解く」と「教材なしで解く」の2モードを使います。PDF抽出・教材本文取り込みは行いません。</p></div><div className="practice-progress-box"><strong>{externalRefs.length}</strong><span>外部教材区分</span></div></header><nav className="mode-nav"><button className={mode === 'solve' ? 'active' : ''} onClick={() => setMode('solve')}>今すぐ解く</button><button className={mode === 'grading' ? 'active' : ''} onClick={() => setMode('grading')}>採点する</button><button className={mode === 'review' ? 'active' : ''} onClick={() => setMode('review')}>復習する</button><button className={mode === 'management' ? 'active' : ''} onClick={() => setMode('management')}>管理</button></nav><div className="status-bar">{message}</div>{mode === 'solve' && <section className="mode-section solve-mode-section">{renderStudyChoice()}{renderProblemSelector()}{renderQuestionCard()}<section className="focused-answer-area answer-only-main"><div className="focused-answer-title"><div><p className="eyebrow">答案入力</p><h2>{templateLabels[selectedItem.answerTemplateId]}</h2></div></div>{renderAnswerInput(false)}{renderActionBar()}</section></section>}{mode === 'grading' && <section className="mode-section grading-mode-section">{renderQuestionCard()}<section className="focused-answer-area"><div className="focused-answer-title"><div><p className="eyebrow">自分の答案・行別採点</p><h2>{selectedItem.title}</h2></div><strong>{gradingSummary}</strong></div>{renderAnswerInput(false)}</section>{renderModelAnswer()}<section className="panel self-score-box"><h2>自己採点</h2><div className="score-grid"><label>問題得点<input type="number" value={score} onChange={(e) => setScore(Number(e.target.value || 0))} /></label><label>満点<input type="number" value={selectedItem.maxScore} disabled /></label><label>A/B/C判定<select value={rank} onChange={(e) => { const next = e.target.value as ReviewRank; setRank(next); setManualReviewDate(nextReviewDateFor(next, latestReview)); }}><option value="A">A：自力で解けた・説明できる</option><option value="B">B：正解または惜しいが手順に不安</option><option value="C">C：不正解・解説なしでは再現できない</option></select></label><label>次回復習日<input type="date" value={manualReviewDate || nextReviewDateFor(rank, latestReview)} onChange={(e) => setManualReviewDate(e.target.value)} /></label></div><h3>ミス原因</h3><div className="check-list compact-check-list">{missReasons.map((reason) => <label key={reason}><input type="checkbox" checked={selectedReasons.includes(reason)} onChange={() => toggleReason(reason)} />{reason}</label>)}</div><label>復習メモ<textarea value={reviewMemo} onChange={(e) => setReviewMemo(e.target.value)} placeholder="次回解く前に見る注意点" /></label><div className="button-row answer-action-bar"><button className="accent" onClick={() => void saveCurrentAttempt()}>保存して次へ</button><button className="secondary" onClick={retryCurrentProblem}>もう一度解く</button><button onClick={() => { resetWorkingState(selectedItem); setMode('solve'); }}>今すぐ解くへ戻る</button></div><p className="warning-text">未保存の採点結果がある状態で「もう一度解く」を押すと確認が表示されます。</p></section></section>}{mode === 'review' && <section className="mode-section review-mode-section"><section className="panel progress-overview-panel"><div><p className="eyebrow">復習する</p><h2>今日やる問題をカードで確認</h2></div><div className="progress-summary-grid"><div><strong>{dueCards.filter(({ review }) => review.nextReviewDate <= todayString()).length}</strong><span>今日の復習</span></div><div><strong>{dueCards.filter(({ review }) => review.nextReviewDate < todayString()).length}</strong><span>期限超過</span></div><div><strong>{reviews.filter((r) => r.isWeak).length}</strong><span>苦手固定</span></div><div><strong>{reviews.filter((r) => r.latestRank === 'C').length}</strong><span>C判定</span></div><div><strong>{reviews.filter((r) => r.latestRank === 'B').length}</strong><span>B判定</span></div><div><strong>{untouchedItems.length}</strong><span>未着手</span></div></div></section>{dueCards.length === 0 && <section className="panel"><h2>今日の復習はありません</h2><button className="accent" onClick={() => selectPracticeItem(untouchedItems[0] ?? externalRefs[0])}>未着手問題を解く</button></section>}{dueCards.map(({ item, review }) => <article className="panel priority-card" key={review.id}><p className="eyebrow">{item.studyMode === 'external_material' ? '外部教材' : '教材なし'} / {review.isWeak ? '苦手固定' : review.nextReviewDate <= todayString() ? '今日の復習' : '復習候補'}</p><h3>{item.id}　{item.topic}</h3><p>Ref：{item.cpaTrialSectionRef} / 前回：{review.latestRank || '未判定'} / {review.latestScore}点 / 復習日：{review.nextReviewDate}</p><button onClick={() => selectPracticeItem(item)}>解く</button></article>)}</section>}{mode === 'management' && <section className="mode-section progress-mode-section"><section className="panel"><p className="eyebrow">管理</p><h2>低頻度機能</h2><p>通常学習では開かなくてよい画面です。PDF抽出・PDF範囲指定は今回実装していません。</p></section><details className="panel management-panel" open><summary>問題ID一覧・品質状態</summary><div className="progress-summary-grid"><div><strong>{externalRefs.length}</strong><span>外部教材区分</span></div><div><strong>{questions.filter((q) => q.verificationStatus === 'approved').length}</strong><span>approved</span></div><div><strong>{questions.filter((q) => q.verificationStatus === 'draft').length}</strong><span>draft</span></div><div><strong>{questions.filter((q) => q.verificationStatus === 'rejected').length}</strong><span>rejected</span></div></div><div className="management-list">{externalRefs.map((item) => <button key={item.id} onClick={() => { setExternalJson(JSON.stringify(item, null, 2)); selectPracticeItem(item); }}>{item.id}｜{item.topic}｜{item.cpaTrialSectionRef}</button>)}{questions.map((item) => <button key={item.id} onClick={() => { setQuestionJson(JSON.stringify(item, null, 2)); if (item.verificationStatus === 'approved') selectPracticeItem(item); }}>{item.id}｜{item.topic}｜{item.cpaTrialSectionRef}｜{item.verificationStatus}</button>)}</div></details><details className="panel management-panel"><summary>外部教材モード用問題ID追加</summary><textarea className="json-editor" value={externalJson} onChange={(e) => setExternalJson(e.target.value)} placeholder="ExternalProblemRef JSON" /><button className="accent" onClick={() => void saveExternalJson()}>外部教材問題IDを保存</button></details><details className="panel management-panel"><summary>オリジナル問題追加・編集・verificationStatus変更</summary><p>通常演習に出るのは verificationStatus が approved の問題だけです。draft は管理画面でのみ確認できます。</p><textarea className="json-editor" value={questionJson} onChange={(e) => setQuestionJson(e.target.value)} placeholder="QuestionItem JSON" /><button className="accent" onClick={() => void saveQuestionJson()}>オリジナル問題を保存</button></details><details className="panel management-panel"><summary>JSONバックアップ・JSON復元 / CSV出力</summary><div className="button-row"><button onClick={() => void handleExport()}>JSONバックアップ</button><label className="import-label">JSON復元<input type="file" accept="application/json" onChange={(e) => void handleImport(e.target.files?.[0])} /></label><button onClick={() => { const csv = attempts.map((a) => [a.answeredAt, a.studyMode, a.questionId, a.cpaTrialSectionRef, a.score, a.maxScore, a.rank, a.nextReviewDate].join(',')).join('\n'); const blob = new Blob([`日時,モード,問題ID,cpaTrialSectionRef,得点,満点,判定,次回復習日\n${csv}`], { type: 'text/csv;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'study-attempts.csv'; a.click(); URL.revokeObjectURL(url); }}>CSV出力</button></div></details><details className="panel management-panel"><summary>履歴一覧</summary><div className="history-list">{attempts.map((attempt) => <div key={attempt.id}><strong>{attempt.studyMode === 'external_material' ? '外部教材' : '教材なし'}｜{attempt.questionId}</strong><span>{attempt.cpaTrialSectionRef}｜{attempt.score}/{attempt.maxScore}点｜{attempt.rank}｜{attempt.nextReviewDate}</span></div>)}</div></details><details className="panel management-panel"><summary>PDF補助取込</summary><p className="warning-text">PDF抽出、PDF範囲指定、PDF画像表示改善は今回実装していません。CPA教材本文・解答・解説・数値・表構成はアプリに収録しません。</p></details><details className="panel management-panel"><summary>保存状態確認</summary><p>IndexedDBに questions / externalProblemRefs / answerAttempts / reviewSchedules / settings / userProblems / histories を保存します。</p><p>問題数：{summary?.questionCount ?? '-'} / 外部教材区分：{summary?.externalRefCount ?? '-'} / 履歴：{summary?.attemptCount ?? '-'} / 復習予定：{summary?.reviewCount ?? '-'}</p><button onClick={() => void refreshAll()}>保存状態を再確認</button></details></section>}</main>;
 }
