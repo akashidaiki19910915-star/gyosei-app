@@ -29,7 +29,7 @@ export type CpaTrialSectionRef =
   | 'industrial_5_3';
 export type ReferenceScope = 'cpa_trial_section_structure_only';
 export type AnswerTemplateId = 'journal' | 'numeric' | 'statementTable' | 'accountLedger' | 'free';
-export type GradeMark = '未採点' | '○' | '△' | '×';
+export type GradeMark = '未採点' | '正解' | '不正解' | '要確認' | '○' | '△' | '×';
 export type ReviewRank = '' | 'A' | 'B' | 'C';
 export type MissReason = '論点理解不足' | '仕訳ミス' | '借方貸方逆' | '金額ミス' | '集計ミス' | '転記ミス' | '表の入力位置ミス' | '下書き不足' | '時間不足' | '解答形式の誤認' | '問題文読み落とし' | 'その他';
 
