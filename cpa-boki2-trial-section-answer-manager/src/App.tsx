@@ -14,12 +14,16 @@ type EditingCell = { row: number; col: number } | null;
 type StorageSummary = { questionCount: number; externalRefCount: number; attemptCount: number; reviewCount: number; usage: number | null; quota: number | null };
 type AmountDrafts = Record<string, string>;
 type ValueElement = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+type JournalSide = 'debit' | 'credit';
+type JournalEntry = { side: JournalSide; accounts: string[]; amount: number; points: number; modelIndex: number };
+type SideMatch = { ok: boolean; points: number; reversed: boolean; comment: string };
 
 const missReasons: MissReason[] = ['論点理解不足', '仕訳ミス', '借方貸方逆', '金額ミス', '集計ミス', '転記ミス', '表の入力位置ミス', '下書き不足', '時間不足', '解答形式の誤認', '問題文読み落とし', 'その他'];
 const templateLabels: Record<AnswerTemplateId, string> = { journal: '仕訳テンプレート', numeric: '数値入力テンプレート', statementTable: '表形式テンプレート', accountLedger: '勘定記入テンプレート', free: '自由テンプレート' };
 const journalFields: JournalField[] = ['debitAccount', 'debitAmount', 'creditAccount', 'creditAmount', 'memo'];
 const amountFields = new Set<string>(['debitAmount', 'creditAmount', 'value', 'value1', 'value2', 'value3', 'value4']);
 const imeBypassKeys = new Set(['Process', 'Hankaku', 'Zenkaku', 'Hiragana', 'Katakana', 'Eisu', 'KanaMode', 'Convert', 'NonConvert']);
+const accountAliases: string[][] = [['固定資産売却損', '売却損'], ['仕入', '仕入高']];
 
 function todayString(): string { return new Date().toISOString().slice(0, 10); }
 function addDays(days: number): string { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); }
@@ -29,6 +33,8 @@ function normalizeNumberText(value?: unknown): string { const text = coerceText(
 function parseAmount(value?: unknown): number | null { const normalized = normalizeNumberText(value); if (!normalized || normalized === '-' || normalized === '.') return null; const parsed = Number(normalized); return Number.isFinite(parsed) ? parsed : null; }
 function formatAmount(value?: unknown): string { const parsed = parseAmount(value); return parsed === null ? normalizeNumberText(value) : parsed.toLocaleString('ja-JP'); }
 function normalizeAccount(value?: unknown): string { return coerceText(value).replace(/[\s　]/g, '').trim(); }
+function canonicalAccount(value?: unknown): string { const normalized = normalizeAccount(value); const group = accountAliases.find((aliases) => aliases.some((alias) => normalizeAccount(alias) === normalized)); return group ? normalizeAccount(group[0]) : normalized; }
+function accountMatches(input: string, acceptableAccounts: string[]): boolean { const normalized = canonicalAccount(input); return acceptableAccounts.some((candidate) => canonicalAccount(candidate) === normalized); }
 function toNumber(value?: unknown): number | null { return parseAmount(value); }
 function amountKey(row: number, field: string): string { return `${row}:${field}`; }
 function isBuiltIn(item: PracticeItem): item is QuestionItem { return item.studyMode === 'built_in_question'; }
@@ -45,6 +51,10 @@ function nextReviewDateFor(rank: ReviewRank, prev?: ReviewSchedule): string { co
 function buildReviewSchedule(item: PracticeItem, rank: ReviewRank, score: number, prev?: ReviewSchedule, manualDate?: string): ReviewSchedule { const aStreak = rank === 'A' ? (prev?.aStreak ?? 0) + 1 : 0; const cStreak = rank === 'C' ? (prev?.cStreak ?? 0) + 1 : 0; return { id: itemKey(item), examType: 'boki2', studyMode: item.studyMode, questionId: item.id, cpaTrialSectionRef: item.cpaTrialSectionRef, nextReviewDate: manualDate || nextReviewDateFor(rank, prev), latestRank: rank, latestScore: score, maxScore: item.maxScore, aStreak, cStreak, attempts: (prev?.attempts ?? 0) + 1, isWeak: cStreak >= 2 || prev?.isWeak === true, updatedAt: new Date().toISOString() }; }
 function isEmptyJournalRow(row: AnswerLine): boolean { return !normalizeAccount(row?.debitAccount) && toNumber(row?.debitAmount) === null && !normalizeAccount(row?.creditAccount) && toNumber(row?.creditAmount) === null; }
 function modelAnswerText(item: PracticeItem): string { if (!isBuiltIn(item) || !Array.isArray(item.modelAnswer)) return ''; return item.modelAnswer.map((r, i) => item.answerTemplateId === 'journal' ? `${i + 1}. 借方 ${r?.debitAccount || '-'} ${formatAmount(r?.debitAmount)} / 貸方 ${r?.creditAccount || '-'} ${formatAmount(r?.creditAmount)}` : `${i + 1}. ${r?.itemName || '項目'}：${formatAmount(r?.value ?? r?.value1)}${r?.value2 ? ` / ${formatAmount(r.value2)}` : ''}`).join('\n'); }
+function splitRowPoints(row: AnswerLine): { debit: number; credit: number } { const total = Number(row?.points) || 0; const hasDebit = Boolean(normalizeAccount(row?.debitAccount) && toNumber(row?.debitAmount) !== null); const hasCredit = Boolean(normalizeAccount(row?.creditAccount) && toNumber(row?.creditAmount) !== null); if (hasDebit && hasCredit) return { debit: total / 2, credit: total / 2 }; if (hasDebit) return { debit: total, credit: 0 }; if (hasCredit) return { debit: 0, credit: total }; return { debit: 0, credit: 0 }; }
+function buildModelJournalEntries(modelRows: AnswerLine[]): { debits: JournalEntry[]; credits: JournalEntry[] } { const debits: JournalEntry[] = []; const credits: JournalEntry[] = []; modelRows.forEach((row, modelIndex) => { const points = splitRowPoints(row); const debitAmount = toNumber(row?.debitAmount); const creditAmount = toNumber(row?.creditAmount); const debitAccount = normalizeAccount(row?.debitAccount); const creditAccount = normalizeAccount(row?.creditAccount); if (debitAccount && debitAmount !== null) debits.push({ side: 'debit', accounts: [debitAccount], amount: debitAmount, points: points.debit, modelIndex }); if (creditAccount && creditAmount !== null) credits.push({ side: 'credit', accounts: [creditAccount], amount: creditAmount, points: points.credit, modelIndex }); }); return { debits, credits }; }
+function findSideMatch(account: string, amount: number | null, candidates: JournalEntry[], used: Set<number>): { index: number; entry: JournalEntry } | null { if (!account || amount === null) return null; const index = candidates.findIndex((entry, i) => !used.has(i) && entry.amount === amount && accountMatches(account, entry.accounts)); return index >= 0 ? { index, entry: candidates[index] } : null; }
+function sideComment(label: string, account: string, amount: number | null, match: boolean, reversed: boolean): string { if (!account && amount === null) return `${label}は空欄のため採点対象外です`; if (!account || amount === null) return `${label}科目または金額が未入力です`; if (match) return `${label}は正解です`; if (reversed) return `${label}は借方貸方が逆の可能性があります`; return `${label}科目または金額が一致しません`; }
 
 export default function App() {
   const [mode, setMode] = useState<AppMode>('solve');
@@ -132,7 +142,37 @@ export default function App() {
   function handleJournalClick(event: ReactMouseEvent<HTMLInputElement>, row: number, col: number) { setEditingCell((current) => current?.row === row && current?.col === col ? current : null); focusValueElement(event.currentTarget, false); }
   function handleJournalDoubleClick(event: ReactMouseEvent<HTMLInputElement>, row: number, col: number) { setEditingCell({ row, col }); focusValueElement(event.currentTarget, true); }
   function selectPracticeItem(item: PracticeItem) { setChoice(item.studyMode); if (item.studyMode === 'external_material') setSelectedExternalId(item.id); else setSelectedQuestionId(item.id); setMode('solve'); }
-  function autoGradeJournal(sourceRows = rows): { gradedRows: AnswerLine[]; total: number; summary: string } { if (!isBuiltIn(selectedItem) || !Array.isArray(selectedItem.modelAnswer)) return { gradedRows: sourceRows, total: rowPointsTotal(sourceRows), summary: '自動採点対象外です。' }; const used = new Set<number>(); let total = 0; const model = selectedItem.modelAnswer; const gradedRows = sourceRows.map((row) => { if (isEmptyJournalRow(row)) return { ...row, grade: '要確認' as const, points: 0, memo: row.memo || '空行のため採点対象外' }; const matchIndex = model.findIndex((m, idx) => !used.has(idx) && normalizeAccount(row.debitAccount) === normalizeAccount(m?.debitAccount) && toNumber(row.debitAmount) === toNumber(m?.debitAmount) && normalizeAccount(row.creditAccount) === normalizeAccount(m?.creditAccount) && toNumber(row.creditAmount) === toNumber(m?.creditAmount)); if (matchIndex >= 0) { used.add(matchIndex); const points = Number(model[matchIndex]?.points) || 0; total += points; return { ...row, grade: '正解' as const, points, memo: row.memo || '自動採点：正解' }; } const reversed = model.some((m) => normalizeAccount(row.debitAccount) === normalizeAccount(m?.creditAccount) && toNumber(row.debitAmount) === toNumber(m?.creditAmount) && normalizeAccount(row.creditAccount) === normalizeAccount(m?.debitAccount) && toNumber(row.creditAmount) === toNumber(m?.debitAmount)); return { ...row, grade: '不正解' as const, points: 0, memo: reversed ? '借方貸方逆の可能性' : '勘定科目または金額が一致しません' }; }); return { gradedRows, total, summary: `仕訳テンプレートを自動採点しました。${total}/${selectedItem.maxScore}点` }; }
+  function matchJournalSide(account: string, amount: number | null, sideModels: JournalEntry[], sameSideUsed: Set<number>, oppositeModels: JournalEntry[]): SideMatch { if (!account && amount === null) return { ok: false, points: 0, reversed: false, comment: '空欄のため採点対象外です' }; if (!account || amount === null) return { ok: false, points: 0, reversed: false, comment: '科目または金額が未入力です' }; const match = findSideMatch(account, amount, sideModels, sameSideUsed); if (match) { sameSideUsed.add(match.index); return { ok: true, points: match.entry.points, reversed: false, comment: '正解です' }; } const reversed = Boolean(findSideMatch(account, amount, oppositeModels, new Set<number>())); return { ok: false, points: 0, reversed, comment: reversed ? '借方貸方が逆の可能性があります' : '科目または金額が一致しません' }; }
+  function autoGradeJournal(sourceRows = rows): { gradedRows: AnswerLine[]; total: number; summary: string } {
+    if (!isBuiltIn(selectedItem) || !Array.isArray(selectedItem.modelAnswer)) return { gradedRows: sourceRows, total: rowPointsTotal(sourceRows), summary: '自動採点対象外です。' };
+    const modelSides = buildModelJournalEntries(selectedItem.modelAnswer);
+    const usedDebits = new Set<number>();
+    const usedCredits = new Set<number>();
+    let total = 0;
+    const gradedRows = sourceRows.map((row) => {
+      if (isEmptyJournalRow(row)) return { ...row, grade: '要確認' as const, points: 0, memo: row.memo || '空欄のため採点対象外です' };
+      const debitAccount = normalizeAccount(row?.debitAccount);
+      const debitAmount = toNumber(row?.debitAmount);
+      const creditAccount = normalizeAccount(row?.creditAccount);
+      const creditAmount = toNumber(row?.creditAmount);
+      const debit = matchJournalSide(debitAccount, debitAmount, modelSides.debits, usedDebits, modelSides.credits);
+      const credit = matchJournalSide(creditAccount, creditAmount, modelSides.credits, usedCredits, modelSides.debits);
+      const rowPoints = debit.points + credit.points;
+      total += rowPoints;
+      const debitHasInput = Boolean(debitAccount || debitAmount !== null);
+      const creditHasInput = Boolean(creditAccount || creditAmount !== null);
+      const incorrect = (debitHasInput && !debit.ok) || (creditHasInput && !credit.ok);
+      const correct = rowPoints > 0 && !incorrect;
+      const grade: AnswerLine['grade'] = correct ? '正解' : incorrect ? '不正解' : '要確認';
+      const comments: string[] = [];
+      if (debitHasInput) comments.push(`借方：${sideComment('借方', debitAccount, debitAmount, debit.ok, debit.reversed)}`);
+      if (creditHasInput) comments.push(`貸方：${sideComment('貸方', creditAccount, creditAmount, credit.ok, credit.reversed)}`);
+      if (!comments.length) comments.push('空欄のため採点対象外です');
+      return { ...row, grade, points: rowPoints, memo: comments.join(' / ') };
+    });
+    const cappedTotal = Math.min(selectedItem.maxScore, Math.round(total * 100) / 100);
+    return { gradedRows, total: cappedTotal, summary: `仕訳テンプレートをside_multiset方式で自動採点しました。${cappedTotal}/${selectedItem.maxScore}点` };
+  }
   function autoGradeNumeric(sourceRows = rows): { gradedRows: AnswerLine[]; total: number; summary: string } { if (!isBuiltIn(selectedItem) || !Array.isArray(selectedItem.modelAnswer)) return { gradedRows: sourceRows, total: rowPointsTotal(sourceRows), summary: '自動採点対象外です。' }; let total = 0; const gradedRows = sourceRows.map((row, index) => { const model = selectedItem.modelAnswer[index]; if (!model) return { ...row, grade: '要確認' as const, points: 0, memo: row.memo || '模範解答行がありません' }; const ok = toNumber(row.value ?? row.value1) === toNumber(model.value ?? model.value1); const points = ok ? Number(model.points) || 0 : 0; total += points; return { ...row, grade: ok ? '正解' as const : '不正解' as const, points, memo: row.memo || (ok ? '自動採点：正解' : '入力値が一致しません') }; }); return { gradedRows, total, summary: `数値入力テンプレートを自動採点しました。${total}/${selectedItem.maxScore}点` }; }
   function autoGradeAndProceed() { try { if (isComposingInput) { setMessage('入力確定後に採点してください。'); return; } const committedRows = commitAllAmountDrafts(); const result = selectedItem.answerTemplateId === 'journal' ? autoGradeJournal(committedRows) : selectedItem.answerTemplateId === 'numeric' ? autoGradeNumeric(committedRows) : { gradedRows: committedRows.map((r) => ({ ...r, grade: '要確認' as const })), total: rowPointsTotal(committedRows), summary: 'このテンプレートは自動採点未対応です。自己採点で確認してください。' }; setRows(result.gradedRows); setScore(result.total); setGradingSummary(result.summary); const nextRank: ReviewRank = result.total === selectedItem.maxScore ? 'A' : result.total > 0 ? 'B' : 'C'; setRank(nextRank); setManualReviewDate(nextReviewDateFor(nextRank, latestReview)); setMode('grading'); } catch (error) { console.error('autoGradeAndProceed failed', error); setMessage('入力処理でエラーが発生しました。ページを更新せずに入力をやり直してください。'); } }
   function proceedToGrading() { try { if (isComposingInput) { setMessage('入力確定後に採点してください。'); return; } const committedRows = commitAllAmountDrafts(); setScore(rowPointsTotal(committedRows)); setGradingSummary(canAutoGrade ? '模範解答がありますが、今回は自己採点で進みました。' : '自己採点で進めてください。'); setMode('grading'); } catch (error) { console.error('proceedToGrading failed', error); setMessage('入力処理でエラーが発生しました。ページを更新せずに入力をやり直してください。'); } }
