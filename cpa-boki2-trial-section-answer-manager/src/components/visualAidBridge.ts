@@ -1,6 +1,74 @@
-import './visualAids.css';
-
 const VISUAL_AID_ROOT_ID = 'industrial-account-flow-visual-aid-root';
+const VISUAL_AID_STYLE_ID = 'industrial-account-flow-visual-aid-style';
+
+const VISUAL_AID_STYLE = `
+  .visual-aid-panel {
+    border: 1px solid #cfe5d6;
+    background: #f6fbf7;
+    border-radius: 14px;
+    margin: 16px 0;
+    padding: 14px;
+  }
+  .visual-aid-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+  .visual-aid-header h2 { margin: 2px 0 0; }
+  .visual-aid-body { margin-top: 12px; }
+  .visual-aid-description { margin: 0 0 12px; color: #31543d; line-height: 1.7; }
+  .visual-aid-diagram {
+    background: #fff;
+    border: 1px solid #d9eadf;
+    border-radius: 12px;
+    padding: 14px;
+    overflow-x: auto;
+  }
+  .flow-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+    min-width: 620px;
+  }
+  .flow-node {
+    min-width: 96px;
+    padding: 10px 12px;
+    border: 1px solid #8fc39e;
+    border-radius: 10px;
+    background: #eef8f0;
+    text-align: center;
+    font-weight: 700;
+    color: #173a22;
+  }
+  .flow-main-node { background: #dff2e4; border-color: #4c9b61; }
+  .flow-arrow { color: #2f7d45; font-weight: 800; }
+  .flow-edge-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .flow-edge-list span {
+    background: #f1f6f3;
+    border: 1px solid #d8e8dd;
+    border-radius: 999px;
+    padding: 5px 9px;
+    color: #31543d;
+    font-size: 0.9rem;
+  }
+  @media (max-width: 760px) {
+    .visual-aid-header { align-items: flex-start; flex-direction: column; }
+    .flow-row {
+      align-items: stretch;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .flow-arrow { transform: rotate(90deg); align-self: center; }
+    .flow-node { width: 100%; box-sizing: border-box; }
+  }
+`;
 
 const INDUSTRIAL_ACCOUNT_FLOW_HTML = `
   <section class="panel visual-aid-panel" aria-label="図表で確認">
@@ -31,9 +99,18 @@ const INDUSTRIAL_ACCOUNT_FLOW_HTML = `
   </section>
 `;
 
+function ensureVisualAidStyle() {
+  if (document.getElementById(VISUAL_AID_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = VISUAL_AID_STYLE_ID;
+  style.textContent = VISUAL_AID_STYLE;
+  document.head.appendChild(style);
+}
+
 function currentQuestionHasIndustrial41(): boolean {
   const questionCard = document.querySelector('.question-reference-card');
-  return Boolean(questionCard?.textContent?.includes('industrial_4_1'));
+  const text = questionCard?.textContent ?? '';
+  return text.includes('教材なしモード') && text.includes('industrial_4_1');
 }
 
 function removeVisualAidIfNeeded() {
@@ -43,9 +120,9 @@ function removeVisualAidIfNeeded() {
 
 function ensureVisualAid() {
   if (typeof document === 'undefined') return;
-  const questionCard = document.querySelector('.question-reference-card');
+  ensureVisualAidStyle();
   const answerArea = document.querySelector('.focused-answer-area.answer-only-main');
-  if (!questionCard || !answerArea) return;
+  if (!answerArea) return;
   if (!currentQuestionHasIndustrial41()) {
     removeVisualAidIfNeeded();
     return;
