@@ -1,5 +1,8 @@
 import { cpaTrialSections, findTrialSection } from './cpaTrialSections';
 import type { AnswerLine, CpaTrialSectionRef, QuestionItem, VerificationStatus } from '../originalStudyTypes';
+import { installVisualAidBridge } from '../components/visualAidBridge';
+
+installVisualAidBridge();
 
 const NOW = '2026-05-24T00:00:00.000Z';
 const COPYRIGHT_NOTE = 'CPA問題集の試験対策編の区分のみ参考。問題文・解答・解説・数値・表構成は未使用。';
