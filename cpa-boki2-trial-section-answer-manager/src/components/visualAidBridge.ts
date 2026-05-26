@@ -1,5 +1,16 @@
+import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import type { Root } from 'react-dom/client';
+import { AccountFlowEditor } from './AccountFlowEditor';
+
 const VISUAL_AID_ROOT_ID = 'industrial-account-flow-visual-aid-root';
 const VISUAL_AID_STYLE_ID = 'industrial-account-flow-visual-aid-style';
+const EDITOR_MOUNT_ID = 'industrial-account-flow-editor-root';
+
+type BridgeWindow = Window & {
+  __boki2VisualAidBridgeInstalled?: boolean;
+  __boki2AccountFlowEditorRoot?: Root | null;
+};
 
 const VISUAL_AID_STYLE = `
   .visual-aid-panel {
@@ -81,19 +92,29 @@ const INDUSTRIAL_ACCOUNT_FLOW_HTML = `
     </div>
     <div class="visual-aid-body" data-visual-aid-body hidden>
       <p class="visual-aid-description">材料・賃金・経費が製造活動を通じて仕掛品、製品、売上原価へ流れる関係を確認する図です。</p>
-      <div class="visual-aid-diagram industrial-account-flow" aria-label="勘定連絡図">
-        <div class="flow-row flow-input-row">
-          <div class="flow-node">材料</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-node flow-main-node">仕掛品</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-node">製品</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-node">売上原価</div>
+      <div class="visual-aid-mode-tabs" role="tablist" aria-label="勘定連絡図の表示切替">
+        <button type="button" class="active" data-visual-mode="basic">基本図を見る</button>
+        <button type="button" data-visual-mode="editor">自分で作る</button>
+      </div>
+      <div class="account-flow-static-area" data-visual-basic-area>
+        <div class="visual-aid-diagram industrial-account-flow" aria-label="勘定連絡図">
+          <div class="flow-row flow-input-row">
+            <div class="flow-node">材料</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-node flow-main-node">仕掛品</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-node">製品</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-node">売上原価</div>
+          </div>
+          <div class="flow-row flow-support-row">
+            <div class="flow-node">賃金</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-node flow-main-node">仕掛品</div>
+          </div>
+          <div class="flow-row flow-support-row">
+            <div class="flow-node">経費</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-node">製造間接費</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-node flow-main-node">仕掛品</div>
+          </div>
+          <div class="flow-edge-list" aria-label="表示している流れ">
+            <span>材料 → 仕掛品</span><span>賃金 → 仕掛品</span><span>経費 → 製造間接費</span><span>製造間接費 → 仕掛品</span><span>仕掛品 → 製品</span><span>製品 → 売上原価</span>
+          </div>
         </div>
-        <div class="flow-row flow-support-row">
-          <div class="flow-node">賃金</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-node flow-main-node">仕掛品</div>
-        </div>
-        <div class="flow-row flow-support-row">
-          <div class="flow-node">経費</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-node">製造間接費</div><div class="flow-arrow" aria-hidden="true">→</div><div class="flow-node flow-main-node">仕掛品</div>
-        </div>
-        <div class="flow-edge-list" aria-label="表示している流れ">
-          <span>材料 → 仕掛品</span><span>賃金 → 仕掛品</span><span>経費 → 製造間接費</span><span>製造間接費 → 仕掛品</span><span>仕掛品 → 製品</span><span>製品 → 売上原価</span>
-        </div>
+      </div>
+      <div class="account-flow-editor-area" data-visual-editor-area hidden>
+        <p class="visual-aid-description">サイドバーからボックスをドラッグして追加し、接続点から矢印を伸ばして勘定の流れを作れます。図表データはこのブラウザに一時保存されます。</p>
+        <div id="${EDITOR_MOUNT_ID}"></div>
       </div>
     </div>
   </section>
@@ -113,9 +134,66 @@ function currentQuestionHasIndustrial41(): boolean {
   return text.includes('教材なしモード') && text.includes('industrial_4_1');
 }
 
+function unmountEditor() {
+  const appWindow = window as BridgeWindow;
+  try {
+    appWindow.__boki2AccountFlowEditorRoot?.unmount();
+  } catch (error) {
+    console.warn('勘定連絡図エディタのunmountをスキップしました', error);
+  }
+  appWindow.__boki2AccountFlowEditorRoot = null;
+}
+
 function removeVisualAidIfNeeded() {
   const root = document.getElementById(VISUAL_AID_ROOT_ID);
-  if (root && !currentQuestionHasIndustrial41()) root.remove();
+  if (root && !currentQuestionHasIndustrial41()) {
+    unmountEditor();
+    root.remove();
+  }
+}
+
+function mountEditorIfNeeded() {
+  const appWindow = window as BridgeWindow;
+  const target = document.getElementById(EDITOR_MOUNT_ID);
+  if (!target || appWindow.__boki2AccountFlowEditorRoot) return;
+  const editorRoot = createRoot(target);
+  editorRoot.render(createElement(AccountFlowEditor));
+  appWindow.__boki2AccountFlowEditorRoot = editorRoot;
+}
+
+function wireVisualAidControls(root: HTMLElement) {
+  const button = root.querySelector<HTMLButtonElement>('[data-visual-aid-toggle]');
+  const body = root.querySelector<HTMLElement>('[data-visual-aid-body]');
+  const basicArea = root.querySelector<HTMLElement>('[data-visual-basic-area]');
+  const editorArea = root.querySelector<HTMLElement>('[data-visual-editor-area]');
+  const modeButtons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-visual-mode]'));
+
+  function setMode(mode: 'basic' | 'editor') {
+    if (!basicArea || !editorArea) return;
+    basicArea.hidden = mode !== 'basic';
+    editorArea.hidden = mode !== 'editor';
+    modeButtons.forEach((modeButton) => modeButton.classList.toggle('active', modeButton.dataset.visualMode === mode));
+    if (mode === 'editor') mountEditorIfNeeded();
+  }
+
+  button?.addEventListener('click', () => {
+    if (!body || !button) return;
+    const nextOpen = body.hasAttribute('hidden');
+    if (nextOpen) {
+      body.removeAttribute('hidden');
+      button.textContent = '図表を閉じる';
+    } else {
+      body.setAttribute('hidden', '');
+      button.textContent = '図表で確認';
+    }
+  });
+
+  modeButtons.forEach((modeButton) => {
+    modeButton.addEventListener('click', () => {
+      const mode = modeButton.dataset.visualMode === 'editor' ? 'editor' : 'basic';
+      setMode(mode);
+    });
+  });
 }
 
 function ensureVisualAid() {
@@ -133,26 +211,14 @@ function ensureVisualAid() {
   root.id = VISUAL_AID_ROOT_ID;
   root.innerHTML = INDUSTRIAL_ACCOUNT_FLOW_HTML;
   answerArea.parentElement?.insertBefore(root, answerArea);
-
-  const button = root.querySelector<HTMLButtonElement>('[data-visual-aid-toggle]');
-  const body = root.querySelector<HTMLElement>('[data-visual-aid-body]');
-  button?.addEventListener('click', () => {
-    if (!body || !button) return;
-    const nextOpen = body.hasAttribute('hidden');
-    if (nextOpen) {
-      body.removeAttribute('hidden');
-      button.textContent = '図表を閉じる';
-    } else {
-      body.setAttribute('hidden', '');
-      button.textContent = '図表で確認';
-    }
-  });
+  wireVisualAidControls(root);
 }
 
 export function installVisualAidBridge() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
-  if ((window as Window & { __boki2VisualAidBridgeInstalled?: boolean }).__boki2VisualAidBridgeInstalled) return;
-  (window as Window & { __boki2VisualAidBridgeInstalled?: boolean }).__boki2VisualAidBridgeInstalled = true;
+  const appWindow = window as BridgeWindow;
+  if (appWindow.__boki2VisualAidBridgeInstalled) return;
+  appWindow.__boki2VisualAidBridgeInstalled = true;
 
   const observer = new MutationObserver(() => ensureVisualAid());
   observer.observe(document.body, { childList: true, subtree: true });
