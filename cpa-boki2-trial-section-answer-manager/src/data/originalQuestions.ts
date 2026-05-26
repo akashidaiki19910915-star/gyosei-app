@@ -3,6 +3,19 @@ import type { AnswerLine, CpaTrialSectionRef, QuestionItem, VerificationStatus }
 
 const NOW = '2026-05-24T00:00:00.000Z';
 const COPYRIGHT_NOTE = 'CPA問題集の試験対策編の区分のみ参考。問題文・解答・解説・数値・表構成は未使用。';
+const INDUSTRIAL_ACCOUNT_FLOW = {
+  title: '勘定連絡図',
+  description: '材料・賃金・経費が製造活動を通じて仕掛品、製品、売上原価へ流れる関係を確認する図です。',
+  nodes: ['材料', '賃金', '経費', '製造間接費', '仕掛品', '製品', '売上原価'],
+  edges: [
+    ['材料', '仕掛品'],
+    ['賃金', '仕掛品'],
+    ['経費', '製造間接費'],
+    ['製造間接費', '仕掛品'],
+    ['仕掛品', '製品'],
+    ['製品', '売上原価'],
+  ] as [string, string][],
+};
 
 function line(input: Partial<AnswerLine>): AnswerLine {
   return { id: crypto.randomUUID(), grade: '未採点', points: 0, ...input };
@@ -27,7 +40,7 @@ function quality(approved: boolean, memo: string) {
 function q(input: { ref: CpaTrialSectionRef; title: string; questionText: string; conditions?: string[]; modelAnswer?: AnswerLine[]; explanation?: string; maxScore?: number; status?: VerificationStatus }): QuestionItem {
   const section = findTrialSection(input.ref);
   const approved = (input.status ?? 'approved') === 'approved';
-  return {
+  const base: QuestionItem = {
     id: `短問-${section.id}`,
     examType: 'boki2',
     studyMode: 'built_in_question',
@@ -53,6 +66,14 @@ function q(input: { ref: CpaTrialSectionRef; title: string; questionText: string
     createdAt: NOW,
     updatedAt: NOW,
   };
+  if (input.ref === 'industrial_4_1') {
+    return {
+      ...base,
+      visualAidTypes: ['industrial_account_flow'],
+      visualAidData: { industrial_account_flow: INDUSTRIAL_ACCOUNT_FLOW },
+    };
+  }
+  return base;
 }
 
 const approvedQuestions: QuestionItem[] = [
