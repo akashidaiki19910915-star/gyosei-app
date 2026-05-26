@@ -32,6 +32,7 @@ export type AnswerTemplateId = 'journal' | 'numeric' | 'statementTable' | 'accou
 export type GradeMark = '未採点' | '正解' | '不正解' | '要確認' | '○' | '△' | '×';
 export type ReviewRank = '' | 'A' | 'B' | 'C';
 export type MissReason = '論点理解不足' | '仕訳ミス' | '借方貸方逆' | '金額ミス' | '集計ミス' | '転記ミス' | '表の入力位置ミス' | '下書き不足' | '時間不足' | '解答形式の誤認' | '問題文読み落とし' | 'その他';
+export type VisualAidType = 'industrial_account_flow';
 
 export interface QualityCheck {
   scopeChecked: boolean;
@@ -45,6 +46,17 @@ export interface QualityCheck {
   reviewer: string;
   checkedAt: string;
   evidenceMemo: string;
+}
+
+export interface IndustrialAccountFlowData {
+  title: string;
+  description?: string;
+  nodes: string[];
+  edges: [string, string][];
+}
+
+export interface VisualAidDataMap {
+  industrial_account_flow?: IndustrialAccountFlowData;
 }
 
 export interface AnswerLine {
@@ -88,6 +100,8 @@ export interface ExternalProblemRef {
   sourceType: 'external_material_reference';
   referenceScope: ReferenceScope;
   copyrightNote: string;
+  visualAidTypes?: VisualAidType[];
+  visualAidData?: VisualAidDataMap;
   createdAt: string;
   updatedAt: string;
 }
@@ -118,6 +132,8 @@ export interface QuestionItem {
   createdAt: string;
   updatedAt: string;
   modelAnswerText?: string;
+  visualAidTypes?: VisualAidType[];
+  visualAidData?: VisualAidDataMap;
 }
 
 export type PracticeItem = ExternalProblemRef | QuestionItem;
