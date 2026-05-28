@@ -10,6 +10,19 @@ const DAILY_REPORT_INTERACTION_TYPES = ["作業", "電話", "メール", "面談
 const REMINDER_METHODS = ["電話", "メール", "LINE", "郵送", "訪問", "その他"];
 const PAYMENT_METHODS = ["現金", "振込", "その他"];
 const CASE_DOCUMENT_STATUSES = ["未回収", "回収済", "確認済", "不備あり", "不要"];
+const CONSTRUCTION_PROCEDURE_TYPES = [
+  { value: "construction_license_new", label: "建設業許可 新規" },
+  { value: "construction_license_renewal", label: "建設業許可 更新" },
+  { value: "construction_license_add_business", label: "業種追加" },
+  { value: "annual_closing_report", label: "決算変更届" },
+  { value: "change_notification", label: "変更届" },
+  { value: "keishin", label: "経審" },
+  { value: "management_analysis", label: "経営状況分析" },
+];
+const CONSTRUCTION_PROCEDURE_TYPE_LABELS = Object.freeze(CONSTRUCTION_PROCEDURE_TYPES.reduce((acc, entry) => {
+  acc[entry.value] = entry.label;
+  return acc;
+}, {}));
 const OFFICE_INFO = {
   name: "あかし行政書士事務所",
   zip: "574-0044",
@@ -64,6 +77,8 @@ const state = {
   caseTasks: [],
   caseDocuments: [],
   permitHearings: [],
+  constructionCaseDetails: [],
+  businessResourceTemplates: [],
   selectedAggregation: "month",
   selectedMonth: toMonthKey(new Date()),
   selectedYear: new Date().getFullYear(),
@@ -637,9 +652,9 @@ let eventsBound = false;
 let loadingCount = 0;
 let loadingTimer = null;
 let isApplyingAuthState = false;
-const BACKUP_TABLE_KEYS = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "permit_hearings", "estimates", "estimate_items", "estimate_calculations", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
-const RESTORE_INSERT_ORDER = ["clients", "work_templates", "cases", "case_tasks", "case_documents", "permit_hearings", "estimates", "estimate_items", "estimate_calculations", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
-const RESTORE_DELETE_ORDER = ["payments", "estimate_items", "estimate_calculations", "sales", "expenses", "fixed_expenses", "daily_reports", "permit_hearings", "case_documents", "case_tasks", "estimates", "cases", "work_templates", "clients", "app_settings"];
+const BACKUP_TABLE_KEYS = ["clients", "work_templates", "business_resource_templates", "cases", "construction_case_details", "case_tasks", "case_documents", "permit_hearings", "estimates", "estimate_items", "estimate_calculations", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
+const RESTORE_INSERT_ORDER = ["clients", "work_templates", "business_resource_templates", "cases", "construction_case_details", "case_tasks", "case_documents", "permit_hearings", "estimates", "estimate_items", "estimate_calculations", "sales", "payments", "expenses", "fixed_expenses", "daily_reports", "app_settings"];
+const RESTORE_DELETE_ORDER = ["payments", "estimate_items", "estimate_calculations", "sales", "expenses", "fixed_expenses", "daily_reports", "permit_hearings", "case_documents", "case_tasks", "construction_case_details", "estimates", "cases", "business_resource_templates", "work_templates", "clients", "app_settings"];
 const CASE_MUTATION_COLUMNS = [
   "user_id",
   "client_id",
@@ -680,6 +695,8 @@ const PAYMENT_MUTATION_COLUMNS = ["user_id", "sale_id", "payment_date", "amount"
 const FIXED_EXPENSE_MUTATION_COLUMNS = ["user_id", "content", "amount", "day_of_month", "start_date", "active"];
 const CASE_TASK_MUTATION_COLUMNS = ["user_id", "case_id", "task_title", "task_memo", "due_date", "status", "completed_at"];
 const CASE_DOCUMENT_MUTATION_COLUMNS = ["user_id", "case_id", "document_name", "status", "received_date", "checked_date", "memo", "file_url"];
+const CONSTRUCTION_CASE_DETAIL_MUTATION_COLUMNS = ["id", "user_id", "case_id", "procedure_type", "permit_expiry_date", "fiscal_month", "application_route", "memo"];
+const BUSINESS_RESOURCE_TEMPLATE_MUTATION_COLUMNS = ["id", "user_id", "procedure_type", "resource_category", "resource_name", "description", "url", "file_url", "customer_visible", "required", "last_checked_at", "source_type", "source_name", "memo", "related_task_type", "related_estimate_item", "related_expense_item", "sort_order", "is_active"];
 const CLIENT_INTERACTION_MUTATION_COLUMNS = ["user_id", "client_id", "interaction_date", "interaction_type", "summary", "next_action", "next_action_date", "memo"];
 const RESTORE_MUTATION_COLUMNS = {
   clients: CLIENT_MUTATION_COLUMNS,
@@ -690,6 +707,8 @@ const RESTORE_MUTATION_COLUMNS = {
   fixed_expenses: FIXED_EXPENSE_MUTATION_COLUMNS,
   case_tasks: CASE_TASK_MUTATION_COLUMNS,
   case_documents: CASE_DOCUMENT_MUTATION_COLUMNS,
+  construction_case_details: CONSTRUCTION_CASE_DETAIL_MUTATION_COLUMNS,
+  business_resource_templates: BUSINESS_RESOURCE_TEMPLATE_MUTATION_COLUMNS,
   client_interactions: CLIENT_INTERACTION_MUTATION_COLUMNS,
   work_templates: ["user_id", "name", "items", "memo"],
   permit_hearings: ["id", "user_id", "case_id", "scenario_key", "scenario_label", "industry_primary", "industry_secondary", "industry_notes", "preparation_status", "application_route", "corporation_plan", "applicant_name", "applicant_kana", "contact_name", "contact_tel", "contact_email", "office_name", "office_address", "office_postal_code", "business_type", "capital", "employees_count", "officers_count", "years_in_business", "fiscal_month", "insurance_joined", "construction_career_system", "social_insurance_notes", "requested_permissions", "existing_permits", "past_admin_dispositions", "documents", "tasks", "hearing_notes", "next_actions", "status", "updated_at"],
@@ -2252,6 +2271,154 @@ async function loadCaseDocuments() {
   }
 }
 
+
+async function fetchConstructionCaseDetails() {
+  if (!currentUser || isLoggingOut) {
+    state.constructionCaseDetails = [];
+    return [];
+  }
+  try {
+    const { data, error } = await sbClient
+      .from("construction_case_details")
+      .select("*")
+      .eq("user_id", currentUser.id)
+      .order("updated_at", { ascending: false });
+    if (error) {
+      console.error("LOAD constructionCaseDetails ERROR", error);
+      state.constructionCaseDetails = [];
+      return [];
+    }
+    state.constructionCaseDetails = data || [];
+    return state.constructionCaseDetails;
+  } catch (error) {
+    console.error("LOAD constructionCaseDetails ERROR", error);
+    state.constructionCaseDetails = [];
+    return [];
+  }
+}
+
+async function loadConstructionCaseDetails() {
+  return fetchConstructionCaseDetails();
+}
+
+async function upsertConstructionCaseDetail(detail) {
+  if (!currentUser) {
+    showAppMessage("ログイン状態を確認できません。", true);
+    return null;
+  }
+  const rawPayload = { ...(detail || {}), user_id: currentUser.id };
+  const payload = pickObjectKeys(rawPayload, CONSTRUCTION_CASE_DETAIL_MUTATION_COLUMNS);
+  if (!payload.case_id) {
+    showAppMessage("建設業許可案件詳細の案件IDがありません。", true);
+    return null;
+  }
+
+  const mutation = async () => {
+    const query = payload.id
+      ? sbClient.from("construction_case_details").update(payload).eq("id", payload.id).eq("user_id", currentUser.id)
+      : sbClient.from("construction_case_details").insert(payload);
+    const { data, error } = await query.select().single();
+    if (error) throw error;
+    return data;
+  };
+  return runMutation("建設業許可案件詳細の保存", mutation, { successMessage: "建設業許可案件詳細を保存しました。" });
+}
+
+async function deleteConstructionCaseDetail(id) {
+  if (!currentUser) {
+    showAppMessage("ログイン状態を確認できません。", true);
+    return null;
+  }
+  if (!id) {
+    showAppMessage("建設業許可案件詳細の削除対象IDを取得できませんでした。", true);
+    return null;
+  }
+  return runMutation("建設業許可案件詳細の削除", async () => {
+    const { data, error } = await sbClient
+      .from("construction_case_details")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", currentUser.id)
+      .select("id");
+    if (error) throw error;
+    return data;
+  }, { successMessage: "建設業許可案件詳細を削除しました。" });
+}
+
+async function fetchBusinessResourceTemplates() {
+  if (!currentUser || isLoggingOut) {
+    state.businessResourceTemplates = [];
+    return [];
+  }
+  try {
+    const { data, error } = await sbClient
+      .from("business_resource_templates")
+      .select("*")
+      .eq("user_id", currentUser.id)
+      .order("sort_order", { ascending: true })
+      .order("resource_name", { ascending: true });
+    if (error) {
+      console.error("LOAD businessResourceTemplates ERROR", error);
+      state.businessResourceTemplates = [];
+      return [];
+    }
+    state.businessResourceTemplates = data || [];
+    return state.businessResourceTemplates;
+  } catch (error) {
+    console.error("LOAD businessResourceTemplates ERROR", error);
+    state.businessResourceTemplates = [];
+    return [];
+  }
+}
+
+async function loadBusinessResourceTemplates() {
+  return fetchBusinessResourceTemplates();
+}
+
+async function upsertBusinessResourceTemplate(template) {
+  if (!currentUser) {
+    showAppMessage("ログイン状態を確認できません。", true);
+    return null;
+  }
+  const rawPayload = { ...(template || {}), user_id: currentUser.id };
+  const payload = pickObjectKeys(rawPayload, BUSINESS_RESOURCE_TEMPLATE_MUTATION_COLUMNS);
+  if (!payload.resource_name) {
+    showAppMessage("業務資料テンプレート名を入力してください。", true);
+    return null;
+  }
+
+  const mutation = async () => {
+    const query = payload.id
+      ? sbClient.from("business_resource_templates").update(payload).eq("id", payload.id).eq("user_id", currentUser.id)
+      : sbClient.from("business_resource_templates").insert(payload);
+    const { data, error } = await query.select().single();
+    if (error) throw error;
+    return data;
+  };
+  return runMutation("業務資料テンプレートの保存", mutation, { successMessage: "業務資料テンプレートを保存しました。" });
+}
+
+async function deleteBusinessResourceTemplate(id) {
+  if (!currentUser) {
+    showAppMessage("ログイン状態を確認できません。", true);
+    return null;
+  }
+  if (!id) {
+    showAppMessage("業務資料テンプレートの削除対象IDを取得できませんでした。", true);
+    return null;
+  }
+  return runMutation("業務資料テンプレートの削除", async () => {
+    const { data, error } = await sbClient
+      .from("business_resource_templates")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", currentUser.id)
+      .select("id");
+    if (error) throw error;
+    return data;
+  }, { successMessage: "業務資料テンプレートを削除しました。" });
+}
+
 async function loadPermitHearings() {
   if (!currentUser || isLoggingOut) {
     state.permitHearings = [];
@@ -2484,6 +2651,8 @@ async function loadAllDataSafely() {
     ["cases", loadCases],
     ["caseTasks", loadCaseTasks],
     ["caseDocuments", loadCaseDocuments],
+    ["constructionCaseDetails", loadConstructionCaseDetails],
+    ["businessResourceTemplates", loadBusinessResourceTemplates],
     ["permitHearings", loadPermitHearings],
     ["estimates", loadEstimates],
     ["estimateItems", loadEstimateItems],
@@ -2520,6 +2689,8 @@ async function loadAllDataSafely() {
     estimates: state.estimates.length,
     caseTasks: state.caseTasks.length,
     caseDocuments: state.caseDocuments.length,
+    constructionCaseDetails: state.constructionCaseDetails.length,
+    businessResourceTemplates: state.businessResourceTemplates.length,
     payments: state.payments.length,
     appSettings: state.appSettings?.id ? 1 : 0,
   });
@@ -5107,6 +5278,8 @@ function buildBackupJson() {
       work_templates: Array.isArray(state.workTemplates) ? state.workTemplates : [],
       case_tasks: Array.isArray(state.caseTasks) ? state.caseTasks : [],
       case_documents: Array.isArray(state.caseDocuments) ? state.caseDocuments : [],
+      construction_case_details: Array.isArray(state.constructionCaseDetails) ? state.constructionCaseDetails : [],
+      business_resource_templates: Array.isArray(state.businessResourceTemplates) ? state.businessResourceTemplates : [],
       permit_hearings: Array.isArray(state.permitHearings) ? state.permitHearings : [],
       app_settings: state.appSettings?.id ? [{
         id: state.appSettings.id,
@@ -5133,6 +5306,10 @@ function validateBackupJsonPayload(payload) {
   if (!payload.data || typeof payload.data !== "object") throw new Error("バックアップJSONに data が存在しません。");
 
   for (const tableName of BACKUP_TABLE_KEYS) {
+    if (payload.data[tableName] === undefined) {
+      payload.data[tableName] = [];
+      continue;
+    }
     if (!Array.isArray(payload.data[tableName])) {
       throw new Error(`バックアップJSONの data.${tableName} が配列ではありません。`);
     }
@@ -11312,6 +11489,8 @@ function clearAppState() {
   state.cases = [];
   state.caseTasks = [];
   state.caseDocuments = [];
+  state.constructionCaseDetails = [];
+  state.businessResourceTemplates = [];
   state.estimates = [];
   state.estimateItems = [];
   state.estimateCalculations = [];
@@ -11347,6 +11526,16 @@ window.GyoseiApp = {
   getTaxRate: () => getCurrentTaxRate(),
   getClients: () => Array.isArray(state.clients) ? state.clients.slice() : [],
   getEstimateCalculations: () => Array.isArray(state.estimateCalculations) ? state.estimateCalculations.slice() : [],
+  getConstructionProcedureTypes: () => CONSTRUCTION_PROCEDURE_TYPES.map((entry) => ({ ...entry })),
+  getConstructionProcedureTypeLabels: () => ({ ...CONSTRUCTION_PROCEDURE_TYPE_LABELS }),
+  getConstructionCaseDetails: () => Array.isArray(state.constructionCaseDetails) ? state.constructionCaseDetails.slice() : [],
+  fetchConstructionCaseDetails,
+  upsertConstructionCaseDetail,
+  deleteConstructionCaseDetail,
+  getBusinessResourceTemplates: () => Array.isArray(state.businessResourceTemplates) ? state.businessResourceTemplates.slice() : [],
+  fetchBusinessResourceTemplates,
+  upsertBusinessResourceTemplate,
+  deleteBusinessResourceTemplate,
   reloadAllData: async () => {
     if (!currentUser) return;
     await loadAllDataSafely();
