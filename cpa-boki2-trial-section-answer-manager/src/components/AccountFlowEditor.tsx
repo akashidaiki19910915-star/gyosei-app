@@ -39,6 +39,24 @@ function stripRuntimeNodeData(node: AccountBoxNode): AccountBoxNode {
   return { ...node, data };
 }
 
+function isEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName.toLowerCase();
+  return target.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select';
+}
+
+function shouldIgnoreDeleteShortcut(event: KeyboardEvent): boolean {
+  const legacyEvent = event as KeyboardEvent & { keyCode?: number; which?: number };
+  return Boolean(
+    event.isComposing
+    || event.key === 'Process'
+    || legacyEvent.keyCode === 229
+    || legacyEvent.which === 229
+    || isEditableElement(document.activeElement)
+    || isEditableElement(event.target),
+  );
+}
+
 function sampleDraft(): AccountFlowDraft {
   return {
     nodes: [
@@ -126,8 +144,8 @@ function AccountFlowEditorCanvas() {
   const initial = useMemo(() => loadDraft(), []);
   const [nodes, setNodes] = useState<AccountBoxNode[]>(initial.nodes);
   const [edges, setEdges] = useState<Edge[]>(initial.edges);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
   const [status, setStatus] = useState('図表データは自動で一時保存されます。');
   const flowWrapperRef = useRef<HTMLDivElement | null>(null);
   const { screenToFlowPosition } = useReactFlow();
@@ -148,6 +166,11 @@ function AccountFlowEditorCanvas() {
   const onNodesChange = useCallback((changes: NodeChange[]) => setNodes((current) => applyNodeChanges(changes, current) as AccountBoxNode[]), []);
   const onEdgesChange = useCallback((changes: EdgeChange[]) => setEdges((current) => applyEdgeChanges(changes, current)), []);
   const onConnect = useCallback((connection: Connection) => setEdges((current) => addEdge({ ...connection, markerEnd: { type: MarkerType.ArrowClosed } }, current)), []);
+
+  const onSelectionChange = useCallback(({ nodes: selectedNodes, edges: selectedEdges }: { nodes: AccountBoxNode[]; edges: Edge[] }) => {
+    setSelectedNodeIds(selectedNodes.map((node) => node.id));
+    setSelectedEdgeIds(selectedEdges.map((edge) => edge.id));
+  }, []);
 
   const addNode = useCallback((accountName: string, x = 120, y = 120) => {
     const label = accountName === '自由入力ボックス' ? '' : accountName;
@@ -174,28 +197,41 @@ function AccountFlowEditorCanvas() {
     addNode(accountName, position.x, position.y);
   };
 
-  const deleteSelected = () => {
-    if (selectedNodeId) {
-      setNodes((current) => current.filter((node) => node.id !== selectedNodeId));
-      setEdges((current) => current.filter((edge) => edge.source !== selectedNodeId && edge.target !== selectedNodeId));
-      setSelectedNodeId(null);
-      setStatus('選択中のボックスを削除しました。');
-      return;
-    }
-    if (selectedEdgeId) {
-      setEdges((current) => current.filter((edge) => edge.id !== selectedEdgeId));
-      setSelectedEdgeId(null);
-      setStatus('選択中の矢印を削除しました。');
-    }
-  };
+  const deleteSelected = useCallback(() => {
+    const nodeIdSet = new Set(selectedNodeIds);
+    const edgeIdSet = new Set(selectedEdgeIds);
+    if (nodeIdSet.size === 0 && edgeIdSet.size === 0) return;
+
+    setNodes((current) => current.filter((node) => !nodeIdSet.has(node.id)));
+    setEdges((current) => current.filter((edge) => !edgeIdSet.has(edge.id) && !nodeIdSet.has(edge.source) && !nodeIdSet.has(edge.target)));
+    setSelectedNodeIds([]);
+    setSelectedEdgeIds([]);
+
+    const nodeText = nodeIdSet.size ? `${nodeIdSet.size}件のボックス` : '';
+    const edgeText = edgeIdSet.size ? `${edgeIdSet.size}件の矢印` : '';
+    setStatus(`${[nodeText, edgeText].filter(Boolean).join('と')}を削除しました。`);
+  }, [selectedEdgeIds, selectedNodeIds]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+      if (selectedNodeIds.length === 0 && selectedEdgeIds.length === 0) return;
+      if (shouldIgnoreDeleteShortcut(event)) return;
+      event.preventDefault();
+      deleteSelected();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [deleteSelected, selectedEdgeIds.length, selectedNodeIds.length]);
 
   const resetSample = () => {
     if (!window.confirm('現在の勘定連絡図をサンプルに戻しますか？')) return;
     const next = sampleDraft();
     setNodes(next.nodes);
     setEdges(next.edges);
-    setSelectedNodeId(null);
-    setSelectedEdgeId(null);
+    setSelectedNodeIds([]);
+    setSelectedEdgeIds([]);
     setStatus('材料 → 仕掛品 → 製品 → 売上原価のサンプルに戻しました。');
   };
 
@@ -212,7 +248,7 @@ function AccountFlowEditorCanvas() {
           ))}
         </div>
         <div className="account-flow-editor-actions">
-          <button type="button" className="secondary" onClick={deleteSelected} disabled={!selectedNodeId && !selectedEdgeId}>選択中を削除</button>
+          <button type="button" className="secondary" onClick={deleteSelected} disabled={selectedNodeIds.length === 0 && selectedEdgeIds.length === 0}>選択中を削除</button>
           <button type="button" className="secondary" onClick={resetSample}>サンプルに戻す</button>
         </div>
         <p className="account-flow-editor-note">金額欄は文字列のまま保存します。自動採点とは連動しません。</p>
@@ -225,9 +261,13 @@ function AccountFlowEditorCanvas() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
-          onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null); }}
-          onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null); }}
-          onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); }}
+          onSelectionChange={onSelectionChange}
+          onNodeClick={(_, node) => { setSelectedNodeIds([node.id]); setSelectedEdgeIds([]); }}
+          onEdgeClick={(_, edge) => { setSelectedEdgeIds([edge.id]); setSelectedNodeIds([]); }}
+          onPaneClick={() => { setSelectedNodeIds([]); setSelectedEdgeIds([]); }}
+          deleteKeyCode={null}
+          multiSelectionKeyCode={['Control', 'Meta']}
+          selectionKeyCode="Shift"
           fitView
           defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed } }}
         >
