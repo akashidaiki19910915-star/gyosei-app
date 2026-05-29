@@ -748,6 +748,17 @@ const CASE_DOCUMENT_MUTATION_COLUMNS = ["user_id", "case_id", "document_name", "
 const CONSTRUCTION_CASE_DETAIL_MUTATION_COLUMNS = ["id", "user_id", "case_id", "procedure_type", "permit_expiry_date", "fiscal_month", "application_route", "memo"];
 const BUSINESS_RESOURCE_TEMPLATE_MUTATION_COLUMNS = ["id", "user_id", "procedure_type", "resource_category", "resource_name", "description", "url", "file_url", "customer_visible", "required", "last_checked_at", "source_type", "source_name", "memo", "related_task_type", "related_estimate_item", "related_expense_item", "sort_order", "is_active"];
 const CLIENT_INTERACTION_MUTATION_COLUMNS = ["user_id", "client_id", "interaction_date", "interaction_type", "summary", "next_action", "next_action_date", "memo"];
+const ESTIMATE_ITEM_TYPES = [
+  { value: "reward", label: "報酬" },
+  { value: "expense", label: "実費" },
+  { value: "advance", label: "立替金" },
+  { value: "discount", label: "値引き" },
+];
+const ESTIMATE_ITEM_TYPE_LABELS = ESTIMATE_ITEM_TYPES.reduce((acc, item) => {
+  acc[item.value] = item.label;
+  return acc;
+}, {});
+const ESTIMATE_ITEM_TYPE_VALUES = new Set(ESTIMATE_ITEM_TYPES.map((item) => item.value));
 const RESTORE_MUTATION_COLUMNS = {
   clients: CLIENT_MUTATION_COLUMNS,
   cases: CASE_MUTATION_COLUMNS,
@@ -763,7 +774,7 @@ const RESTORE_MUTATION_COLUMNS = {
   work_templates: ["user_id", "name", "items", "memo"],
   permit_hearings: ["id", "user_id", "case_id", "scenario_key", "scenario_label", "industry_primary", "industry_secondary", "industry_notes", "preparation_status", "application_route", "corporation_plan", "applicant_name", "applicant_kana", "contact_name", "contact_tel", "contact_email", "office_name", "office_address", "office_postal_code", "business_type", "capital", "employees_count", "officers_count", "years_in_business", "fiscal_month", "insurance_joined", "construction_career_system", "social_insurance_notes", "requested_permissions", "existing_permits", "past_admin_dispositions", "documents", "tasks", "hearing_notes", "next_actions", "status", "updated_at"],
   estimates: ["user_id", "client_id", "customer_name", "estimate_title", "estimate_date", "valid_until", "status", "memo", "subtotal", "tax", "total", "estimate_source", "estimate_number", "case_id"],
-  estimate_items: ["user_id", "estimate_id", "item_name", "quantity", "unit_price", "amount", "memo", "sort_order"],
+  estimate_items: ["user_id", "estimate_id", "item_name", "item_type", "quantity", "unit_price", "amount", "memo", "sort_order"],
   estimate_calculations: ["user_id", "client_id", "project_name", "work_type", "application_type", "corporate_type", "governor_type", "general_specific", "industry_count", "officer_count", "office_count", "document_level", "urgent", "expense_amount", "discount_amount", "memo", "base_fee", "addon_fee", "taxable_subtotal", "tax", "total", "addon_breakdown", "reflected_estimate_id", "reflected_at"],
   daily_reports: ["user_id", "client_id", "case_id", "report_date", "interaction_type", "work_content", "work_minutes", "next_action", "next_action_date", "next_action_status", "next_action_completed_at", "memo"],
   app_settings: ["user_id", "office_name", "postal_code", "address", "tel", "email", "invoice_registration_number", "bank_info", "default_invoice_due_days", "tax_rate", "estimate_note", "invoice_note"],
@@ -2818,6 +2829,66 @@ function pickObjectKeys(source, keys) {
     return acc;
   }, {});
 }
+
+function normalizeEstimateItemType(value) {
+  const normalized = String(value || "").trim();
+  return ESTIMATE_ITEM_TYPE_VALUES.has(normalized) ? normalized : "reward";
+}
+
+function hasExplicitEstimateItemType(value) {
+  return ESTIMATE_ITEM_TYPE_VALUES.has(String(value || "").trim());
+}
+
+function getEstimateItemTypeLabel(value) {
+  return ESTIMATE_ITEM_TYPE_LABELS[normalizeEstimateItemType(value)] || ESTIMATE_ITEM_TYPE_LABELS.reward;
+}
+
+function createEstimateItemTypeOptions(selectedValue) {
+  const normalized = normalizeEstimateItemType(selectedValue);
+  return ESTIMATE_ITEM_TYPES.map((item) => `<option value="${item.value}"${item.value === normalized ? " selected" : ""}>${escapeHtml(item.label)}</option>`).join("");
+}
+
+function exportEstimateItemForBackup(item = {}) {
+  const itemType = normalizeEstimateItemType(item.itemType ?? item.item_type);
+  return {
+    ...item,
+    estimate_id: item.estimate_id || item.estimateId || null,
+    item_name: item.item_name || item.itemName || "",
+    item_type: itemType,
+    quantity: Number(item.quantity ?? 1) || 1,
+    unit_price: Number(item.unit_price ?? item.unitPrice ?? 0) || 0,
+    amount: Number(item.amount ?? 0) || 0,
+    memo: item.memo || null,
+    sort_order: Number(item.sort_order ?? item.sortOrder ?? 0) || 0,
+  };
+}
+
+function normalizeEstimateItemRestoreRow(row = {}) {
+  const normalized = exportEstimateItemForBackup(row);
+  return {
+    ...row,
+    estimate_id: normalized.estimate_id,
+    item_name: normalized.item_name,
+    item_type: normalized.item_type,
+    quantity: normalized.quantity,
+    unit_price: normalized.unit_price,
+    amount: normalized.amount,
+    memo: normalized.memo,
+    sort_order: normalized.sort_order,
+  };
+}
+
+function getEstimateItemClassification(item = {}) {
+  const candidateType = item.itemType ?? item.item_type;
+  const hasStoredType = item.hasItemType === false ? false : hasExplicitEstimateItemType(candidateType);
+  if (hasStoredType) return normalizeEstimateItemType(candidateType);
+  const itemName = String(item.itemName || item.item_name || "");
+  const amount = Number(item.amount || 0) || 0;
+  if (amount < 0 || itemName.includes("値引き")) return "discount";
+  if (itemName.includes("実費")) return "expense";
+  return "reward";
+}
+
 
 function buildCasePayloadFromForm() {
   const customerName = asTrimmedText(caseForm.elements.customerName.value);
@@ -5810,7 +5881,7 @@ function buildBackupJson() {
       clients: Array.isArray(state.clients) ? state.clients : [],
       cases: Array.isArray(state.cases) ? state.cases : [],
       estimates: Array.isArray(state.estimates) ? state.estimates : [],
-      estimate_items: Array.isArray(state.estimateItems) ? state.estimateItems : [],
+      estimate_items: (Array.isArray(state.estimateItems) ? state.estimateItems : []).map(exportEstimateItemForBackup),
       estimate_calculations: Array.isArray(state.estimateCalculations) ? state.estimateCalculations : [],
       sales: Array.isArray(state.sales) ? state.sales : [],
       payments: Array.isArray(state.payments) ? state.payments : [],
@@ -5889,7 +5960,8 @@ async function restoreBackupData(rawData, mode) {
         result.skippedCount += 1;
         continue;
       }
-      const rawPayload = { ...row, user_id: currentUser.id };
+      const normalizedRow = tableName === "estimate_items" ? normalizeEstimateItemRestoreRow(row) : row;
+      const rawPayload = { ...normalizedRow, user_id: currentUser.id };
       const allowedColumns = RESTORE_MUTATION_COLUMNS[tableName] || ["user_id"];
       const payload = pickObjectKeys(rawPayload, allowedColumns);
       const { error } = await sbClient.from(tableName).insert(payload);
@@ -8147,11 +8219,13 @@ function matchesDailyReportDateFilter(entry, filter) {
 function addEstimateItemRow(defaultItem = {}) {
   if (!estimateItemsWrap) return;
   const row = document.createElement("div");
+  const itemType = normalizeEstimateItemType(defaultItem.itemType ?? defaultItem.item_type);
   row.className = "estimate-item-row";
   row.innerHTML = `
-    <input type="text" data-key="itemName" placeholder="項目名" value="${escapeHtml(defaultItem.itemName || "")}" />
+    <select data-key="itemType" aria-label="区分" title="区分">${createEstimateItemTypeOptions(itemType)}</select>
+    <input type="text" data-key="itemName" placeholder="項目名" value="${escapeHtml(defaultItem.itemName || defaultItem.item_name || "")}" />
     <input type="text" inputmode="decimal" pattern="[0-9.,]*" data-key="quantity" placeholder="数量" value="${defaultItem.quantity ?? 1}" />
-    <input type="text" inputmode="numeric" pattern="-?[0-9,]*" data-key="unitPrice" data-allow-negative="true" placeholder="単価" value="${defaultItem.unitPrice ?? 0}" />
+    <input type="text" inputmode="numeric" pattern="-?[0-9,]*" data-key="unitPrice" data-allow-negative="true" placeholder="単価" value="${defaultItem.unitPrice ?? defaultItem.unit_price ?? 0}" />
     <p class="meta item-amount">${formatCurrency(defaultItem.amount ?? 0)}</p>
     <button type="button" class="danger-btn estimate-item-remove-btn" data-action="remove_estimate_item_row">削除</button>
   `;
@@ -8162,7 +8236,7 @@ function addEstimateItemRow(defaultItem = {}) {
 }
 
 function addEstimateDiscountRow() {
-  addEstimateItemRow({ itemName: "値引き", quantity: 1, unitPrice: -5000, amount: -5000 });
+  addEstimateItemRow({ itemName: "値引き", itemType: "discount", quantity: 1, unitPrice: -5000, amount: -5000 });
 }
 
 function handleEstimateItemsInput() {
@@ -8181,11 +8255,12 @@ function getEstimateItemsFromForm() {
   if (!estimateItemsWrap) return [];
   return Array.from(estimateItemsWrap.querySelectorAll(".estimate-item-row"))
     .map((row, idx) => {
+      const itemType = normalizeEstimateItemType(row.querySelector('[data-key="itemType"]')?.value);
       const itemName = asTrimmedText(row.querySelector('[data-key="itemName"]')?.value);
       const quantity = parseDecimalInput(row.querySelector('[data-key="quantity"]')?.value);
       const unitPrice = parseNumberInput(row.querySelector('[data-key="unitPrice"]')?.value);
       const amount = Math.floor((Number.isFinite(quantity) ? quantity : 0) * unitPrice);
-      return { itemName, quantity, unitPrice, amount, sortOrder: idx };
+      return { itemName, itemType, quantity, unitPrice, amount, sortOrder: idx };
     })
     .filter((item) => item.itemName);
 }
@@ -8351,6 +8426,7 @@ async function handleEstimateSubmit(event) {
           user_id: currentUser.id,
           estimate_id: estimateId,
           item_name: item.itemName,
+          item_type: normalizeEstimateItemType(item.itemType),
           quantity: item.quantity,
           unit_price: item.unitPrice,
           amount: item.amount,
@@ -9831,13 +9907,20 @@ function aggregateEstimateItemsForCustomer(estimate) {
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((row) => ({
       itemName: String(row.itemName || ""),
+      itemType: row.itemType,
       amount: Number(row.amount || 0) || 0,
+      classification: getEstimateItemClassification(row),
     }));
-  const expenseTotal = rawRows.filter((row) => row.itemName.includes("実費")).reduce((sum, row) => sum + row.amount, 0);
-  const rewardTotal = rawRows.filter((row) => !row.itemName.includes("実費")).reduce((sum, row) => sum + row.amount, 0);
-  const discountTotal = rawRows.filter((row) => row.amount < 0 || row.itemName.includes("値引き")).reduce((sum, row) => sum + row.amount, 0);
-  const normalizedRewardTotal = rewardTotal - discountTotal;
-  return { rewardTotal: normalizedRewardTotal, expenseTotal, discountTotal };
+  const expenseTotal = rawRows
+    .filter((row) => row.classification === "expense" || row.classification === "advance")
+    .reduce((sum, row) => sum + row.amount, 0);
+  const rewardTotal = rawRows
+    .filter((row) => row.classification === "reward")
+    .reduce((sum, row) => sum + row.amount, 0);
+  const discountTotal = rawRows
+    .filter((row) => row.classification === "discount")
+    .reduce((sum, row) => sum + row.amount, 0);
+  return { rewardTotal, expenseTotal, discountTotal };
 }
 function downloadInvoiceWorkbook(invoiceData) {
   const wb = XLSX.utils.book_new();
@@ -11900,10 +11983,13 @@ function getPendingEstimates(estimates) {
 }
 
 function mapEstimateItemFromDb(row) {
+  const explicitItemType = hasExplicitEstimateItemType(row.item_type);
   return {
     id: row.id,
     estimateId: row.estimate_id,
     itemName: row.item_name || "",
+    itemType: normalizeEstimateItemType(row.item_type),
+    hasItemType: explicitItemType,
     quantity: Number(row.quantity ?? 1) || 1,
     unitPrice: Number(row.unit_price ?? 0) || 0,
     amount: Number(row.amount ?? 0) || 0,
