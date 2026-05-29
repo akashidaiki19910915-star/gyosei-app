@@ -938,7 +938,11 @@
         </section>
 
         <section id="tab-work-templates" class="tab-panel">
-          <div class="layout two-col">
+          <nav class="subtabs" aria-label="業務テンプレートサブタブ">
+            <button type="button" class="subtab-btn active" data-parent-tab="work-templates" data-subtab="entry">業務テンプレート</button>
+            <button type="button" class="subtab-btn" data-parent-tab="work-templates" data-subtab="resource-library">業務資料ライブラリ</button>
+          </nav>
+          <div class="layout two-col subtab-panel active" data-parent-tab="work-templates" data-subtab="entry">
             <section class="panel">
               <h2>業務テンプレート登録</h2>
               <form id="work-template-form" class="form">
@@ -957,6 +961,117 @@
               <ul id="work-templates-list" class="item-list"></ul>
             </section>
           </div>
+
+          <section class="panel subtab-panel" data-parent-tab="work-templates" data-subtab="resource-library">
+            <div class="section-header">
+              <div>
+                <h2>業務資料ライブラリ</h2>
+                <p class="muted">建設業許可関連の「使う資料」「回収する資料」「提出する資料」を管理します。file_url はURL文字列のみ保存し、ファイルアップロードは行いません。</p>
+              </div>
+            </div>
+            <form id="business-resource-template-form" class="form business-resource-form">
+              <div class="date-grid">
+                <label>手続種別 <span class="required">必須</span>
+                  <select id="business-resource-procedure-type" name="procedureType" required>
+                    <option value="construction_license_new">建設業許可 新規</option>
+                    <option value="construction_license_renewal">建設業許可 更新</option>
+                    <option value="construction_license_add_business">業種追加</option>
+                    <option value="annual_closing_report">決算変更届</option>
+                    <option value="change_notification">変更届</option>
+                    <option value="keishin">経審</option>
+                    <option value="management_analysis">経営状況分析</option>
+                  </select>
+                </label>
+                <label>資料分類 <span class="required">必須</span>
+                  <select id="business-resource-category" name="resourceCategory" required>
+                    <option value="use">使う資料</option>
+                    <option value="collect">回収する資料</option>
+                    <option value="submit">提出する資料</option>
+                  </select>
+                </label>
+              </div>
+              <label>資料名 <span class="required">必須</span><input id="business-resource-name" name="resourceName" type="text" required maxlength="160" /></label>
+              <label>説明<textarea id="business-resource-description" name="description" rows="2" maxlength="4000"></textarea></label>
+              <div class="date-grid">
+                <label>参照URL<input id="business-resource-url" name="url" type="url" maxlength="2000" placeholder="https://..." /></label>
+                <label>ファイルURL<input id="business-resource-file-url" name="fileUrl" type="url" maxlength="2000" placeholder="https://..." /></label>
+              </div>
+              <div class="date-grid">
+                <label>最終確認日<input id="business-resource-last-checked-at" name="lastCheckedAt" type="date" /></label>
+                <label>情報元区分<input id="business-resource-source-type" name="sourceType" type="text" maxlength="80" placeholder="行政庁 / 社内 / 外部資料 など" /></label>
+              </div>
+              <label>情報元名<input id="business-resource-source-name" name="sourceName" type="text" maxlength="200" /></label>
+              <div class="date-grid">
+                <label>関連タスク種別<input id="business-resource-related-task-type" name="relatedTaskType" type="text" maxlength="120" /></label>
+                <label>関連見積項目<input id="business-resource-related-estimate-item" name="relatedEstimateItem" type="text" maxlength="160" /></label>
+              </div>
+              <div class="date-grid">
+                <label>関連経費項目<input id="business-resource-related-expense-item" name="relatedExpenseItem" type="text" maxlength="160" /></label>
+                <label>並び順<input id="business-resource-sort-order" name="sortOrder" type="number" inputmode="numeric" step="1" value="0" /></label>
+              </div>
+              <div class="inline-options">
+                <label><input id="business-resource-required" name="required" type="checkbox" /> 必須資料</label>
+                <label><input id="business-resource-customer-visible" name="customerVisible" type="checkbox" /> 顧客表示可</label>
+                <label><input id="business-resource-is-active" name="isActive" type="checkbox" checked /> 有効</label>
+              </div>
+              <label>メモ<textarea id="business-resource-memo" name="memo" rows="2" maxlength="2000"></textarea></label>
+              <div class="form-actions">
+                <button id="business-resource-submit-btn" type="submit">業務資料を登録</button>
+                <button id="business-resource-reset-btn" type="button" class="secondary-btn">入力をクリア</button>
+              </div>
+            </form>
+
+            <div class="filter-bar business-resource-filters">
+              <label>手続種別
+                <select id="business-resource-filter-procedure">
+                  <option value="all">すべて</option>
+                  <option value="construction_license_new">建設業許可 新規</option>
+                  <option value="construction_license_renewal">建設業許可 更新</option>
+                  <option value="construction_license_add_business">業種追加</option>
+                  <option value="annual_closing_report">決算変更届</option>
+                  <option value="change_notification">変更届</option>
+                  <option value="keishin">経審</option>
+                  <option value="management_analysis">経営状況分析</option>
+                </select>
+              </label>
+              <label>資料分類
+                <select id="business-resource-filter-category">
+                  <option value="all">すべて</option>
+                  <option value="use">使う資料</option>
+                  <option value="collect">回収する資料</option>
+                  <option value="submit">提出する資料</option>
+                </select>
+              </label>
+              <label>有効状態
+                <select id="business-resource-filter-active">
+                  <option value="active">有効のみ</option>
+                  <option value="all">すべて</option>
+                  <option value="inactive">無効のみ</option>
+                </select>
+              </label>
+              <label>キーワード検索<input id="business-resource-search" type="search" placeholder="資料名・説明・情報元・メモ" /></label>
+            </div>
+            <div id="business-resource-templates-empty" class="empty">業務資料はまだありません。</div>
+            <div id="business-resource-templates-wrap" class="table-wrap" hidden>
+              <table class="business-resource-table">
+                <thead>
+                  <tr>
+                    <th>手続種別</th>
+                    <th>資料分類</th>
+                    <th>資料名</th>
+                    <th>必須</th>
+                    <th>顧客表示</th>
+                    <th>最終確認日</th>
+                    <th>情報元</th>
+                    <th>状態</th>
+                    <th>メモ</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="business-resource-templates-body"></tbody>
+              </table>
+            </div>
+          </section>
         </section>
 
         <section id="tab-estimates" class="tab-panel">
