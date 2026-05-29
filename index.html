@@ -1051,11 +1051,20 @@
               </label>
               <label>キーワード検索<input id="business-resource-search" type="search" placeholder="資料名・説明・情報元・メモ" /></label>
             </div>
+            <div class="bulk-actions business-resource-bulk-actions" aria-label="業務資料ライブラリ一括操作">
+              <button id="business-resource-select-all-btn" type="button" class="secondary-btn" data-action="select_all_business_resource_templates">全選択</button>
+              <button id="business-resource-clear-selection-btn" type="button" class="secondary-btn" data-action="clear_all_business_resource_templates" disabled>全解除</button>
+              <span id="business-resource-selection-count" class="bulk-selection-count">0件選択中</span>
+              <button id="business-resource-bulk-activate-btn" type="button" class="secondary-btn" data-action="bulk_activate_business_resource_templates" disabled>選択を有効化</button>
+              <button id="business-resource-bulk-deactivate-btn" type="button" class="secondary-btn" data-action="bulk_deactivate_business_resource_templates" disabled>選択を無効化</button>
+              <button id="business-resource-bulk-delete-btn" type="button" class="danger-btn" data-action="bulk_delete_business_resource_templates" disabled>選択を削除</button>
+            </div>
             <div id="business-resource-templates-empty" class="empty">業務資料はまだありません。</div>
             <div id="business-resource-templates-wrap" class="table-wrap" hidden>
               <table class="business-resource-table">
                 <thead>
                   <tr>
+                    <th>選択</th>
                     <th>手続種別</th>
                     <th>資料分類</th>
                     <th>資料名</th>

@@ -125,6 +125,7 @@ const state = {
   selectedExpenseIds: [],
   selectedDailyReportIds: [],
   selectedFixedExpenseIds: [],
+  selectedBusinessResourceTemplateIds: [],
 };
 const editState = { clientId: null, caseId: null, workTemplateId: null, businessResourceTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
 
@@ -181,6 +182,12 @@ const CLICK_ACTION_HANDLERS = {
   edit_business_resource_template: handleBusinessResourceTemplateListAction,
   disable_business_resource_template: handleBusinessResourceTemplateListAction,
   reactivate_business_resource_template: handleBusinessResourceTemplateListAction,
+  delete_business_resource_template: handleBusinessResourceTemplateListAction,
+  select_all_business_resource_templates: () => setAllBusinessResourceTemplateSelections(true),
+  clear_all_business_resource_templates: () => setAllBusinessResourceTemplateSelections(false),
+  bulk_activate_business_resource_templates: () => handleBulkBusinessResourceTemplateActiveUpdate(true),
+  bulk_deactivate_business_resource_templates: () => handleBulkBusinessResourceTemplateActiveUpdate(false),
+  bulk_delete_business_resource_templates: handleBulkDeleteBusinessResourceTemplates,
   edit_estimate: handleEstimateListAction,
   delete_estimate: handleEstimateListAction,
   create_case_from_estimate: handleEstimateListAction,
@@ -653,6 +660,12 @@ const businessResourceSearchInput = document.getElementById("business-resource-s
 const businessResourceTemplatesEmpty = document.getElementById("business-resource-templates-empty");
 const businessResourceTemplatesWrap = document.getElementById("business-resource-templates-wrap");
 const businessResourceTemplatesBody = document.getElementById("business-resource-templates-body");
+const businessResourceSelectionCount = document.getElementById("business-resource-selection-count");
+const businessResourceSelectAllBtn = document.getElementById("business-resource-select-all-btn");
+const businessResourceClearSelectionBtn = document.getElementById("business-resource-clear-selection-btn");
+const businessResourceBulkActivateBtn = document.getElementById("business-resource-bulk-activate-btn");
+const businessResourceBulkDeactivateBtn = document.getElementById("business-resource-bulk-deactivate-btn");
+const businessResourceBulkDeleteBtn = document.getElementById("business-resource-bulk-delete-btn");
 const expenseItemTemplate = document.getElementById("expense-item-template");
 const fixedExpenseItemTemplate = document.getElementById("fixed-expense-item-template");
 const estimateForm = document.getElementById("estimate-form");
@@ -821,6 +834,7 @@ function bindEvents() {
   businessResourceFilterCategory?.addEventListener("change", handleBusinessResourceFilterChange);
   businessResourceFilterActive?.addEventListener("change", handleBusinessResourceFilterChange);
   businessResourceSearchInput?.addEventListener("input", handleBusinessResourceFilterChange);
+  businessResourceTemplatesBody?.addEventListener("change", handleBusinessResourceTemplateSelectionChange);
   debugLog("SALE FORM FOUND", !!saleForm);
   debugLog("EXPENSE FORM FOUND", !!expenseForm);
   debugLog("DAILY REPORT FORM FOUND", !!dailyReportForm);
@@ -2434,7 +2448,7 @@ async function upsertBusinessResourceTemplate(template) {
   return runMutation("業務資料テンプレートの保存", mutation, { successMessage: "業務資料テンプレートを保存しました。" });
 }
 
-async function deleteBusinessResourceTemplate(id) {
+async function deleteBusinessResourceTemplate(id, options = {}) {
   if (!currentUser) {
     showAppMessage("ログイン状態を確認できません。", true);
     return null;
@@ -2443,7 +2457,26 @@ async function deleteBusinessResourceTemplate(id) {
     showAppMessage("業務資料テンプレートの削除対象IDを取得できませんでした。", true);
     return null;
   }
-  return setBusinessResourceTemplateActive(id, false);
+  if (!options.skipConfirm && !window.confirm("この資料を完全に削除します。この操作は元に戻せません。実行しますか？")) return null;
+  return runMutation("業務資料テンプレートの削除", async () => {
+    const { data, error } = await sbClient
+      .from("business_resource_templates")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", currentUser.id)
+      .select("id")
+      .single();
+    if (error) throw error;
+    return data;
+  }, {
+    successMessage: "業務資料テンプレートを削除しました。",
+    afterSuccess: () => {
+      state.selectedBusinessResourceTemplateIds = getSelectedIdsByKey("selectedBusinessResourceTemplateIds").filter((selectedId) => selectedId !== String(id));
+      if (String(editState.businessResourceTemplateId) === String(id)) resetBusinessResourceTemplateForm();
+      subtabState["work-templates"] = "resource-library";
+      renderBusinessResourceTemplates();
+    },
+  });
 }
 
 async function loadPermitHearings() {
@@ -3022,7 +3055,90 @@ function handleBusinessResourceFilterChange() {
   state.businessResourceCategoryFilter = businessResourceFilterCategory?.value || "all";
   state.businessResourceActiveFilter = businessResourceFilterActive?.value || "active";
   state.businessResourceSearchQuery = asTrimmedText(businessResourceSearchInput?.value).toLowerCase();
+  state.selectedBusinessResourceTemplateIds = [];
   renderBusinessResourceTemplates();
+}
+
+function getVisibleBusinessResourceTemplateIds() {
+  return getFilteredBusinessResourceTemplates().map((entry) => String(entry.id)).filter(Boolean);
+}
+
+function getSelectedVisibleBusinessResourceTemplateIds() {
+  const visibleIds = new Set(getVisibleBusinessResourceTemplateIds());
+  return getSelectedIdsByKey("selectedBusinessResourceTemplateIds").filter((id) => visibleIds.has(String(id)));
+}
+
+function setAllBusinessResourceTemplateSelections(checked) {
+  state.selectedBusinessResourceTemplateIds = checked ? getVisibleBusinessResourceTemplateIds() : [];
+  renderBusinessResourceTemplates();
+}
+
+function handleBusinessResourceTemplateSelectionChange(event) {
+  const checkbox = event.target;
+  if (!(checkbox instanceof HTMLInputElement) || checkbox.type !== "checkbox" || checkbox.dataset.action !== "select_business_resource_template") return;
+  const id = checkbox.dataset.id;
+  if (!id) return;
+  const selected = new Set(getSelectedIdsByKey("selectedBusinessResourceTemplateIds"));
+  if (checkbox.checked) selected.add(String(id)); else selected.delete(String(id));
+  state.selectedBusinessResourceTemplateIds = Array.from(selected);
+  renderBusinessResourceTemplates();
+}
+
+async function handleBulkBusinessResourceTemplateActiveUpdate(isActive) {
+  if (!currentUser) return;
+  const ids = getSelectedVisibleBusinessResourceTemplateIds();
+  if (!ids.length) {
+    showAppMessage("対象の業務資料を選択してください。", true);
+    renderBusinessResourceTemplates();
+    return;
+  }
+  await runMutation(isActive ? "業務資料一括有効化" : "業務資料一括無効化", async () => {
+    const { data, error } = await sbClient
+      .from("business_resource_templates")
+      .update({ is_active: Boolean(isActive), user_id: currentUser.id })
+      .in("id", ids)
+      .eq("user_id", currentUser.id)
+      .select("id,is_active");
+    if (error) throw error;
+    return data;
+  }, {
+    successMessage: isActive ? "選択した業務資料を有効化しました。" : "選択した業務資料を無効化しました。",
+    afterSuccess: () => {
+      if (ids.some((id) => String(editState.businessResourceTemplateId) === String(id))) resetBusinessResourceTemplateForm();
+      state.selectedBusinessResourceTemplateIds = [];
+      subtabState["work-templates"] = "resource-library";
+      renderBusinessResourceTemplates();
+    },
+  });
+}
+
+async function handleBulkDeleteBusinessResourceTemplates() {
+  if (!currentUser) return;
+  const ids = getSelectedVisibleBusinessResourceTemplateIds();
+  if (!ids.length) {
+    showAppMessage("削除する業務資料を選択してください。", true);
+    renderBusinessResourceTemplates();
+    return;
+  }
+  if (!window.confirm("選択した資料を完全に削除します。この操作は元に戻せません。実行しますか？")) return;
+  await runMutation("業務資料一括削除", async () => {
+    const { data, error } = await sbClient
+      .from("business_resource_templates")
+      .delete()
+      .in("id", ids)
+      .eq("user_id", currentUser.id)
+      .select("id");
+    if (error) throw error;
+    return data;
+  }, {
+    successMessage: "選択した業務資料を削除しました。",
+    afterSuccess: () => {
+      if (ids.some((id) => String(editState.businessResourceTemplateId) === String(id))) resetBusinessResourceTemplateForm();
+      state.selectedBusinessResourceTemplateIds = [];
+      subtabState["work-templates"] = "resource-library";
+      renderBusinessResourceTemplates();
+    },
+  });
 }
 
 async function createCaseTasksFromTemplate(caseRow, templateId) {
@@ -3705,6 +3821,10 @@ async function handleBusinessResourceTemplateListAction(event) {
   }
   if (listAction === "reactivate_business_resource_template") {
     await setBusinessResourceTemplateActive(id, true);
+    return;
+  }
+  if (listAction === "delete_business_resource_template") {
+    await deleteBusinessResourceTemplate(id);
   }
 }
 
@@ -7655,16 +7775,28 @@ function renderBusinessResourceTemplates() {
   }
 
   const filtered = getFilteredBusinessResourceTemplates();
+  const filteredIds = new Set(filtered.map((entry) => String(entry.id)));
+  state.selectedBusinessResourceTemplateIds = getSelectedIdsByKey("selectedBusinessResourceTemplateIds").filter((id) => filteredIds.has(String(id)));
+  const selectedIds = new Set(state.selectedBusinessResourceTemplateIds);
+  const selectedCount = selectedIds.size;
+  if (businessResourceSelectionCount) businessResourceSelectionCount.textContent = `${selectedCount}件選択中`;
+  if (businessResourceSelectAllBtn) businessResourceSelectAllBtn.disabled = filtered.length === 0;
+  if (businessResourceClearSelectionBtn) businessResourceClearSelectionBtn.disabled = selectedCount === 0;
+  if (businessResourceBulkActivateBtn) businessResourceBulkActivateBtn.disabled = selectedCount === 0;
+  if (businessResourceBulkDeactivateBtn) businessResourceBulkDeactivateBtn.disabled = selectedCount === 0;
+  if (businessResourceBulkDeleteBtn) businessResourceBulkDeleteBtn.disabled = selectedCount === 0;
   businessResourceTemplatesBody.innerHTML = "";
   filtered.forEach((entry) => {
     const tr = document.createElement("tr");
     tr.dataset.id = entry.id;
     const isActive = getBusinessResourceActiveValue(entry);
+    const isSelected = selectedIds.has(String(entry.id));
     const urlLinks = [
       entry.url ? `<a href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">参照URL</a>` : "",
       entry.file_url ? `<a href="${escapeHtml(entry.file_url)}" target="_blank" rel="noopener noreferrer">ファイルURL</a>` : "",
     ].filter(Boolean).join(" / ");
     tr.innerHTML = `
+      <td class="selection-cell"><input type="checkbox" aria-label="${escapeHtml(entry.resource_name || "業務資料")}を選択" data-action="select_business_resource_template" data-id="${escapeHtml(entry.id)}" ${isSelected ? "checked" : ""} /></td>
       <td>${escapeHtml(getBusinessResourceProcedureLabel(entry.procedure_type))}</td>
       <td>${escapeHtml(getBusinessResourceCategoryLabel(entry.resource_category))}</td>
       <td>
@@ -7682,6 +7814,7 @@ function renderBusinessResourceTemplates() {
         <div class="row-actions">
           <button type="button" class="secondary-btn" data-action="edit_business_resource_template" data-list-action="edit_business_resource_template" data-id="${escapeHtml(entry.id)}">編集</button>
           <button type="button" class="${isActive ? "danger-btn" : "secondary-btn"}" data-action="${isActive ? "disable_business_resource_template" : "reactivate_business_resource_template"}" data-list-action="${isActive ? "disable_business_resource_template" : "reactivate_business_resource_template"}" data-id="${escapeHtml(entry.id)}">${isActive ? "無効化" : "有効化"}</button>
+          <button type="button" class="danger-btn" data-action="delete_business_resource_template" data-list-action="delete_business_resource_template" data-id="${escapeHtml(entry.id)}">削除</button>
         </div>
       </td>
     `;
