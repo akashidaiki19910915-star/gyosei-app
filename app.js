@@ -174,8 +174,8 @@ const CLICK_ACTION_HANDLERS = {
   view_saved_permit_hearing: handleViewSavedPermitHearing,
   delete_saved_permit_hearing: handleDeleteSavedPermitHearing,
   clear_permit_hearing_filters: clearPermitHearingFilters,
-  add_estimate_item_row: () => addEstimateItemRow(),
-  add_estimate_discount_row: () => addEstimateDiscountRow(),
+  add_estimate_item_row: () => preserveEstimateFormDuring(() => addEstimateItemRow()),
+  add_estimate_discount_row: () => preserveEstimateFormDuring(() => addEstimateDiscountRow()),
   remove_estimate_item_row: handleEstimateItemsClick,
   status_summary_filter: handleStatusSummaryClick,
   deadline_alert_click: handleDeadlineAlertClick,
@@ -921,9 +921,27 @@ function bindEvents() {
   if (exportBackupJsonBtn) exportBackupJsonBtn.dataset.action = "export_backup_json";
   backupRestoreForm?.addEventListener("submit", handleBackupRestoreSubmit);
   document.addEventListener("wheel", handleNumberInputWheel, { passive: true });
-  if (estimateAddItemBtn) estimateAddItemBtn.dataset.action = "add_estimate_item_row";
-  if (estimateAddDiscountBtn) estimateAddDiscountBtn.dataset.action = "add_estimate_discount_row";
+  if (estimateAddItemBtn) {
+    estimateAddItemBtn.type = "button";
+    estimateAddItemBtn.dataset.action = "add_estimate_item_row";
+    estimateAddItemBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      preserveEstimateFormDuring(() => addEstimateItemRow());
+    });
+  }
+  if (estimateAddDiscountBtn) {
+    estimateAddDiscountBtn.type = "button";
+    estimateAddDiscountBtn.dataset.action = "add_estimate_discount_row";
+    estimateAddDiscountBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      preserveEstimateFormDuring(() => addEstimateDiscountRow());
+    });
+  }
   estimateItemsWrap?.addEventListener("input", handleEstimateItemsInput);
+  estimateItemsWrap?.addEventListener("change", handleEstimateItemsChange);
+  estimateItemsWrap?.addEventListener("click", handleEstimateItemsClick);
   
   caseClientSelect?.addEventListener("change", syncCaseCustomerFromClient);
   caseTemplateSelect?.addEventListener("change", handleCaseTemplateChange);
@@ -2843,6 +2861,7 @@ function getEstimateItemTypeLabel(value) {
   return ESTIMATE_ITEM_TYPE_LABELS[normalizeEstimateItemType(value)] || ESTIMATE_ITEM_TYPE_LABELS.reward;
 }
 
+
 function createEstimateItemTypeOptions(selectedValue) {
   const normalized = normalizeEstimateItemType(selectedValue);
   return ESTIMATE_ITEM_TYPES.map((item) => `<option value="${item.value}"${item.value === normalized ? " selected" : ""}>${escapeHtml(item.label)}</option>`).join("");
@@ -2885,7 +2904,8 @@ function getEstimateItemClassification(item = {}) {
   const itemName = String(item.itemName || item.item_name || "");
   const amount = Number(item.amount || 0) || 0;
   if (amount < 0 || itemName.includes("値引き")) return "discount";
-  if (itemName.includes("実費")) return "expense";
+  if (itemName.includes("立替")) return "advance";
+  if (itemName.includes("実費") || itemName.includes("法定費用")) return "expense";
   return "reward";
 }
 
@@ -8216,6 +8236,58 @@ function matchesDailyReportDateFilter(entry, filter) {
   return true;
 }
 
+
+function collectEstimateFormDraft() {
+  const items = Array.from(estimateItemsWrap?.querySelectorAll(".estimate-item-row") || []).map((row, idx) => {
+    const quantity = parseDecimalInput(row.querySelector('[data-key="quantity"]')?.value);
+    const unitPrice = parseNumberInput(row.querySelector('[data-key="unitPrice"]')?.value);
+    const amountText = row.querySelector(".item-amount")?.textContent || "";
+    const amount = Math.floor((Number.isFinite(quantity) ? quantity : 0) * unitPrice);
+    return {
+      itemType: normalizeEstimateItemType(row.querySelector('[data-key="itemType"]')?.value),
+      itemName: row.querySelector('[data-key="itemName"]')?.value || "",
+      quantity: row.querySelector('[data-key="quantity"]')?.value || "",
+      unitPrice: row.querySelector('[data-key="unitPrice"]')?.value || "",
+      amount: Number.isFinite(amount) ? amount : parseNumberInput(amountText),
+      sortOrder: idx,
+    };
+  });
+  return {
+    clientId: estimateForm?.elements?.clientId?.value || "",
+    customerName: estimateForm?.elements?.customerName?.value || "",
+    estimateTitle: estimateForm?.elements?.estimateTitle?.value || "",
+    estimateDate: estimateForm?.elements?.estimateDate?.value || "",
+    validUntil: estimateForm?.elements?.validUntil?.value || "",
+    status: estimateForm?.elements?.status?.value || "作成中",
+    memo: estimateForm?.elements?.memo?.value || "",
+    items,
+  };
+}
+
+function restoreEstimateFormDraft(draft, options = {}) {
+  if (!draft || !estimateForm) return;
+  if (estimateForm.elements.clientId) estimateForm.elements.clientId.value = draft.clientId || "";
+  if (estimateForm.elements.customerName) estimateForm.elements.customerName.value = draft.customerName || "";
+  if (estimateForm.elements.estimateTitle) estimateForm.elements.estimateTitle.value = draft.estimateTitle || "";
+  if (estimateForm.elements.estimateDate) estimateForm.elements.estimateDate.value = draft.estimateDate || "";
+  if (estimateForm.elements.validUntil) estimateForm.elements.validUntil.value = draft.validUntil || "";
+  if (estimateForm.elements.status) estimateForm.elements.status.value = normalizeEstimateStatus(draft.status || "作成中");
+  if (estimateForm.elements.memo) estimateForm.elements.memo.value = draft.memo || "";
+  if (options.restoreItems && estimateItemsWrap) {
+    estimateItemsWrap.innerHTML = "";
+    const items = Array.isArray(draft.items) && draft.items.length ? draft.items : [{}];
+    items.forEach((item) => addEstimateItemRow(item));
+  }
+  recalcEstimateTotals();
+}
+
+function preserveEstimateFormDuring(operation, options = {}) {
+  const draft = collectEstimateFormDraft();
+  const result = typeof operation === "function" ? operation() : undefined;
+  restoreEstimateFormDraft(draft, { restoreItems: Boolean(options.restoreItems) });
+  return result;
+}
+
 function addEstimateItemRow(defaultItem = {}) {
   if (!estimateItemsWrap) return;
   const row = document.createElement("div");
@@ -8243,12 +8315,21 @@ function handleEstimateItemsInput() {
   recalcEstimateTotals();
 }
 
+function handleEstimateItemsChange(event) {
+  if (!event.target?.closest?.(".estimate-item-row")) return;
+  preserveEstimateFormDuring(() => recalcEstimateTotals());
+}
+
 function handleEstimateItemsClick(event) {
   const btn = event.target.closest(".estimate-item-remove-btn");
   if (!btn) return;
-  btn.closest(".estimate-item-row")?.remove();
-  if (!estimateItemsWrap.children.length) addEstimateItemRow();
-  recalcEstimateTotals();
+  event.preventDefault();
+  event.stopPropagation();
+  preserveEstimateFormDuring(() => {
+    btn.closest(".estimate-item-row")?.remove();
+    if (!estimateItemsWrap.children.length) addEstimateItemRow();
+    recalcEstimateTotals();
+  });
 }
 
 function getEstimateItemsFromForm() {
@@ -9546,19 +9627,15 @@ async function ensureCaseFromEstimate(estimateId, force = false) {
 }
 
 function buildInvoiceRowsFromEstimate(estimate) {
-  const { rewardTotal, expenseTotal, discountTotal } = aggregateEstimateItemsForCustomer(estimate);
-  const rows = [];
-  if (rewardTotal !== 0) rows.push({ item_name: "行政書士報酬", quantity: 1, unit_price: rewardTotal, amount: rewardTotal });
-  if (expenseTotal > 0) rows.push({ item_name: "実費・法定費用", quantity: 1, unit_price: expenseTotal, amount: expenseTotal });
-  if (discountTotal < 0) rows.push({ item_name: "値引き", quantity: 1, unit_price: discountTotal, amount: discountTotal });
-  if (!rows.length) rows.push({ item_name: estimate.estimateTitle, quantity: 1, unit_price: estimate.subtotal, amount: estimate.subtotal });
+  const rows = getEstimateDocumentDetailRows(estimate, estimate.estimateTitle || "請求内容");
   return rows.map((row) => ({
     customer_name: estimate.customerName,
     subject: estimate.estimateTitle,
     invoice_date: toDateString(new Date()),
-    item_name: row.item_name,
+    item_type_label: row.itemTypeLabel || "",
+    item_name: row.itemName,
     quantity: row.quantity,
-    unit_price: row.unit_price,
+    unit_price: row.unitPrice,
     amount: row.amount,
     subtotal: estimate.subtotal,
     tax: estimate.tax,
@@ -9586,6 +9663,7 @@ function buildInvoiceDocumentFromEstimate(estimate, noteOverride = null) {
     registrationNumber: appSettings.invoiceRegistrationNumber,
     details: rows.map((row, index) => ({
       no: index + 1,
+      itemTypeLabel: row.item_type_label || "",
       itemName: row.item_name,
       quantity: row.quantity,
       unitPrice: row.unit_price,
@@ -9812,7 +9890,7 @@ function buildPeripheralDocumentFromEstimate(estimate, documentType) {
     total,
     taxRate,
     note: estimate.memo || "",
-    details: [{ itemName: estimate.estimateTitle || "業務一式", quantity: 1, unitPrice: subtotal, amount: subtotal }],
+    details: getEstimateDocumentDetailRows(estimate, estimate.estimateTitle || "業務一式"),
   };
 }
 
@@ -9901,26 +9979,47 @@ function getCustomerFacingEstimateNotice() {
   return "本見積は、現時点で確認できる情報に基づくものです。必要資料、申請先、業務範囲により金額が変動する場合があります。";
 }
 
-function aggregateEstimateItemsForCustomer(estimate) {
+function getEstimateDocumentDetailRows(estimate, fallbackItemName = "見積内容") {
   const rawRows = state.estimateItems
     .filter((row) => row.estimateId === estimate.id)
     .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((row) => ({
-      itemName: String(row.itemName || ""),
-      itemType: row.itemType,
-      amount: Number(row.amount || 0) || 0,
-      classification: getEstimateItemClassification(row),
-    }));
-  const expenseTotal = rawRows
-    .filter((row) => row.classification === "expense" || row.classification === "advance")
-    .reduce((sum, row) => sum + row.amount, 0);
+    .map((row) => {
+      const classification = getEstimateItemClassification(row);
+      return {
+        itemType: classification,
+        itemTypeLabel: getEstimateItemTypeLabel(classification),
+        itemName: row.itemName || fallbackItemName,
+        quantity: row.quantity ?? 1,
+        unitPrice: row.unitPrice ?? 0,
+        amount: Number(row.amount || 0) || 0,
+      };
+    });
+  if (rawRows.length) return rawRows;
+  return [{
+    itemType: "",
+    itemTypeLabel: "",
+    itemName: fallbackItemName,
+    quantity: 1,
+    unitPrice: estimate.subtotal ?? 0,
+    amount: estimate.subtotal ?? 0,
+  }];
+}
+
+function aggregateEstimateItemsForCustomer(estimate) {
+  const rawRows = getEstimateDocumentDetailRows(estimate, estimate.estimateTitle || "見積内容");
   const rewardTotal = rawRows
-    .filter((row) => row.classification === "reward")
+    .filter((row) => row.itemType === "reward")
+    .reduce((sum, row) => sum + row.amount, 0);
+  const expenseTotal = rawRows
+    .filter((row) => row.itemType === "expense")
+    .reduce((sum, row) => sum + row.amount, 0);
+  const advanceTotal = rawRows
+    .filter((row) => row.itemType === "advance")
     .reduce((sum, row) => sum + row.amount, 0);
   const discountTotal = rawRows
-    .filter((row) => row.classification === "discount")
+    .filter((row) => row.itemType === "discount")
     .reduce((sum, row) => sum + row.amount, 0);
-  return { rewardTotal, expenseTotal, discountTotal };
+  return { rewardTotal, expenseTotal, advanceTotal, discountTotal };
 }
 function downloadInvoiceWorkbook(invoiceData) {
   const wb = XLSX.utils.book_new();
@@ -9932,26 +10031,13 @@ function downloadInvoiceWorkbook(invoiceData) {
 
 function buildEstimateDocumentFromEstimate(estimate) {
   const appSettings = getAppSettings();
-  const { rewardTotal: gyoseiReward, expenseTotal, discountTotal } = aggregateEstimateItemsForCustomer(estimate);
-
-  const displayRows = [];
-  if (gyoseiReward !== 0) {
-    displayRows.push({ itemName: "行政書士報酬", quantity: 1, unitPrice: gyoseiReward, amount: gyoseiReward });
-  }
-  if (expenseTotal > 0) {
-    displayRows.push({ itemName: "実費・法定費用", quantity: 1, unitPrice: expenseTotal, amount: expenseTotal });
-  }
-  if (discountTotal < 0) {
-    displayRows.push({ itemName: "値引き", quantity: 1, unitPrice: discountTotal, amount: discountTotal });
-  }
-  if (!displayRows.length) {
-    displayRows.push({ itemName: estimate.estimateTitle || "見積内容", quantity: 1, unitPrice: estimate.subtotal ?? 0, amount: estimate.subtotal ?? 0 });
-  }
+  const { expenseTotal, advanceTotal } = aggregateEstimateItemsForCustomer(estimate);
+  const displayRows = getEstimateDocumentDetailRows(estimate, estimate.estimateTitle || "見積内容");
 
   const estimateDate = estimate.estimateDate || toDateString(new Date());
   const expenseNotice = "実費・法定費用は申請先確認後に別途精算";
   const noteLines = [getCustomerFacingEstimateNotice(), asTrimmedText(appSettings.estimateNote || "") || ""];
-  if (expenseTotal <= 0) noteLines.push(expenseNotice);
+  if (expenseTotal + advanceTotal <= 0) noteLines.push(expenseNotice);
   return {
     customerName: estimate.customerName || "顧客名未設定",
     subject: estimate.estimateTitle || "見積内容",
@@ -10008,7 +10094,7 @@ function createBusinessDocumentSheet(documentData, options = { type: "invoice" }
   const hasTransferInfo = Boolean(asTrimmedText(documentData.transferInfo || ""));
 
   const detailRows = (documentData.details || []).slice(0, 10);
-  while (detailRows.length < 10) detailRows.push({ no: "", itemName: "", quantity: "", unitPrice: "", amount: "" });
+  while (detailRows.length < 10) detailRows.push({ no: "", itemTypeLabel: "", itemName: "", quantity: "", unitPrice: "", amount: "" });
   const rows = [];
   for (let i = 0; i < 35; i += 1) rows.push(["", "", "", "", "", "", "", ""]);
   rows[0][0] = title;
@@ -10034,19 +10120,19 @@ function createBusinessDocumentSheet(documentData, options = { type: "invoice" }
   rows[10][0] = sentence;
   rows[11][0] = amountLabel;
   rows[11][5] = documentData.total ?? 0;
-  rows[13] = ["No", "品目", "", "", "数量", "単価", "金額", ""];
+  rows[13] = ["No", "区分", "品目", "", "", "数量", "単価", "金額"];
 
   detailRows.forEach((row, index) => {
     const r = 14 + index;
-    rows[r] = [row.no, row.itemName, "", "", row.quantity, row.unitPrice, row.amount, ""];
+    rows[r] = [row.no, row.itemTypeLabel || "", row.itemName, "", "", row.quantity, row.unitPrice, row.amount];
   });
 
-  rows[26][5] = "小計";
-  rows[26][6] = documentData.subtotal ?? 0;
-  rows[27][5] = `消費税${formatTaxRatePercent(documentData.taxRate)}`;
-  rows[27][6] = documentData.tax ?? 0;
-  rows[28][5] = "合計";
-  rows[28][6] = documentData.total ?? 0;
+  rows[26][6] = "小計";
+  rows[26][7] = documentData.subtotal ?? 0;
+  rows[27][6] = `消費税${formatTaxRatePercent(documentData.taxRate)}`;
+  rows[27][7] = documentData.tax ?? 0;
+  rows[28][6] = "合計";
+  rows[28][7] = documentData.total ?? 0;
   rows[30][0] = hasTransferInfo ? "振込先" : "";
   rows[31][0] = hasTransferInfo ? (documentData.transferInfo || "") : "";
   rows[32][0] = "備考";
@@ -10060,7 +10146,7 @@ function createBusinessDocumentSheet(documentData, options = { type: "invoice" }
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws["!ref"] = "A1:H35";
-  ws["!cols"] = [{ wch: 5 }, { wch: 18 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 14 }, { wch: 4 }];
+  ws["!cols"] = [{ wch: 5 }, { wch: 9 }, { wch: 18 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 14 }];
   ws["!rows"] = Array.from({ length: 35 }, (_, i) => ({ hpt: i === 0 ? 30 : 20 }));
   ws["!margins"] = { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 };
   ws["!pageSetup"] = { paperSize: 9, orientation: "portrait", fitToWidth: 1, fitToHeight: 1, horizontalDpi: 300, verticalDpi: 300 };
@@ -10071,8 +10157,8 @@ function createBusinessDocumentSheet(documentData, options = { type: "invoice" }
     { s: { r: 3, c: 0 }, e: { r: 3, c: 3 } },
     { s: { r: 10, c: 0 }, e: { r: 10, c: 7 } },
     { s: { r: 11, c: 0 }, e: { r: 11, c: 4 } },
-    { s: { r: 13, c: 1 }, e: { r: 13, c: 3 } },
-    ...Array.from({ length: 10 }, (_, i) => ({ s: { r: 14 + i, c: 1 }, e: { r: 14 + i, c: 3 } })),
+    { s: { r: 13, c: 2 }, e: { r: 13, c: 4 } },
+    ...Array.from({ length: 10 }, (_, i) => ({ s: { r: 14 + i, c: 2 }, e: { r: 14 + i, c: 4 } })),
     { s: { r: 30, c: 0 }, e: { r: 30, c: 4 } },
     { s: { r: 31, c: 0 }, e: { r: 31, c: 4 } },
     { s: { r: 32, c: 0 }, e: { r: 32, c: 4 } },
@@ -10090,17 +10176,17 @@ function createBusinessDocumentSheet(documentData, options = { type: "invoice" }
   for (let r = 14; r <= 23; r += 1) {
     for (let c = 0; c <= 7; c += 1) {
       const style = { border: true };
-      if (c === 4) style.align = "center";
-      if (c === 5 || c === 6) style.numFmt = "¥#,##0";
+      if (c === 1 || c === 5) style.align = "center";
+      if (c === 6 || c === 7) style.numFmt = "¥#,##0";
       applyBusinessCellStyle(ws, r, c, style);
     }
   }
   [26, 27, 28].forEach((r) => {
-    applyBusinessCellStyle(ws, r, 5, { border: true, bold: r === 28, align: "center" });
-    applyBusinessCellStyle(ws, r, 6, { border: true, bold: r === 28, numFmt: "¥#,##0", align: "right" });
+    applyBusinessCellStyle(ws, r, 6, { border: true, bold: r === 28, align: "center" });
+    applyBusinessCellStyle(ws, r, 7, { border: true, bold: r === 28, numFmt: "¥#,##0", align: "right" });
   });
-  for (let c = 5; c <= 6; c += 1) {
-    applyBusinessCellStyle(ws, 28, c, { border: true, bold: true, numFmt: c === 6 ? "¥#,##0" : undefined, align: c === 6 ? "right" : "center", fillGray: true });
+  for (let c = 6; c <= 7; c += 1) {
+    applyBusinessCellStyle(ws, 28, c, { border: true, bold: true, numFmt: c === 7 ? "¥#,##0" : undefined, align: c === 7 ? "right" : "center", fillGray: true });
   }
   for (let r = 2; r <= 9; r += 1) {
     applyBusinessCellStyle(ws, r, 5, { bold: true });
@@ -10151,13 +10237,14 @@ function buildBusinessDocumentHtml(documentData, options = { type: "invoice" }) 
     ? `<section class="info-section"><h3>領収情報</h3><div class="note-box">但し書き: ${escapeHtml(`行政書士業務報酬として / ${documentData.subject || "案件名未設定"}`)}\n支払方法: ${escapeHtml(documentData.paymentMethod || "その他")}\n入金日: ${escapeHtml(formatDate(documentData.paymentDate))}\n案件名: ${escapeHtml(documentData.subject || "案件名未設定")}</div></section>`
     : "";
   const tableHeader = isInvoice
-    ? "<tr><th>品名</th><th>単価</th><th>数量</th><th>金額</th></tr>"
-    : "<tr><th>摘要</th><th>数量</th><th>単位</th><th>単価</th><th>金額</th></tr>";
+    ? "<tr><th>区分</th><th>品名</th><th>単価</th><th>数量</th><th>金額</th></tr>"
+    : "<tr><th>区分</th><th>摘要</th><th>数量</th><th>単位</th><th>単価</th><th>金額</th></tr>";
   const detailRows = (documentData.details || []).map((row) => {
+    const itemTypeLabel = row.itemTypeLabel ? escapeHtml(row.itemTypeLabel) : "";
     if (isInvoice) {
-      return `<tr><td class="item-name">${escapeHtml(row.itemName || "")}</td><td class="align-right">${formatCurrencyCompact(row.unitPrice)}</td><td class="align-center">${escapeHtml(String(row.quantity || ""))}</td><td class="align-right">${formatCurrencyCompact(row.amount)}</td></tr>`;
+      return `<tr><td class="align-center">${itemTypeLabel}</td><td class="item-name">${escapeHtml(row.itemName || "")}</td><td class="align-right">${formatCurrencyCompact(row.unitPrice)}</td><td class="align-center">${escapeHtml(String(row.quantity || ""))}</td><td class="align-right">${formatCurrencyCompact(row.amount)}</td></tr>`;
     }
-    return `<tr><td class="item-name">${escapeHtml(row.itemName || "")}</td><td class="align-center">${escapeHtml(String(row.quantity || ""))}</td><td class="align-center">${escapeHtml(row.unit || "式")}</td><td class="align-right">${formatCurrencyCompact(row.unitPrice)}</td><td class="align-right">${formatCurrencyCompact(row.amount)}</td></tr>`;
+    return `<tr><td class="align-center">${itemTypeLabel}</td><td class="item-name">${escapeHtml(row.itemName || "")}</td><td class="align-center">${escapeHtml(String(row.quantity || ""))}</td><td class="align-center">${escapeHtml(row.unit || "式")}</td><td class="align-right">${formatCurrencyCompact(row.unitPrice)}</td><td class="align-right">${formatCurrencyCompact(row.amount)}</td></tr>`;
   }).join("");
 
   return `<!DOCTYPE html>
@@ -10388,7 +10475,7 @@ body {
     </section>
     <table class="details-table">
       <thead>${tableHeader}</thead>
-      <tbody>${detailRows || (isInvoice ? "<tr><td colspan='4'>明細なし</td></tr>" : "<tr><td colspan='5'>明細なし</td></tr>")}</tbody>
+      <tbody>${detailRows || (isInvoice ? "<tr><td colspan='5'>明細なし</td></tr>" : "<tr><td colspan='6'>明細なし</td></tr>")}</tbody>
     </table>
     <table class="totals">
       <tr><th>小計</th><td class="align-right">${formatCurrencyCompact(documentData.subtotal)}</td></tr>
