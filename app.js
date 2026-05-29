@@ -867,6 +867,8 @@ function bindEvents() {
   dailyReportForm?.addEventListener("input", saveDailyReportDraft);
   dailyReportForm?.addEventListener("change", saveDailyReportDraft);
   estimateForm?.addEventListener("submit", handleEstimateSubmit);
+  estimateForm?.addEventListener("input", saveEstimateFormDraft);
+  estimateForm?.addEventListener("change", saveEstimateFormDraft);
   settingsForm?.addEventListener("submit", handleSettingsSubmit);
 
   clearBtn.dataset.action = "clear_all";
@@ -895,12 +897,19 @@ function bindEvents() {
   permitHearingUrgencyFilter?.addEventListener("change", handlePermitHearingUrgencyFilterChange);
   if (permitHearingFilterClearBtn) permitHearingFilterClearBtn.dataset.action = "clear_permit_hearing_filters";
   window.addEventListener("pageshow", forceHideLoading);
+  window.addEventListener("pageshow", restoreEstimateDraftOnResume);
+  window.addEventListener("pagehide", saveEstimateDraftBeforeSuspend);
   window.addEventListener("focus", forceHideLoading);
   window.addEventListener("focus", restoreDailyReportDraftOnResume);
+  window.addEventListener("focus", restoreEstimateDraftOnResume);
+  window.addEventListener("blur", saveEstimateDraftBeforeSuspend);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
+    if (document.visibilityState === "hidden") {
+      saveEstimateDraftBeforeSuspend();
+    } else if (document.visibilityState === "visible") {
       forceHideLoading();
       restoreDailyReportDraftOnResume();
+      restoreEstimateDraftOnResume();
     }
   });
   if (loadingForceCloseBtn) loadingForceCloseBtn.dataset.action = "force_close_loading";
@@ -928,6 +937,7 @@ function bindEvents() {
       event.preventDefault();
       event.stopPropagation();
       addEstimateItemRow();
+      saveEstimateFormDraft();
     });
   }
   if (estimateAddDiscountBtn) {
@@ -937,6 +947,7 @@ function bindEvents() {
       event.preventDefault();
       event.stopPropagation();
       addEstimateDiscountRow();
+      saveEstimateFormDraft();
     });
   }
   estimateItemsWrap?.addEventListener("input", handleEstimateItemsInput);
@@ -945,7 +956,10 @@ function bindEvents() {
   
   caseClientSelect?.addEventListener("change", syncCaseCustomerFromClient);
   caseTemplateSelect?.addEventListener("change", handleCaseTemplateChange);
-  estimateClientSelect?.addEventListener("change", syncEstimateCustomerFromClient);
+  estimateClientSelect?.addEventListener("change", (event) => {
+    syncEstimateCustomerFromClient(event);
+    saveEstimateFormDraft();
+  });
   estimateCustomerSearch?.addEventListener("input", (event) => {
     state.estimateCustomerQuery = String(event.target.value || "").trim().toLowerCase();
     safeRender("estimates", renderEstimates);
@@ -2244,8 +2258,10 @@ async function handleManualReload(event) {
   if (!currentUser) return;
   if (manualReloadBtn) manualReloadBtn.disabled = true;
   try {
+    const shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
     await loadAllDataSafely();
     renderAfterDataChanged();
+    if (shouldRestoreEstimateDraft) restoreEstimateDraftOnResume();
     showAppMessage("最新データを読み込みました", false);
   } catch (error) {
     showAppMessage(`最新データ再読込に失敗しました。${formatSupabaseError(error)}`, true);
@@ -6017,6 +6033,7 @@ function safeRender(name, fn) {
 }
 
 function renderAfterDataChanged() {
+  const shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
   safeRender("clients", renderClients);
   safeRender("clientOptions", renderClientOptions);
   safeRender("clientHistory", renderClientHistory);
@@ -6049,6 +6066,7 @@ function renderAfterDataChanged() {
   safeRender("clientAnalysis", renderClientAnalysis);
   safeRender("referralAnalysis", renderReferralAnalysis);
   hydrateActionButtons();
+  if (shouldRestoreEstimateDraft) restoreEstimateDraftOnResume();
   debugLog("RENDER DONE");
 }
 
@@ -6402,6 +6420,7 @@ function renderReferralAnalysis() {
 }
 
 function activateTab(tabKey) {
+  saveEstimateDraftBeforeSuspend();
   const normalizedTabKey = normalizeTabKey(tabKey);
 
   tabs.forEach((btn) => btn.classList.toggle("active", normalizeTabKey(btn.dataset.tab) === normalizedTabKey));
@@ -6409,14 +6428,17 @@ function activateTab(tabKey) {
 
   if (dashboardSection) dashboardSection.hidden = normalizedTabKey !== "cases";
   applySubtabVisibility(normalizedTabKey);
+  if (normalizedTabKey === "estimates" && subtabState.estimates === "create") restoreEstimateDraftOnResume();
 }
 
 function activateSubtab(parentTab, subtab) {
+  saveEstimateDraftBeforeSuspend();
   const normalizedTab = normalizeTabKey(parentTab);
   if (!subtab) return;
   subtabState[normalizedTab] = subtab;
   applySubtabVisibility(normalizedTab);
   if (normalizedTab === "daily-reports" && subtab === "entry") restoreDailyReportDraft();
+  if (normalizedTab === "estimates" && subtab === "create") restoreEstimateDraftOnResume();
 }
 
 function applySubtabVisibility(activeMainTab) {
@@ -8255,64 +8277,168 @@ function matchesDailyReportDateFilter(entry, filter) {
 }
 
 
+const ESTIMATE_DRAFT_STORAGE_KEY = "gyosei_estimate_draft_v1";
+let isRestoringEstimateDraft = false;
+let estimateDraftSaveTimer = null;
+
+function isEstimateCreateSubtabActive() {
+  return getActiveMainTabKey() === "estimates" && subtabState.estimates === "create";
+}
+
+function getEstimateDraftKey() {
+  const userPart = currentUser?.id ? `user:${currentUser.id}` : "guest";
+  const modePart = editState.estimateId ? `edit:${editState.estimateId}` : "new";
+  return `${ESTIMATE_DRAFT_STORAGE_KEY}:${userPart}:${modePart}`;
+}
+
 function collectEstimateFormDraft() {
+  if (!estimateForm) return null;
   const items = Array.from(estimateItemsWrap?.querySelectorAll(".estimate-item-row") || []).map((row, idx) => {
-    const quantity = parseDecimalInput(row.querySelector('[data-key="quantity"]')?.value);
-    const unitPrice = parseNumberInput(row.querySelector('[data-key="unitPrice"]')?.value);
+    const quantityValue = row.querySelector('[data-key="quantity"]')?.value || "";
+    const unitPriceValue = row.querySelector('[data-key="unitPrice"]')?.value || "";
+    const quantity = parseDecimalInput(quantityValue);
+    const unitPrice = parseNumberInput(unitPriceValue);
     const amountText = row.querySelector(".item-amount")?.textContent || "";
-    const amount = Math.floor((Number.isFinite(quantity) ? quantity : 0) * unitPrice);
+    const calculatedAmount = Math.floor((Number.isFinite(quantity) ? quantity : 0) * unitPrice);
     return {
       itemType: normalizeEstimateItemType(row.querySelector('[data-key="itemType"]')?.value),
       itemName: row.querySelector('[data-key="itemName"]')?.value || "",
-      quantity: row.querySelector('[data-key="quantity"]')?.value || "",
-      unitPrice: row.querySelector('[data-key="unitPrice"]')?.value || "",
-      amount: Number.isFinite(amount) ? amount : parseNumberInput(amountText),
+      quantity: quantityValue,
+      unitPrice: unitPriceValue,
+      amount: Number.isFinite(calculatedAmount) ? calculatedAmount : parseNumberInput(amountText),
       sortOrder: idx,
     };
   });
-  const fields = Array.from(estimateForm?.querySelectorAll("input, select, textarea") || []).reduce((acc, field) => {
+  const fields = Array.from(estimateForm.querySelectorAll("input, select, textarea")).reduce((acc, field) => {
     if (!field || field.closest("#estimate-items")) return acc;
     const key = field.name || field.id;
     if (key) acc[key] = field.value || "";
     return acc;
   }, {});
   return {
-    clientId: estimateForm?.elements?.clientId?.value || "",
-    customerName: estimateForm?.elements?.customerName?.value || "",
-    estimateTitle: estimateForm?.elements?.estimateTitle?.value || "",
-    estimateDate: estimateForm?.elements?.estimateDate?.value || "",
-    validUntil: estimateForm?.elements?.validUntil?.value || "",
-    status: estimateForm?.elements?.status?.value || "作成中",
-    memo: estimateForm?.elements?.memo?.value || "",
+    estimateId: editState.estimateId || null,
+    mode: editState.estimateId ? "edit" : "new",
+    clientId: estimateForm.elements.clientId?.value || "",
+    customerName: estimateForm.elements.customerName?.value || "",
+    estimateTitle: estimateForm.elements.estimateTitle?.value || "",
+    estimateDate: estimateForm.elements.estimateDate?.value || "",
+    validUntil: estimateForm.elements.validUntil?.value || "",
+    status: normalizeEstimateStatus(estimateForm.elements.status?.value || "作成中"),
+    memo: estimateForm.elements.memo?.value || "",
     fields,
     items,
+    updatedAt: new Date().toISOString(),
   };
 }
 
-function restoreEstimateFormDraft(draft, options = {}) {
-  if (!draft || !estimateForm) return;
-  const fieldValues = {
-    clientId: draft.clientId || "",
-    customerName: draft.customerName || "",
-    estimateTitle: draft.estimateTitle || "",
-    estimateDate: draft.estimateDate || "",
-    validUntil: draft.validUntil || "",
-    status: normalizeEstimateStatus(draft.status || "作成中"),
-    memo: draft.memo || "",
-    ...(draft.fields || {}),
-  };
-  Array.from(estimateForm.querySelectorAll("input, select, textarea")).forEach((field) => {
-    if (!field || field.closest("#estimate-items")) return;
-    const key = field.name || field.id;
-    if (!key || !Object.prototype.hasOwnProperty.call(fieldValues, key)) return;
-    field.value = key === "status" ? normalizeEstimateStatus(fieldValues[key]) : fieldValues[key];
+function hasMeaningfulEstimateDraft(draft) {
+  if (!draft) return false;
+  if (asTrimmedText(draft.clientId) || asTrimmedText(draft.customerName) || asTrimmedText(draft.estimateTitle) || asTrimmedText(draft.validUntil) || asTrimmedText(draft.memo)) return true;
+  if (draft.status && normalizeEstimateStatus(draft.status) !== "作成中") return true;
+  const today = toDateString(new Date());
+  if (draft.estimateDate && draft.estimateDate !== today) return true;
+  return (Array.isArray(draft.items) ? draft.items : []).some((item, idx) => {
+    if (!item) return false;
+    if (normalizeEstimateItemType(item.itemType ?? item.item_type) !== "reward") return true;
+    if (asTrimmedText(item.itemName ?? item.item_name)) return true;
+    const quantity = String(item.quantity ?? "");
+    const unitPrice = String(item.unitPrice ?? item.unit_price ?? "");
+    if (idx > 0) return true;
+    return !["", "1"].includes(quantity) || !["", "0"].includes(unitPrice);
   });
-  if (options.restoreItems && estimateItemsWrap) {
-    estimateItemsWrap.innerHTML = "";
-    const items = Array.isArray(draft.items) && draft.items.length ? draft.items : [{}];
-    items.forEach((item) => addEstimateItemRow(item));
+}
+
+function saveEstimateFormDraft(options = {}) {
+  if (!estimateForm || !isEstimateCreateSubtabActive() || isRestoringEstimateDraft) return false;
+  if (!options.immediate) {
+    window.clearTimeout(estimateDraftSaveTimer);
+    estimateDraftSaveTimer = window.setTimeout(() => saveEstimateFormDraft({ immediate: true }), 120);
+    return true;
   }
-  recalcEstimateTotals();
+  try {
+    const draft = collectEstimateFormDraft();
+    const key = getEstimateDraftKey();
+    if (!hasMeaningfulEstimateDraft(draft)) {
+      sessionStorage.removeItem(key);
+      return false;
+    }
+    sessionStorage.setItem(key, JSON.stringify(draft));
+    return true;
+  } catch (error) {
+    console.warn("見積下書き保存に失敗", error);
+    return false;
+  }
+}
+
+function saveEstimateDraftBeforeSuspend() {
+  if (!estimateForm || !isEstimateCreateSubtabActive()) return false;
+  window.clearTimeout(estimateDraftSaveTimer);
+  return saveEstimateFormDraft({ immediate: true });
+}
+
+function readEstimateFormDraft() {
+  try {
+    const raw = sessionStorage.getItem(getEstimateDraftKey());
+    if (!raw) return null;
+    const draft = JSON.parse(raw);
+    if (!draft || (draft.estimateId || null) !== (editState.estimateId || null)) return null;
+    return draft;
+  } catch (error) {
+    console.warn("見積下書き読込に失敗", error);
+    return null;
+  }
+}
+
+function restoreEstimateFormDraft(draft = readEstimateFormDraft(), options = {}) {
+  if (!draft || !estimateForm) return false;
+  isRestoringEstimateDraft = true;
+  try {
+    const fieldValues = {
+      clientId: draft.clientId || "",
+      customerName: draft.customerName || "",
+      estimateTitle: draft.estimateTitle || "",
+      estimateDate: draft.estimateDate || "",
+      validUntil: draft.validUntil || "",
+      status: normalizeEstimateStatus(draft.status || "作成中"),
+      memo: draft.memo || "",
+      ...(draft.fields || {}),
+    };
+    Array.from(estimateForm.querySelectorAll("input, select, textarea")).forEach((field) => {
+      if (!field || field.closest("#estimate-items")) return;
+      const key = field.name || field.id;
+      if (!key || !Object.prototype.hasOwnProperty.call(fieldValues, key)) return;
+      field.value = key === "status" ? normalizeEstimateStatus(fieldValues[key]) : fieldValues[key];
+    });
+    if (options.restoreItems !== false && estimateItemsWrap) {
+      estimateItemsWrap.innerHTML = "";
+      const items = Array.isArray(draft.items) && draft.items.length ? draft.items : [{}];
+      items.forEach((item) => addEstimateItemRow(item));
+    }
+    recalcEstimateTotals();
+    return true;
+  } catch (error) {
+    console.warn("見積下書き復元に失敗", error);
+    return false;
+  } finally {
+    isRestoringEstimateDraft = false;
+  }
+}
+
+function restoreEstimateDraftOnResume() {
+  if (!isEstimateCreateSubtabActive()) return false;
+  return restoreEstimateFormDraft();
+}
+
+function clearEstimateFormDraft(key = getEstimateDraftKey()) {
+  try {
+    if (key) sessionStorage.removeItem(key);
+  } catch (error) {
+    console.warn("見積下書き削除に失敗", error);
+  }
+}
+
+function clearCurrentEstimateFormDraft() {
+  clearEstimateFormDraft(getEstimateDraftKey());
 }
 
 function preserveEstimateFormDuring(operation, options = {}) {
@@ -8347,11 +8473,13 @@ function addEstimateDiscountRow() {
 
 function handleEstimateItemsInput() {
   recalcEstimateTotals();
+  saveEstimateFormDraft();
 }
 
 function handleEstimateItemsChange(event) {
   if (!event.target?.closest?.(".estimate-item-row")) return;
   recalcEstimateTotals();
+  saveEstimateFormDraft();
 }
 
 function handleEstimateItemsClick(event) {
@@ -8362,6 +8490,7 @@ function handleEstimateItemsClick(event) {
   btn.closest(".estimate-item-row")?.remove();
   if (!estimateItemsWrap.children.length) addEstimateItemRow();
   recalcEstimateTotals();
+  saveEstimateFormDraft();
 }
 
 function getEstimateItemsFromForm() {
@@ -8512,6 +8641,7 @@ async function handleEstimateSubmit(event) {
   };
 
   if (editState.estimateId) delete payload.estimate_source;
+  const estimateDraftKeyForSubmit = getEstimateDraftKey();
   const taskName = editState.estimateId ? "見積更新" : "見積登録";
   debugLog("EDIT STATE", editState);
   debugLog("ACTION START", taskName, editState.estimateId || "new");
@@ -8558,7 +8688,9 @@ async function handleEstimateSubmit(event) {
       successMessage: editState.estimateId ? "見積を更新しました。" : "見積を登録しました。",
       resetForm: resetEstimateForm,
       afterSuccess: () => {
+        clearEstimateFormDraft(estimateDraftKeyForSubmit);
         editState.estimateId = null;
+        clearCurrentEstimateFormDraft();
         subtabState.estimates = "list";
         activateTab("estimates");
       },
@@ -9524,6 +9656,7 @@ async function startEstimateEdit(estimateId) {
     if (!rows.length) addEstimateItemRow();
     rows.forEach((row) => addEstimateItemRow(row));
     recalcEstimateTotals();
+    restoreEstimateFormDraft();
     estimateSubmitBtn.textContent = "見積を更新";
     estimateForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -12499,8 +12632,10 @@ window.GyoseiApp = {
   deleteBusinessResourceTemplate,
   reloadAllData: async () => {
     if (!currentUser) return;
+    const shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
     await loadAllDataSafely();
     renderAfterDataChanged();
+    if (shouldRestoreEstimateDraft) restoreEstimateDraftOnResume();
   },
   refreshEstimateListData: async () => {
     await refreshEstimateListData();
