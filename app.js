@@ -42,6 +42,203 @@ const CONSTRUCTION_CASE_INITIAL_TASKS = Object.freeze({
   keishin: ["初回ヒアリング", "決算月確認", "必要書類案内", "資料回収", "不足資料確認", "書類作成", "提出準備", "提出", "補正対応", "完了報告", "請求", "入金確認", "次回期限確認"],
   management_analysis: ["初回ヒアリング", "決算月確認", "必要書類案内", "資料回収", "不足資料確認", "書類作成", "提出準備", "提出", "補正対応", "完了報告", "請求", "入金確認"],
 });
+
+const CONSTRUCTION_ESTIMATE_ITEM_SORT_BASES = Object.freeze({
+  reward: 10,
+  advance: 200,
+  expense: 300,
+  discount: 900,
+});
+
+function buildConstructionEstimateTemplateItems(procedureType, groups) {
+  return Object.freeze(Object.entries(groups).flatMap(([itemType, names]) => {
+    const sortBase = CONSTRUCTION_ESTIMATE_ITEM_SORT_BASES[itemType];
+    return names.map((itemName, index) => Object.freeze({
+      templateKey: `${procedureType}_${itemType}_${String(index + 1).padStart(2, "0")}`,
+      procedureType,
+      itemType,
+      itemName,
+      defaultQuantity: 1,
+      defaultUnitPrice: null,
+      optional: itemType === "discount" || index > 0,
+      sortOrder: sortBase + (index * 10),
+      description: `${itemName}の見積候補`,
+    }));
+  }).sort((a, b) => a.sortOrder - b.sortOrder));
+}
+
+const CONSTRUCTION_ESTIMATE_ITEM_TEMPLATES = Object.freeze({
+  construction_license_new: buildConstructionEstimateTemplateItems("construction_license_new", {
+    reward: [
+      "建設業許可 新規申請 基本報酬",
+      "経営業務管理責任者等確認加算",
+      "専任技術者確認加算",
+      "財産的基礎確認加算",
+      "業種数加算",
+      "営業所数加算",
+      "役員数加算",
+      "証明書取得代行加算",
+      "実務経験証明確認加算",
+      "急ぎ対応加算",
+    ],
+    advance: [
+      "行政庁申請手数料",
+      "登記事項証明書取得費",
+      "納税証明書取得費",
+      "身分証明書取得費",
+      "登記されていないことの証明書取得費",
+      "郵送費",
+      "交通費",
+    ],
+    expense: [
+      "コピー代",
+      "ファイル作成費",
+      "通信費",
+      "その他実費",
+    ],
+    discount: ["値引き"],
+  }),
+  construction_license_renewal: buildConstructionEstimateTemplateItems("construction_license_renewal", {
+    reward: [
+      "建設業許可 更新申請 基本報酬",
+      "許可満了日管理加算",
+      "決算変更届未提出確認加算",
+      "役員変更確認加算",
+      "営業所確認加算",
+      "専任技術者継続確認加算",
+      "急ぎ対応加算",
+    ],
+    advance: [
+      "許可更新手数料",
+      "納税証明書取得費",
+      "登記事項証明書取得費",
+      "郵送費",
+      "交通費",
+    ],
+    expense: [
+      "コピー代",
+      "通信費",
+      "その他実費",
+    ],
+    discount: ["値引き"],
+  }),
+  construction_license_add_business: buildConstructionEstimateTemplateItems("construction_license_add_business", {
+    reward: [
+      "業種追加申請 基本報酬",
+      "追加業種数加算",
+      "専任技術者確認加算",
+      "実務経験証明確認加算",
+      "資格証確認加算",
+      "営業所確認加算",
+      "急ぎ対応加算",
+    ],
+    advance: [
+      "業種追加申請手数料",
+      "登記事項証明書取得費",
+      "納税証明書取得費",
+      "資格証明書取得費",
+      "郵送費",
+      "交通費",
+    ],
+    expense: [
+      "コピー代",
+      "通信費",
+      "その他実費",
+    ],
+    discount: ["値引き"],
+  }),
+  annual_closing_report: buildConstructionEstimateTemplateItems("annual_closing_report", {
+    reward: [
+      "決算変更届 基本報酬",
+      "工事経歴書整理加算",
+      "直前3年工事施工金額整理加算",
+      "財務諸表作成加算",
+      "納税証明書確認加算",
+      "期限迫り加算",
+    ],
+    advance: [
+      "納税証明書取得費",
+      "郵送費",
+      "交通費",
+    ],
+    expense: [
+      "コピー代",
+      "財務諸表作成補助資料整理費",
+      "その他実費",
+    ],
+    discount: ["値引き"],
+  }),
+  change_notification: buildConstructionEstimateTemplateItems("change_notification", {
+    reward: [
+      "変更届 基本報酬",
+      "役員変更加算",
+      "経営業務管理責任者等変更加算",
+      "専任技術者変更加算",
+      "営業所変更加算",
+      "商号・名称変更加算",
+      "所在地変更加算",
+      "資本金変更加算",
+      "急ぎ対応加算",
+    ],
+    advance: [
+      "登記事項証明書取得費",
+      "住民票等取得費",
+      "身分証明書取得費",
+      "郵送費",
+      "交通費",
+    ],
+    expense: [
+      "コピー代",
+      "通信費",
+      "その他実費",
+    ],
+    discount: ["値引き"],
+  }),
+  keishin: buildConstructionEstimateTemplateItems("keishin", {
+    reward: [
+      "経審申請 基本報酬",
+      "決算変更届同時対応加算",
+      "経営状況分析連携加算",
+      "工事経歴書整理加算",
+      "加点資料整理加算",
+      "社会性等確認加算",
+      "急ぎ対応加算",
+    ],
+    advance: [
+      "経審申請手数料",
+      "経営状況分析手数料",
+      "納税証明書取得費",
+      "郵送費",
+      "交通費",
+    ],
+    expense: [
+      "コピー代",
+      "加点資料整理実費",
+      "その他実費",
+    ],
+    discount: ["値引き"],
+  }),
+  management_analysis: buildConstructionEstimateTemplateItems("management_analysis", {
+    reward: [
+      "経営状況分析申請代行 基本報酬",
+      "財務諸表確認加算",
+      "分析機関申請補助加算",
+      "電子申請補助加算",
+      "急ぎ対応加算",
+    ],
+    advance: [
+      "経営状況分析手数料",
+      "郵送費",
+      "交通費",
+    ],
+    expense: [
+      "コピー代",
+      "通信費",
+      "その他実費",
+    ],
+    discount: ["値引き"],
+  }),
+});
 const OFFICE_INFO = {
   name: "あかし行政書士事務所",
   zip: "574-0044",
@@ -3164,6 +3361,37 @@ function getConstructionCaseDetailForCase(caseId) {
 
 function getConstructionCaseInitialTasks(procedureType) {
   return (CONSTRUCTION_CASE_INITIAL_TASKS[procedureType] || []).slice();
+}
+
+function normalizeConstructionEstimateTemplateItem(item = {}) {
+  const normalizedItemType = normalizeEstimateItemType(item.itemType ?? item.item_type);
+  const normalizedProcedureType = normalizeConstructionProcedureType(item.procedureType ?? item.procedure_type);
+  const itemName = String(item.itemName ?? item.item_name ?? "").trim();
+  const rawSortOrder = Number(item.sortOrder ?? item.sort_order);
+  return {
+    templateKey: String(item.templateKey ?? item.template_key ?? "").trim(),
+    procedureType: normalizedProcedureType,
+    itemType: normalizedItemType,
+    itemName,
+    defaultQuantity: Number(item.defaultQuantity ?? item.default_quantity ?? 1) || 1,
+    defaultUnitPrice: item.defaultUnitPrice ?? item.default_unit_price ?? null,
+    optional: Boolean(item.optional),
+    sortOrder: Number.isFinite(rawSortOrder) ? rawSortOrder : Number.MAX_SAFE_INTEGER,
+    description: String(item.description ?? "").trim(),
+  };
+}
+
+function getConstructionEstimateTemplates(procedureType) {
+  const normalizedProcedureType = normalizeConstructionProcedureType(procedureType);
+  return (CONSTRUCTION_ESTIMATE_ITEM_TEMPLATES[normalizedProcedureType] || [])
+    .map(normalizeConstructionEstimateTemplateItem)
+    .filter((item) => item.itemName)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((item) => ({ ...item }));
+}
+
+function getConstructionEstimateTemplateItemTypeLabel(itemType) {
+  return getEstimateItemTypeLabel(itemType);
 }
 
 function getBusinessResourceSortOrder(value) {
@@ -12716,6 +12944,8 @@ window.GyoseiApp = {
   getEstimateCalculations: () => Array.isArray(state.estimateCalculations) ? state.estimateCalculations.slice() : [],
   getConstructionProcedureTypes: () => CONSTRUCTION_PROCEDURE_TYPES.map((entry) => ({ ...entry })),
   getConstructionProcedureTypeLabels: () => ({ ...CONSTRUCTION_PROCEDURE_TYPE_LABELS }),
+  getConstructionEstimateTemplates,
+  getConstructionEstimateTemplateItemTypeLabel,
   getConstructionCaseDetails: () => Array.isArray(state.constructionCaseDetails) ? state.constructionCaseDetails.slice() : [],
   fetchConstructionCaseDetails,
   upsertConstructionCaseDetail,
