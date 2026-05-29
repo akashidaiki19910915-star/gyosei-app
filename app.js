@@ -8481,16 +8481,25 @@ function preserveEstimateFormDuring(operation, options = {}) {
   return result;
 }
 
+function getEstimateItemInputInitialValue(item, camelKey, snakeKey, fallback = "") {
+  if (!item || typeof item !== "object") return fallback;
+  if (Object.prototype.hasOwnProperty.call(item, camelKey) && item[camelKey] !== null && item[camelKey] !== undefined) return item[camelKey];
+  if (Object.prototype.hasOwnProperty.call(item, snakeKey) && item[snakeKey] !== null && item[snakeKey] !== undefined) return item[snakeKey];
+  return fallback;
+}
+
 function addEstimateItemRow(defaultItem = {}) {
   if (!estimateItemsWrap) return;
   const row = document.createElement("div");
   const itemType = normalizeEstimateItemType(defaultItem.itemType ?? defaultItem.item_type);
+  const quantityValue = getEstimateItemInputInitialValue(defaultItem, "quantity", "quantity", 1);
+  const unitPriceValue = getEstimateItemInputInitialValue(defaultItem, "unitPrice", "unit_price", "");
   row.className = "estimate-item-row";
   row.innerHTML = `
     <select data-key="itemType" aria-label="区分" title="区分">${createEstimateItemTypeOptions(itemType)}</select>
     <input type="text" data-key="itemName" placeholder="項目名" value="${escapeHtml(defaultItem.itemName || defaultItem.item_name || "")}" />
-    <input type="text" inputmode="decimal" pattern="[0-9.,]*" data-key="quantity" placeholder="数量" value="${defaultItem.quantity ?? 1}" />
-    <input type="text" inputmode="numeric" pattern="-?[0-9,]*" data-key="unitPrice" data-allow-negative="true" placeholder="単価" value="${defaultItem.unitPrice ?? defaultItem.unit_price ?? 0}" />
+    <input type="text" inputmode="decimal" pattern="[0-9.,]*" data-key="quantity" placeholder="数量" value="${escapeHtml(String(quantityValue))}" />
+    <input type="text" inputmode="numeric" pattern="-?[0-9,]*" data-key="unitPrice" data-allow-negative="true" placeholder="単価" value="${escapeHtml(String(unitPriceValue))}" />
     <p class="meta item-amount">${formatCurrency(defaultItem.amount ?? 0)}</p>
     <button type="button" class="danger-btn estimate-item-remove-btn" data-action="remove_estimate_item_row">削除</button>
   `;
@@ -8501,7 +8510,7 @@ function addEstimateItemRow(defaultItem = {}) {
 }
 
 function addEstimateDiscountRow() {
-  addEstimateItemRow({ itemName: "値引き", itemType: "discount", quantity: 1, unitPrice: -5000, amount: -5000 });
+  addEstimateItemRow({ itemName: "値引き", itemType: "discount", quantity: 1 });
 }
 
 function handleEstimateItemsInput() {
