@@ -897,11 +897,11 @@ function bindEvents() {
   permitHearingUrgencyFilter?.addEventListener("change", handlePermitHearingUrgencyFilterChange);
   if (permitHearingFilterClearBtn) permitHearingFilterClearBtn.dataset.action = "clear_permit_hearing_filters";
   window.addEventListener("pageshow", forceHideLoading);
-  window.addEventListener("pageshow", restoreEstimateDraftOnResume);
+  window.addEventListener("pageshow", () => scheduleEstimateDraftRestore("pageshow"));
   window.addEventListener("pagehide", saveEstimateDraftBeforeSuspend);
   window.addEventListener("focus", forceHideLoading);
   window.addEventListener("focus", restoreDailyReportDraftOnResume);
-  window.addEventListener("focus", restoreEstimateDraftOnResume);
+  window.addEventListener("focus", () => scheduleEstimateDraftRestore("focus"));
   window.addEventListener("blur", saveEstimateDraftBeforeSuspend);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
@@ -909,7 +909,7 @@ function bindEvents() {
     } else if (document.visibilityState === "visible") {
       forceHideLoading();
       restoreDailyReportDraftOnResume();
-      restoreEstimateDraftOnResume();
+      scheduleEstimateDraftRestore("visibilitychange");
     }
   });
   if (loadingForceCloseBtn) loadingForceCloseBtn.dataset.action = "force_close_loading";
@@ -2181,11 +2181,12 @@ async function applyAuthState(options = {}) {
     state.isInitialDataReady = false;
     userLabel.textContent = currentUser.email || "ログイン中";
 
+    const shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
     await loadAllDataSafely();
     resetCaseForm();
     resetCaseTaskForm();
     resetCaseDocumentForm();
-    resetEstimateForm();
+    resetEstimateForm({ allowDraftRestore: shouldRestoreEstimateDraft || hasStoredMeaningfulEstimateDraft() });
     resetSaleForm();
     resetExpenseForm();
     resetFixedExpenseForm();
@@ -2261,7 +2262,7 @@ async function handleManualReload(event) {
     const shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
     await loadAllDataSafely();
     renderAfterDataChanged();
-    if (shouldRestoreEstimateDraft) restoreEstimateDraftOnResume();
+    if (shouldRestoreEstimateDraft || hasStoredMeaningfulEstimateDraft()) scheduleEstimateDraftRestore("reloadAllData");
     showAppMessage("最新データを読み込みました", false);
   } catch (error) {
     showAppMessage(`最新データ再読込に失敗しました。${formatSupabaseError(error)}`, true);
@@ -5201,7 +5202,8 @@ async function deleteAllData() {
         resetCaseForm();
         resetCaseDocumentForm();
         resetWorkTemplateForm();
-        resetEstimateForm();
+        clearCurrentEstimateFormDraft();
+        resetEstimateForm({ force: true });
         resetSaleForm();
         resetExpenseForm();
         resetFixedExpenseForm();
@@ -6066,7 +6068,7 @@ function renderAfterDataChanged() {
   safeRender("clientAnalysis", renderClientAnalysis);
   safeRender("referralAnalysis", renderReferralAnalysis);
   hydrateActionButtons();
-  if (shouldRestoreEstimateDraft) restoreEstimateDraftOnResume();
+  if (shouldRestoreEstimateDraft || hasStoredMeaningfulEstimateDraft()) scheduleEstimateDraftRestore("renderAfterDataChanged");
   debugLog("RENDER DONE");
 }
 
@@ -6428,7 +6430,7 @@ function activateTab(tabKey) {
 
   if (dashboardSection) dashboardSection.hidden = normalizedTabKey !== "cases";
   applySubtabVisibility(normalizedTabKey);
-  if (normalizedTabKey === "estimates" && subtabState.estimates === "create") restoreEstimateDraftOnResume();
+  if (normalizedTabKey === "estimates" && subtabState.estimates === "create") scheduleEstimateDraftRestore("activateTab");
 }
 
 function activateSubtab(parentTab, subtab) {
@@ -6438,7 +6440,7 @@ function activateSubtab(parentTab, subtab) {
   subtabState[normalizedTab] = subtab;
   applySubtabVisibility(normalizedTab);
   if (normalizedTab === "daily-reports" && subtab === "entry") restoreDailyReportDraft();
-  if (normalizedTab === "estimates" && subtab === "create") restoreEstimateDraftOnResume();
+  if (normalizedTab === "estimates" && subtab === "create") scheduleEstimateDraftRestore("activateSubtab");
 }
 
 function applySubtabVisibility(activeMainTab) {
@@ -8280,6 +8282,7 @@ function matchesDailyReportDateFilter(entry, filter) {
 const ESTIMATE_DRAFT_STORAGE_KEY = "gyosei_estimate_draft_v1";
 let isRestoringEstimateDraft = false;
 let estimateDraftSaveTimer = null;
+let estimateDraftRestoreRunId = 0;
 
 function isEstimateCreateSubtabActive() {
   return getActiveMainTabKey() === "estimates" && subtabState.estimates === "create";
@@ -8335,17 +8338,29 @@ function hasMeaningfulEstimateDraft(draft) {
   if (!draft) return false;
   if (asTrimmedText(draft.clientId) || asTrimmedText(draft.customerName) || asTrimmedText(draft.estimateTitle) || asTrimmedText(draft.validUntil) || asTrimmedText(draft.memo)) return true;
   if (draft.status && normalizeEstimateStatus(draft.status) !== "作成中") return true;
-  const today = toDateString(new Date());
-  if (draft.estimateDate && draft.estimateDate !== today) return true;
   return (Array.isArray(draft.items) ? draft.items : []).some((item, idx) => {
     if (!item) return false;
+    if (idx > 0) return true;
     if (normalizeEstimateItemType(item.itemType ?? item.item_type) !== "reward") return true;
     if (asTrimmedText(item.itemName ?? item.item_name)) return true;
-    const quantity = String(item.quantity ?? "");
-    const unitPrice = String(item.unitPrice ?? item.unit_price ?? "");
-    if (idx > 0) return true;
-    return !["", "1"].includes(quantity) || !["", "0"].includes(unitPrice);
+    const quantity = parseDecimalInput(item.quantity ?? "");
+    const unitPrice = parseNumberInput(item.unitPrice ?? item.unit_price ?? "");
+    const amount = Number(item.amount ?? 0) || 0;
+    if (Number.isFinite(quantity) && quantity !== 1) return true;
+    if (unitPrice !== 0 || amount !== 0) return true;
+    return false;
   });
+}
+
+function hasStoredMeaningfulEstimateDraft(key = getEstimateDraftKey()) {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return false;
+    return hasMeaningfulEstimateDraft(JSON.parse(raw));
+  } catch (error) {
+    console.warn("見積下書き確認に失敗", error);
+    return false;
+  }
 }
 
 function saveEstimateFormDraft(options = {}) {
@@ -8357,12 +8372,10 @@ function saveEstimateFormDraft(options = {}) {
   }
   try {
     const draft = collectEstimateFormDraft();
-    const key = getEstimateDraftKey();
     if (!hasMeaningfulEstimateDraft(draft)) {
-      sessionStorage.removeItem(key);
       return false;
     }
-    sessionStorage.setItem(key, JSON.stringify(draft));
+    sessionStorage.setItem(getEstimateDraftKey(), JSON.stringify(draft));
     return true;
   } catch (error) {
     console.warn("見積下書き保存に失敗", error);
@@ -8382,6 +8395,7 @@ function readEstimateFormDraft() {
     if (!raw) return null;
     const draft = JSON.parse(raw);
     if (!draft || (draft.estimateId || null) !== (editState.estimateId || null)) return null;
+    if (!hasMeaningfulEstimateDraft(draft)) return null;
     return draft;
   } catch (error) {
     console.warn("見積下書き読込に失敗", error);
@@ -8427,6 +8441,25 @@ function restoreEstimateFormDraft(draft = readEstimateFormDraft(), options = {})
 function restoreEstimateDraftOnResume() {
   if (!isEstimateCreateSubtabActive()) return false;
   return restoreEstimateFormDraft();
+}
+
+function scheduleEstimateDraftRestore(reason = "") {
+  if (!isEstimateCreateSubtabActive() || !hasStoredMeaningfulEstimateDraft()) return false;
+  const runId = ++estimateDraftRestoreRunId;
+  const restoreIfCurrent = () => {
+    if (runId !== estimateDraftRestoreRunId || !isEstimateCreateSubtabActive()) return false;
+    debugLog("ESTIMATE DRAFT RESTORE", reason);
+    return restoreEstimateDraftOnResume();
+  };
+
+  restoreIfCurrent();
+  if (typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(restoreIfCurrent);
+  }
+  [0, 250, 1000, 3000, 6000].forEach((delay) => {
+    window.setTimeout(restoreIfCurrent, delay);
+  });
+  return true;
 }
 
 function clearEstimateFormDraft(key = getEstimateDraftKey()) {
@@ -8686,7 +8719,7 @@ async function handleEstimateSubmit(event) {
       return { estimateId, isUpdate };
     }, {
       successMessage: editState.estimateId ? "見積を更新しました。" : "見積を登録しました。",
-      resetForm: resetEstimateForm,
+      resetForm: () => resetEstimateForm({ force: true }),
       afterSuccess: () => {
         clearEstimateFormDraft(estimateDraftKeyForSubmit);
         editState.estimateId = null;
@@ -9056,7 +9089,8 @@ async function deleteEstimate(id, options = {}) {
       afterSuccess: () => {
         if (editState.estimateId === id) {
           editState.estimateId = null;
-          resetEstimateForm();
+          clearCurrentEstimateFormDraft();
+          resetEstimateForm({ force: true });
         }
       },
     });
@@ -9662,7 +9696,19 @@ async function startEstimateEdit(estimateId) {
 }
 
 
-function resetEstimateForm() {
+function resetEstimateForm(options = {}) {
+  const shouldRestoreDraft = options.allowDraftRestore !== false
+    && !options.force
+    && !editState.estimateId
+    && isEstimateCreateSubtabActive()
+    && hasStoredMeaningfulEstimateDraft();
+  if (shouldRestoreDraft) {
+    resetEditMode("estimate");
+    if (estimateSubmitBtn) estimateSubmitBtn.textContent = "見積を登録";
+    scheduleEstimateDraftRestore("resetEstimateForm");
+    return;
+  }
+
   resetEditMode("estimate");
   estimateForm?.reset();
   if (estimateForm?.elements?.clientId) estimateForm.elements.clientId.value = "";
@@ -12601,7 +12647,7 @@ function clearAppState() {
   resetCaseDocumentForm();
   resetWorkTemplateForm();
   resetBusinessResourceTemplateForm();
-  resetEstimateForm();
+  resetEstimateForm({ force: true });
   resetSaleForm();
   resetExpenseForm();
   resetFixedExpenseForm();
@@ -12635,7 +12681,7 @@ window.GyoseiApp = {
     const shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
     await loadAllDataSafely();
     renderAfterDataChanged();
-    if (shouldRestoreEstimateDraft) restoreEstimateDraftOnResume();
+    if (shouldRestoreEstimateDraft || hasStoredMeaningfulEstimateDraft()) scheduleEstimateDraftRestore("reloadAllData");
   },
   refreshEstimateListData: async () => {
     await refreshEstimateListData();
