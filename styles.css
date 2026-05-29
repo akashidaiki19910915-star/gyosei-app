@@ -273,6 +273,19 @@ button:hover { background: var(--primary-dark); }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.6rem;
 }
+.construction-detail-fieldset {
+  border: 1px solid #d8dee8;
+  border-radius: 12px;
+  padding: 14px;
+  background: #f8fafc;
+}
+
+.construction-detail-fieldset legend {
+  padding: 0 6px;
+  font-weight: 700;
+  color: #1f2a44;
+}
+
 
 .summary-grid {
   display: grid;

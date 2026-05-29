@@ -642,6 +642,46 @@
                   作業メモ
                   <textarea id="work-memo" name="workMemo" rows="4" maxlength="2000" placeholder="対応履歴・注意点などを記録"></textarea>
                 </label>
+                <fieldset class="construction-detail-fieldset">
+                  <legend>建設業許可系詳細</legend>
+                  <div class="date-grid">
+                    <label>
+                      手続種別
+                      <select id="construction-procedure-type" name="constructionProcedureType">
+                        <option value="">未設定</option>
+                        <option value="construction_license_new">建設業許可 新規</option>
+                        <option value="construction_license_renewal">建設業許可 更新</option>
+                        <option value="construction_license_add_business">業種追加</option>
+                        <option value="annual_closing_report">決算変更届</option>
+                        <option value="change_notification">変更届</option>
+                        <option value="keishin">経審</option>
+                        <option value="management_analysis">経営状況分析</option>
+                      </select>
+                    </label>
+                    <label>
+                      許可満了日
+                      <input id="construction-permit-expiry-date" name="constructionPermitExpiryDate" type="date" />
+                    </label>
+                  </div>
+                  <div class="date-grid">
+                    <label>
+                      決算月
+                      <input id="construction-fiscal-month" name="constructionFiscalMonth" type="number" min="1" max="12" placeholder="例：3" />
+                    </label>
+                    <label>
+                      申請方法
+                      <select id="construction-application-route" name="constructionApplicationRoute">
+                        <option value="未定">未定</option>
+                        <option value="紙申請">紙申請</option>
+                        <option value="電子申請">電子申請</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label>
+                    建設業許可メモ
+                    <textarea id="construction-memo" name="constructionMemo" rows="3" maxlength="2000" placeholder="建設業許可系の補足事項"></textarea>
+                  </label>
+                </fieldset>
                 <div class="date-grid">
                   <label>
                     次回対応日

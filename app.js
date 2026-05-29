@@ -32,6 +32,16 @@ const BUSINESS_RESOURCE_CATEGORY_LABELS = Object.freeze(BUSINESS_RESOURCE_CATEGO
   acc[entry.value] = entry.label;
   return acc;
 }, {}));
+const CONSTRUCTION_APPLICATION_ROUTES = ["未定", "紙申請", "電子申請"];
+const CONSTRUCTION_CASE_INITIAL_TASKS = Object.freeze({
+  construction_license_new: ["初回ヒアリング", "必要書類案内", "資料回収", "不足資料確認", "書類作成", "提出準備", "提出", "補正対応", "完了報告", "請求", "入金確認"],
+  construction_license_renewal: ["初回ヒアリング", "許可満了日確認", "必要書類案内", "資料回収", "不足資料確認", "書類作成", "提出準備", "提出", "補正対応", "完了報告", "請求", "入金確認", "次回期限確認"],
+  construction_license_add_business: ["初回ヒアリング", "追加業種確認", "必要書類案内", "資料回収", "不足資料確認", "書類作成", "提出準備", "提出", "補正対応", "完了報告", "請求", "入金確認"],
+  annual_closing_report: ["初回ヒアリング", "決算月確認", "必要書類案内", "資料回収", "不足資料確認", "書類作成", "提出準備", "提出", "補正対応", "完了報告", "請求", "入金確認", "次回期限確認"],
+  change_notification: ["初回ヒアリング", "変更内容確認", "必要書類案内", "資料回収", "不足資料確認", "書類作成", "提出準備", "提出", "補正対応", "完了報告", "請求", "入金確認"],
+  keishin: ["初回ヒアリング", "決算月確認", "必要書類案内", "資料回収", "不足資料確認", "書類作成", "提出準備", "提出", "補正対応", "完了報告", "請求", "入金確認", "次回期限確認"],
+  management_analysis: ["初回ヒアリング", "決算月確認", "必要書類案内", "資料回収", "不足資料確認", "書類作成", "提出準備", "提出", "補正対応", "完了報告", "請求", "入金確認"],
+});
 const OFFICE_INFO = {
   name: "あかし行政書士事務所",
   zip: "574-0044",
@@ -177,6 +187,7 @@ const CLICK_ACTION_HANDLERS = {
   print_case_invoice: handleCaseListAction,
   export_case_invoice_excel: handleCaseListAction,
   register_sale_from_case: handleCaseListAction,
+  apply_construction_case_template: handleCaseListAction,
   edit_work_template: handleWorkTemplateListAction,
   delete_work_template: handleWorkTemplateListAction,
   edit_business_resource_template: handleBusinessResourceTemplateListAction,
@@ -2347,27 +2358,48 @@ async function loadConstructionCaseDetails() {
   return fetchConstructionCaseDetails();
 }
 
+async function saveConstructionCaseDetail(detail) {
+  if (!currentUser) throw new Error("ログイン状態を確認できません。");
+  const rawPayload = { ...(detail || {}), user_id: currentUser.id };
+  const payload = pickObjectKeys(rawPayload, CONSTRUCTION_CASE_DETAIL_MUTATION_COLUMNS);
+  if (!payload.case_id) throw new Error("建設業許可案件詳細の案件IDがありません。");
+  payload.procedure_type = normalizeConstructionProcedureType(payload.procedure_type) || null;
+  payload.application_route = normalizeConstructionApplicationRoute(payload.application_route);
+  const fiscalMonth = Number(payload.fiscal_month);
+  payload.fiscal_month = Number.isFinite(fiscalMonth) && fiscalMonth >= 1 && fiscalMonth <= 12 ? fiscalMonth : null;
+
+  let existingId = payload.id || null;
+  if (!existingId) {
+    const { data: existingRows, error: existingError } = await sbClient
+      .from("construction_case_details")
+      .select("id")
+      .eq("user_id", currentUser.id)
+      .eq("case_id", payload.case_id)
+      .limit(1);
+    if (existingError) throw existingError;
+    existingId = existingRows?.[0]?.id || null;
+  }
+
+  const mutationPayload = { ...payload };
+  delete mutationPayload.id;
+  const query = existingId
+    ? sbClient.from("construction_case_details").update(mutationPayload).eq("id", existingId).eq("user_id", currentUser.id)
+    : sbClient.from("construction_case_details").insert(mutationPayload);
+  const { data, error } = await query.select().single();
+  if (error) throw error;
+  return data;
+}
+
 async function upsertConstructionCaseDetail(detail) {
   if (!currentUser) {
     showAppMessage("ログイン状態を確認できません。", true);
     return null;
   }
-  const rawPayload = { ...(detail || {}), user_id: currentUser.id };
-  const payload = pickObjectKeys(rawPayload, CONSTRUCTION_CASE_DETAIL_MUTATION_COLUMNS);
-  if (!payload.case_id) {
+  if (!detail?.case_id) {
     showAppMessage("建設業許可案件詳細の案件IDがありません。", true);
     return null;
   }
-
-  const mutation = async () => {
-    const query = payload.id
-      ? sbClient.from("construction_case_details").update(payload).eq("id", payload.id).eq("user_id", currentUser.id)
-      : sbClient.from("construction_case_details").insert(payload);
-    const { data, error } = await query.select().single();
-    if (error) throw error;
-    return data;
-  };
-  return runMutation("建設業許可案件詳細の保存", mutation, { successMessage: "建設業許可案件詳細を保存しました。" });
+  return runMutation("建設業許可案件詳細の保存", () => saveConstructionCaseDetail(detail), { successMessage: "建設業許可案件詳細を保存しました。" });
 }
 
 async function deleteConstructionCaseDetail(id) {
@@ -2814,6 +2846,30 @@ function buildCasePayloadFromForm() {
   return pickObjectKeys(rawPayload, CASE_MUTATION_COLUMNS);
 }
 
+
+function buildConstructionCaseDetailPayloadFromForm(caseId) {
+  if (!caseForm || !caseId) return null;
+  const elements = caseForm.elements;
+  const procedureType = normalizeConstructionProcedureType(elements.constructionProcedureType?.value);
+  const permitExpiryDate = elements.constructionPermitExpiryDate?.value || null;
+  const fiscalMonth = parseNumberInput(elements.constructionFiscalMonth?.value);
+  const applicationRoute = normalizeConstructionApplicationRoute(elements.constructionApplicationRoute?.value);
+  const memo = asTrimmedText(elements.constructionMemo?.value) || null;
+  const existing = getConstructionCaseDetailForCase(caseId);
+  const hasConstructionInput = Boolean(procedureType || permitExpiryDate || fiscalMonth || memo || (applicationRoute && applicationRoute !== "未定"));
+  if (!hasConstructionInput && !existing) return null;
+  return {
+    id: existing?.id,
+    user_id: currentUser.id,
+    case_id: caseId,
+    procedure_type: procedureType || null,
+    permit_expiry_date: permitExpiryDate,
+    fiscal_month: Number.isFinite(fiscalMonth) ? fiscalMonth : null,
+    application_route: applicationRoute,
+    memo,
+  };
+}
+
 function formatSupabaseError(error) {
   if (!error) return "";
   const chunks = [error.message, error.code, error.details, error.hint]
@@ -2890,19 +2946,24 @@ async function handleCaseSubmit(event) {
       debugLog("PAYLOAD", payload);
       if (!payload.customer_name || !payload.case_name) return;
 
+      let savedCase = null;
       if (isEdit) {
         const { data, error } = await sbClient.from("cases").update(payload).eq("id", editState.caseId).eq("user_id", currentUser.id).select().single();
         if (error) throw error;
         if (!data) throw new Error("更新結果を取得できませんでした。");
-        debugLog("CASE INSERT SUCCESS", data);
+        savedCase = data;
+        debugLog("CASE UPDATE SUCCESS", data);
       } else {
         const { data, error } = await sbClient.from("cases").insert(payload).select().single();
         if (error) throw error;
         if (!data) throw new Error("案件登録結果を取得できませんでした。");
+        savedCase = data;
         await createCaseTasksFromTemplate(data, payload.template_id);
         await createCaseDocumentsFromTemplate(data, payload.template_id);
         debugLog("CASE INSERT SUCCESS", data);
       }
+      const constructionDetailPayload = buildConstructionCaseDetailPayloadFromForm(savedCase.id);
+      if (constructionDetailPayload) await saveConstructionCaseDetail(constructionDetailPayload);
       return true;
     }, {
       successMessage: isEdit ? "案件を更新しました。" : "案件を登録しました。",
@@ -2972,6 +3033,29 @@ function getBusinessResourceProcedureLabel(value) {
 
 function getBusinessResourceCategoryLabel(value) {
   return BUSINESS_RESOURCE_CATEGORY_LABELS[value] || value || "未設定";
+}
+
+function normalizeConstructionProcedureType(value) {
+  const normalized = String(value || "").trim();
+  return CONSTRUCTION_PROCEDURE_TYPE_LABELS[normalized] ? normalized : "";
+}
+
+function normalizeConstructionApplicationRoute(value) {
+  const normalized = String(value || "").trim();
+  return CONSTRUCTION_APPLICATION_ROUTES.includes(normalized) ? normalized : "未定";
+}
+
+function getConstructionProcedureLabel(value) {
+  return CONSTRUCTION_PROCEDURE_TYPE_LABELS[value] || value || "未設定";
+}
+
+function getConstructionCaseDetailForCase(caseId) {
+  return (Array.isArray(state.constructionCaseDetails) ? state.constructionCaseDetails : [])
+    .find((entry) => String(entry.case_id || entry.caseId || "") === String(caseId || "")) || null;
+}
+
+function getConstructionCaseInitialTasks(procedureType) {
+  return (CONSTRUCTION_CASE_INITIAL_TASKS[procedureType] || []).slice();
 }
 
 function getBusinessResourceSortOrder(value) {
@@ -3210,6 +3294,126 @@ async function createCaseDocumentsFromTemplate(caseRow, templateId) {
   if (!insertingRows.length) return;
   const { error } = await sbClient.from("case_documents").insert(insertingRows);
   if (error) throw error;
+}
+
+
+function buildBusinessResourceDocumentMemo(resource) {
+  const categoryLabel = getBusinessResourceCategoryLabel(resource.resource_category);
+  const chunks = [`分類：${categoryLabel}`];
+  if (asTrimmedText(resource.description)) chunks.push(`説明：${asTrimmedText(resource.description)}`);
+  if (asTrimmedText(resource.source_name)) chunks.push(`出典：${asTrimmedText(resource.source_name)}`);
+  if (asTrimmedText(resource.url)) chunks.push(`URL：${asTrimmedText(resource.url)}`);
+  if (asTrimmedText(resource.memo)) chunks.push(`メモ：${asTrimmedText(resource.memo)}`);
+  // related_estimate_item / related_expense_item は将来の見積・実費連携用。第1-Cでは estimates 系テーブルへ反映しない。
+  return chunks.join("\n") || null;
+}
+
+function getApplicableBusinessResourceTemplates(procedureType) {
+  return (Array.isArray(state.businessResourceTemplates) ? state.businessResourceTemplates : [])
+    .filter((resource) => resource?.procedure_type === procedureType)
+    .filter((resource) => resource?.is_active !== false)
+    .filter((resource) => ["collect", "submit"].includes(resource?.resource_category))
+    .sort((a, b) => getBusinessResourceSortOrder(a.sort_order) - getBusinessResourceSortOrder(b.sort_order));
+}
+
+async function createCaseDocumentsFromBusinessResourceTemplates(caseRow, procedureType) {
+  if (!currentUser || !caseRow?.id || !procedureType) return { inserted: 0, candidates: 0, skipped: 0 };
+  const resources = getApplicableBusinessResourceTemplates(procedureType);
+  if (!resources.length) return { inserted: 0, candidates: 0, skipped: 0 };
+  const { data: existingRows, error: existingError } = await sbClient
+    .from("case_documents")
+    .select("document_name")
+    .eq("user_id", currentUser.id)
+    .eq("case_id", caseRow.id);
+  if (existingError) throw existingError;
+  const existingDocumentNames = new Set((existingRows || []).map((row) => normalizeAutoCreateItemName(row.document_name)));
+  const insertingRows = [];
+  for (const resource of resources) {
+    const documentName = asTrimmedText(resource.resource_name);
+    const normalizedDocumentName = normalizeAutoCreateItemName(documentName);
+    if (!normalizedDocumentName || existingDocumentNames.has(normalizedDocumentName)) continue;
+    existingDocumentNames.add(normalizedDocumentName);
+    insertingRows.push({
+      user_id: currentUser.id,
+      case_id: caseRow.id,
+      document_name: documentName,
+      status: "未回収",
+      received_date: null,
+      checked_date: null,
+      memo: buildBusinessResourceDocumentMemo(resource),
+      file_url: asTrimmedText(resource.file_url) || asTrimmedText(resource.url) || null,
+    });
+  }
+  if (insertingRows.length) {
+    const { error } = await sbClient.from("case_documents").insert(insertingRows);
+    if (error) throw error;
+  }
+  return { inserted: insertingRows.length, candidates: resources.length, skipped: resources.length - insertingRows.length };
+}
+
+async function createCaseInitialTasksForConstructionProcedure(caseRow, procedureType) {
+  if (!currentUser || !caseRow?.id || !procedureType) return { inserted: 0, candidates: 0, skipped: 0 };
+  const taskTitles = getConstructionCaseInitialTasks(procedureType);
+  if (!taskTitles.length) return { inserted: 0, candidates: 0, skipped: 0 };
+  const { data: existingRows, error: existingError } = await sbClient
+    .from("case_tasks")
+    .select("task_title")
+    .eq("user_id", currentUser.id)
+    .eq("case_id", caseRow.id);
+  if (existingError) throw existingError;
+  const existingTaskNames = new Set((existingRows || []).map((row) => normalizeAutoCreateItemName(row.task_title)));
+  const insertingRows = [];
+  for (const title of taskTitles) {
+    const taskTitle = asTrimmedText(title);
+    const normalizedTitle = normalizeAutoCreateItemName(taskTitle);
+    if (!normalizedTitle || existingTaskNames.has(normalizedTitle)) continue;
+    existingTaskNames.add(normalizedTitle);
+    insertingRows.push({
+      user_id: currentUser.id,
+      case_id: caseRow.id,
+      task_title: taskTitle,
+      task_memo: `建設業許可系テンプレート（${getConstructionProcedureLabel(procedureType)}）から作成`,
+      due_date: null,
+      status: "未完了",
+      completed_at: null,
+    });
+  }
+  if (insertingRows.length) {
+    const { error } = await sbClient.from("case_tasks").insert(insertingRows);
+    if (error) throw error;
+  }
+  return { inserted: insertingRows.length, candidates: taskTitles.length, skipped: taskTitles.length - insertingRows.length };
+}
+
+async function applyConstructionCaseTemplate(caseId) {
+  if (!currentUser || !ensureInitialDataReady("建設業許可テンプレート展開")) return null;
+  const targetCase = state.cases.find((entry) => String(entry.id) === String(caseId));
+  if (!targetCase) {
+    showAppMessage("展開対象の案件が見つかりません。", true);
+    return null;
+  }
+  const detail = getConstructionCaseDetailForCase(targetCase.id);
+  const procedureType = normalizeConstructionProcedureType(detail?.procedure_type);
+  if (!procedureType) {
+    showAppMessage("建設業許可系の手続種別を先に選択してください。", true);
+    return null;
+  }
+
+  return runMutation("建設業許可テンプレート展開", async () => {
+    await loadBusinessResourceTemplates();
+    const documentResult = await createCaseDocumentsFromBusinessResourceTemplates(targetCase, procedureType);
+    const taskResult = await createCaseInitialTasksForConstructionProcedure(targetCase, procedureType);
+    return { documentResult, taskResult };
+  }, {
+    successMessage: (result) => {
+      const docs = result?.documentResult || { inserted: 0, candidates: 0 };
+      const tasks = result?.taskResult || { inserted: 0, candidates: 0 };
+      if (!docs.candidates && tasks.inserted > 0) return "資料テンプレートはありませんでしたが、初期タスクを展開しました。";
+      if (!docs.candidates && !tasks.inserted) return "展開できる資料テンプレートがありません。初期タスクも重複のため追加対象はありませんでした。";
+      if (!docs.inserted && !tasks.inserted) return "同名書類・同名タスクがあるため追加対象はありません。";
+      return `建設業許可テンプレートを展開しました。書類 ${docs.inserted}件 / タスク ${tasks.inserted}件`;
+    },
+  });
 }
 
 async function handleSaleSubmit(event) {
@@ -3570,6 +3774,10 @@ async function handleCaseListAction(event) {
     await registerSaleFromCase(id);
     return;
   }
+  if (listAction === "apply_construction_case_template") {
+    await applyConstructionCaseTemplate(id);
+    return;
+  }
   if (listAction === "print_case_delivery_note") return openCaseBusinessDocumentPrintPreview(id, "delivery_note");
   if (listAction === "print_case_purchase_order") return openCaseBusinessDocumentPrintPreview(id, "purchase_order");
   if (listAction === "print_case_order_confirmation") return openCaseBusinessDocumentPrintPreview(id, "order_confirmation");
@@ -3602,6 +3810,12 @@ async function startCaseEdit(caseId) {
     caseForm.elements.invoiceUrl.value = target.invoiceUrl || "";
     caseForm.elements.receiptUrl.value = target.receiptUrl || "";
     caseForm.elements.status.value = normalizeStatus(target.status);
+    const constructionDetail = getConstructionCaseDetailForCase(target.id);
+    caseForm.elements.constructionProcedureType.value = normalizeConstructionProcedureType(constructionDetail?.procedure_type) || "";
+    caseForm.elements.constructionPermitExpiryDate.value = constructionDetail?.permit_expiry_date || "";
+    caseForm.elements.constructionFiscalMonth.value = constructionDetail?.fiscal_month || "";
+    caseForm.elements.constructionApplicationRoute.value = normalizeConstructionApplicationRoute(constructionDetail?.application_route);
+    caseForm.elements.constructionMemo.value = constructionDetail?.memo || "";
     caseSubmitBtn.textContent = "案件を更新";
     caseForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -4644,7 +4858,10 @@ async function runMutation(actionName, mutationFn, options = {}) {
     }
 
     debugLog("MUTATION SUCCESS", actionName);
-    showAppMessage(options.successMessage || `${actionName}が完了しました。`, false);
+    const successMessage = typeof options.successMessage === "function"
+      ? options.successMessage(result)
+      : options.successMessage;
+    if (successMessage !== false) showAppMessage(successMessage || `${actionName}が完了しました。`, false);
 
     return result;
   } catch (error) {
@@ -8669,7 +8886,11 @@ function renderCases() {
       entry.invoiceUrl ? `<a href="${escapeHtml(entry.invoiceUrl)}" target="_blank" rel="noopener noreferrer">請求書を開く</a>` : "",
       entry.receiptUrl ? `<a href="${escapeHtml(entry.receiptUrl)}" target="_blank" rel="noopener noreferrer">領収書を開く</a>` : "",
     ].filter(Boolean).join(" / ");
-    meta.innerHTML = `見積: ${formatCurrency(entry.estimateAmount)} / ステータス: ${escapeHtml(entry.status)} / 受付日: ${formatDate(entry.receivedDate)} / 期限日: ${formatDate(entry.dueDate)} / 次回対応日: ${formatDate(entry.nextActionDate)} / 次回対応内容: ${escapeHtml(entry.nextAction || "未設定")}${urlLinks ? ` / ${urlLinks}` : ""}`;
+    const constructionDetail = getConstructionCaseDetailForCase(entry.id);
+    const constructionMeta = constructionDetail
+      ? ` / 建設業許可系: ${escapeHtml(getConstructionProcedureLabel(constructionDetail.procedure_type))} / 許可満了日: ${formatDate(constructionDetail.permit_expiry_date)} / 申請方法: ${escapeHtml(constructionDetail.application_route || "未定")}`
+      : " / 建設業許可系: 未設定";
+    meta.innerHTML = `見積: ${formatCurrency(entry.estimateAmount)} / ステータス: ${escapeHtml(entry.status)} / 受付日: ${formatDate(entry.receivedDate)} / 期限日: ${formatDate(entry.dueDate)} / 次回対応日: ${formatDate(entry.nextActionDate)} / 次回対応内容: ${escapeHtml(entry.nextAction || "未設定")}${constructionMeta}${urlLinks ? ` / ${urlLinks}` : ""}`;
     if (caseWorkMeta) {
       caseWorkMeta.textContent = `テンプレート: ${templateName} / 必要書類: ${truncateText(entry.requiredDocuments || "未設定", 50)} / 書類管理: 必要書類 ${docStats.total}件 / 回収済 ${docStats.received}件 / 未回収 ${docStats.unreceived}件 / 不備 ${docStats.defective}件 / タスク: ${truncateText(entry.taskList || "未設定", 50)} / 未完了タスク: ${incompleteTasks}件 / 売上: ${hasSaleRegistered ? "売上登録済み" : "売上未登録"}${hasSaleAmountMismatch ? " / ⚠ 金額不一致あり" : ""} / 作業メモ: ${truncateText(sanitizeLegacyEstimateMemo(entry.workMemo) || "未設定", 40)} / 進行監査: ${auditAlerts.length ? auditAlerts.join(" / ") : "問題なし"}`;
       caseWorkMeta.classList.remove("next-action-overdue", "next-action-within3", "next-action-within7");
@@ -8719,6 +8940,16 @@ function renderCases() {
       btn.textContent = config.label;
       rowActions.appendChild(btn);
     });
+    if (rowActions && !rowActions.querySelector(".case-construction-template-btn")) {
+      const constructionTemplateBtn = document.createElement("button");
+      constructionTemplateBtn.type = "button";
+      constructionTemplateBtn.className = "secondary-btn case-construction-template-btn";
+      constructionTemplateBtn.dataset.action = "apply_construction_case_template";
+      constructionTemplateBtn.dataset.listAction = "apply_construction_case_template";
+      constructionTemplateBtn.dataset.caseId = entry.id;
+      constructionTemplateBtn.textContent = "建設業許可テンプレートを適用";
+      rowActions.appendChild(constructionTemplateBtn);
+    }
     if (rowActions && !rowActions.querySelector(".case-register-sale-btn")) {
       const saleBtn = document.createElement("button");
       saleBtn.type = "button";
@@ -9055,6 +9286,8 @@ function resetCaseForm() {
   caseForm.reset();
   if (caseForm?.elements?.caseClientId) caseForm.elements.caseClientId.value = "";
   if (caseForm?.elements?.caseTemplateId) caseForm.elements.caseTemplateId.value = "";
+  if (caseForm?.elements?.constructionProcedureType) caseForm.elements.constructionProcedureType.value = "";
+  if (caseForm?.elements?.constructionApplicationRoute) caseForm.elements.constructionApplicationRoute.value = "未定";
   caseForm.elements.status.value = "未着手";
   caseSubmitBtn.textContent = "案件を追加";
 }
