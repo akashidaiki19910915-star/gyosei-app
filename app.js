@@ -8753,6 +8753,58 @@ function getCaseDocumentStats(caseId) {
   return { total, received, unreceived, defective };
 }
 
+function getCaseTaskStats(caseRow) {
+  const caseTasks = (Array.isArray(state.caseTasks) ? state.caseTasks : [])
+    .filter((entry) => String(entry.caseId || "") === String(caseRow?.id || ""));
+  if (caseTasks.length) {
+    const completedStatuses = new Set(["完了", "対応済み", "不要"]);
+    const incomplete = caseTasks.filter((entry) => !completedStatuses.has(String(entry.status || "").trim())).length;
+    return { total: caseTasks.length, incomplete };
+  }
+  const legacyTasks = parseTaskList(caseRow?.taskList || "");
+  return { total: legacyTasks.length, incomplete: legacyTasks.filter((entry) => !entry.done).length };
+}
+
+function getConstructionTemplateSummary(caseRow, constructionDetail, docStats, taskStats) {
+  if (!constructionDetail) return "未設定";
+  const procedureType = normalizeConstructionProcedureType(constructionDetail.procedure_type);
+  if (!procedureType) return "手続種別未設定";
+  const hasExpandedItems = (docStats?.total || 0) > 0 || (taskStats?.total || 0) > 0;
+  return hasExpandedItems ? "適用済み相当" : "適用可";
+}
+
+function appendCaseSummaryField(container, label, value) {
+  if (!container) return null;
+  const field = document.createElement("div");
+  field.className = "case-card-field";
+  const labelElement = document.createElement("span");
+  labelElement.className = "case-card-label";
+  labelElement.textContent = label;
+  const valueElement = document.createElement("span");
+  valueElement.className = "case-card-value";
+  valueElement.textContent = value || "未設定";
+  field.append(labelElement, valueElement);
+  container.appendChild(field);
+  return valueElement;
+}
+
+function appendCaseLinkSummaryField(container, links) {
+  const visibleLinks = (Array.isArray(links) ? links : []).filter((entry) => entry?.url);
+  if (!visibleLinks.length) return;
+  const valueElement = appendCaseSummaryField(container, "リンク", "");
+  if (!valueElement) return;
+  valueElement.textContent = "";
+  visibleLinks.forEach((entry, index) => {
+    if (index > 0) valueElement.appendChild(document.createTextNode(" / "));
+    const link = document.createElement("a");
+    link.href = entry.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = entry.label;
+    valueElement.appendChild(link);
+  });
+}
+
 function getDocumentAlertTargets() {
   const todayTs = getTodayTimestamp();
   return (Array.isArray(state.caseDocuments) ? state.caseDocuments : []).reduce((acc, doc) => {
@@ -8856,7 +8908,8 @@ function renderCases() {
     const node = caseItemTemplate.content.cloneNode(true);
     const item = node.querySelector(".item");
     const title = node.querySelector(".title");
-    const meta = node.querySelector(".meta");
+    const statusBadge = node.querySelector(".case-status-badge");
+    const summaryGrid = node.querySelector(".case-card-summary-grid");
     const caseWorkMeta = node.querySelector(".case-work-meta");
     const profitMeta = node.querySelector(".profit-meta");
     const rowActions = node.querySelector(".row-actions");
@@ -8865,8 +8918,8 @@ function renderCases() {
     const templateName = state.workTemplates.find((template) => template.id === entry.templateId)?.name || "未設定";
     const customerName = entry.customerName || "顧客不明";
     const caseName = entry.caseName || "案件名未設定";
-    const incompleteTasks = getIncompleteTaskCount(entry.taskList);
     const docStats = getCaseDocumentStats(entry.id);
+    const taskStats = getCaseTaskStats(entry);
     const auditAlerts = getCaseAuditAlerts(entry);
     const linkedEstimate = getCaseLinkedEstimate(entry);
     const linkedSales = (Array.isArray(state.sales) ? state.sales : []).filter((sale) => {
@@ -8878,21 +8931,45 @@ function renderCases() {
     const preferredAmount = getCasePreferredInvoiceAmount(entry, linkedEstimate);
     const linkedSaleAmount = Number(linkedSales[0]?.invoiceAmount ?? 0);
     const hasSaleAmountMismatch = hasSaleRegistered && preferredAmount > 0 && linkedSaleAmount !== preferredAmount;
+    const constructionDetail = getConstructionCaseDetailForCase(entry.id);
+    const constructionProcedure = constructionDetail
+      ? getConstructionProcedureLabel(constructionDetail.procedure_type)
+      : "未設定";
+    const constructionTemplateSummary = getConstructionTemplateSummary(entry, constructionDetail, docStats, taskStats);
 
     item.dataset.id = entry.id;
     title.textContent = `${customerName}｜${caseName}`;
-    const urlLinks = [
-      entry.documentUrl ? `<a href="${escapeHtml(entry.documentUrl)}" target="_blank" rel="noopener noreferrer">関連書類を開く</a>` : "",
-      entry.invoiceUrl ? `<a href="${escapeHtml(entry.invoiceUrl)}" target="_blank" rel="noopener noreferrer">請求書を開く</a>` : "",
-      entry.receiptUrl ? `<a href="${escapeHtml(entry.receiptUrl)}" target="_blank" rel="noopener noreferrer">領収書を開く</a>` : "",
-    ].filter(Boolean).join(" / ");
-    const constructionDetail = getConstructionCaseDetailForCase(entry.id);
-    const constructionMeta = constructionDetail
-      ? ` / 建設業許可系: ${escapeHtml(getConstructionProcedureLabel(constructionDetail.procedure_type))} / 許可満了日: ${formatDate(constructionDetail.permit_expiry_date)} / 申請方法: ${escapeHtml(constructionDetail.application_route || "未定")}`
-      : " / 建設業許可系: 未設定";
-    meta.innerHTML = `見積: ${formatCurrency(entry.estimateAmount)} / ステータス: ${escapeHtml(entry.status)} / 受付日: ${formatDate(entry.receivedDate)} / 期限日: ${formatDate(entry.dueDate)} / 次回対応日: ${formatDate(entry.nextActionDate)} / 次回対応内容: ${escapeHtml(entry.nextAction || "未設定")}${constructionMeta}${urlLinks ? ` / ${urlLinks}` : ""}`;
+    if (statusBadge) statusBadge.textContent = entry.status || "ステータス未設定";
+    if (summaryGrid) {
+      summaryGrid.innerHTML = "";
+      appendCaseSummaryField(summaryGrid, "顧客", customerName);
+      appendCaseSummaryField(summaryGrid, "案件名", caseName);
+      appendCaseSummaryField(summaryGrid, "ステータス", entry.status || "未設定");
+      appendCaseSummaryField(summaryGrid, "受付日", formatDate(entry.receivedDate));
+      appendCaseSummaryField(summaryGrid, "期限日", formatDate(entry.dueDate));
+      appendCaseSummaryField(summaryGrid, "次回対応日", formatDate(entry.nextActionDate));
+      appendCaseSummaryField(summaryGrid, "次回対応内容", entry.nextAction || "未設定");
+      appendCaseSummaryField(summaryGrid, "業務テンプレート", templateName);
+      appendCaseSummaryField(summaryGrid, "手続種別", constructionProcedure);
+      if (constructionDetail) {
+        appendCaseSummaryField(summaryGrid, "許可満了日", formatDate(constructionDetail.permit_expiry_date));
+        appendCaseSummaryField(summaryGrid, "決算月", constructionDetail.fiscal_month ? `${constructionDetail.fiscal_month}月` : "未設定");
+        appendCaseSummaryField(summaryGrid, "申請方法", constructionDetail.application_route || "未定");
+      }
+      appendCaseSummaryField(summaryGrid, "建設業許可テンプレート", constructionTemplateSummary);
+      appendCaseSummaryField(summaryGrid, "必要書類", `${docStats.total}件（回収済${docStats.received}件／未回収${docStats.unreceived}件${docStats.defective ? `／不備${docStats.defective}件` : ""}）`);
+      appendCaseSummaryField(summaryGrid, "タスク", `${taskStats.total}件（未完了${taskStats.incomplete}件）`);
+      appendCaseSummaryField(summaryGrid, "見積", formatCurrency(entry.estimateAmount));
+      appendCaseSummaryField(summaryGrid, "売上", hasSaleRegistered ? "売上登録済み" : "売上未登録");
+      appendCaseLinkSummaryField(summaryGrid, [
+        { url: entry.documentUrl, label: "関連書類" },
+        { url: entry.invoiceUrl, label: "請求書" },
+        { url: entry.receiptUrl, label: "領収書" },
+      ]);
+    }
     if (caseWorkMeta) {
-      caseWorkMeta.textContent = `テンプレート: ${templateName} / 必要書類: ${truncateText(entry.requiredDocuments || "未設定", 50)} / 書類管理: 必要書類 ${docStats.total}件 / 回収済 ${docStats.received}件 / 未回収 ${docStats.unreceived}件 / 不備 ${docStats.defective}件 / タスク: ${truncateText(entry.taskList || "未設定", 50)} / 未完了タスク: ${incompleteTasks}件 / 売上: ${hasSaleRegistered ? "売上登録済み" : "売上未登録"}${hasSaleAmountMismatch ? " / ⚠ 金額不一致あり" : ""} / 作業メモ: ${truncateText(sanitizeLegacyEstimateMemo(entry.workMemo) || "未設定", 40)} / 進行監査: ${auditAlerts.length ? auditAlerts.join(" / ") : "問題なし"}`;
+      const auditSummary = auditAlerts.length ? auditAlerts.join(" / ") : "問題なし";
+      caseWorkMeta.textContent = `進行監査: ${auditSummary}${hasSaleAmountMismatch ? " / ⚠ 金額不一致あり" : ""}`;
       caseWorkMeta.classList.remove("next-action-overdue", "next-action-within3", "next-action-within7");
       if (nextActionInfo) safeAddClass(caseWorkMeta, nextActionInfo.urgencyClass);
     }
