@@ -23,6 +23,15 @@ const CONSTRUCTION_PROCEDURE_TYPE_LABELS = Object.freeze(CONSTRUCTION_PROCEDURE_
   acc[entry.value] = entry.label;
   return acc;
 }, {}));
+const BUSINESS_RESOURCE_CATEGORIES = [
+  { value: "use", label: "使う資料" },
+  { value: "collect", label: "回収する資料" },
+  { value: "submit", label: "提出する資料" },
+];
+const BUSINESS_RESOURCE_CATEGORY_LABELS = Object.freeze(BUSINESS_RESOURCE_CATEGORIES.reduce((acc, entry) => {
+  acc[entry.value] = entry.label;
+  return acc;
+}, {}));
 const OFFICE_INFO = {
   name: "あかし行政書士事務所",
   zip: "574-0044",
@@ -89,6 +98,10 @@ const state = {
   expensesSearchQuery: "",
   dailyReportSearchQuery: "",
   dailyReportDateFilter: "all",
+  businessResourceProcedureFilter: "all",
+  businessResourceCategoryFilter: "all",
+  businessResourceActiveFilter: "active",
+  businessResourceSearchQuery: "",
   permitHearingSearchQuery: "",
   permitHearingCategoryFilter: "all",
   permitHearingUrgencyFilter: "all",
@@ -113,7 +126,7 @@ const state = {
   selectedDailyReportIds: [],
   selectedFixedExpenseIds: [],
 };
-const editState = { clientId: null, caseId: null, workTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
+const editState = { clientId: null, caseId: null, workTemplateId: null, businessResourceTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
 
 const CLICK_ACTION_HANDLERS = {
   activate_tab: (event, button) => activateTab(button?.dataset?.tab),
@@ -165,6 +178,9 @@ const CLICK_ACTION_HANDLERS = {
   register_sale_from_case: handleCaseListAction,
   edit_work_template: handleWorkTemplateListAction,
   delete_work_template: handleWorkTemplateListAction,
+  edit_business_resource_template: handleBusinessResourceTemplateListAction,
+  disable_business_resource_template: handleBusinessResourceTemplateListAction,
+  reactivate_business_resource_template: handleBusinessResourceTemplateListAction,
   edit_estimate: handleEstimateListAction,
   delete_estimate: handleEstimateListAction,
   create_case_from_estimate: handleEstimateListAction,
@@ -627,6 +643,16 @@ const workTemplateSubmitBtn = document.getElementById("work-template-submit-btn"
 const workTemplatesList = document.getElementById("work-templates-list");
 const workTemplatesEmpty = document.getElementById("work-templates-empty");
 const workTemplateItemTemplate = document.getElementById("work-template-item-template");
+const businessResourceTemplateForm = document.getElementById("business-resource-template-form");
+const businessResourceSubmitBtn = document.getElementById("business-resource-submit-btn");
+const businessResourceResetBtn = document.getElementById("business-resource-reset-btn");
+const businessResourceFilterProcedure = document.getElementById("business-resource-filter-procedure");
+const businessResourceFilterCategory = document.getElementById("business-resource-filter-category");
+const businessResourceFilterActive = document.getElementById("business-resource-filter-active");
+const businessResourceSearchInput = document.getElementById("business-resource-search");
+const businessResourceTemplatesEmpty = document.getElementById("business-resource-templates-empty");
+const businessResourceTemplatesWrap = document.getElementById("business-resource-templates-wrap");
+const businessResourceTemplatesBody = document.getElementById("business-resource-templates-body");
 const expenseItemTemplate = document.getElementById("expense-item-template");
 const fixedExpenseItemTemplate = document.getElementById("fixed-expense-item-template");
 const estimateForm = document.getElementById("estimate-form");
@@ -789,6 +815,12 @@ function bindEvents() {
   if (permitReflectEstimateBtn) permitReflectEstimateBtn.dataset.action = "reflect_permit_hearing_to_estimate";
   if (permitOverwriteHearingBtn) permitOverwriteHearingBtn.addEventListener("click", handleOverwritePermitHearing);
   workTemplateForm?.addEventListener("submit", handleWorkTemplateSubmit);
+  businessResourceTemplateForm?.addEventListener("submit", handleBusinessResourceTemplateSubmit);
+  businessResourceResetBtn?.addEventListener("click", resetBusinessResourceTemplateForm);
+  businessResourceFilterProcedure?.addEventListener("change", handleBusinessResourceFilterChange);
+  businessResourceFilterCategory?.addEventListener("change", handleBusinessResourceFilterChange);
+  businessResourceFilterActive?.addEventListener("change", handleBusinessResourceFilterChange);
+  businessResourceSearchInput?.addEventListener("input", handleBusinessResourceFilterChange);
   debugLog("SALE FORM FOUND", !!saleForm);
   debugLog("EXPENSE FORM FOUND", !!expenseForm);
   debugLog("DAILY REPORT FORM FOUND", !!dailyReportForm);
@@ -2382,6 +2414,10 @@ async function upsertBusinessResourceTemplate(template) {
   }
   const rawPayload = { ...(template || {}), user_id: currentUser.id };
   const payload = pickObjectKeys(rawPayload, BUSINESS_RESOURCE_TEMPLATE_MUTATION_COLUMNS);
+  payload.procedure_type = normalizeBusinessResourceProcedureType(payload.procedure_type);
+  payload.resource_category = normalizeBusinessResourceCategory(payload.resource_category);
+  payload.sort_order = getBusinessResourceSortOrder(payload.sort_order);
+  if (payload.is_active !== false) payload.is_active = true;
   if (!payload.resource_name) {
     showAppMessage("業務資料テンプレート名を入力してください。", true);
     return null;
@@ -2407,16 +2443,7 @@ async function deleteBusinessResourceTemplate(id) {
     showAppMessage("業務資料テンプレートの削除対象IDを取得できませんでした。", true);
     return null;
   }
-  return runMutation("業務資料テンプレートの削除", async () => {
-    const { data, error } = await sbClient
-      .from("business_resource_templates")
-      .delete()
-      .eq("id", id)
-      .eq("user_id", currentUser.id)
-      .select("id");
-    if (error) throw error;
-    return data;
-  }, { successMessage: "業務資料テンプレートを削除しました。" });
+  return setBusinessResourceTemplateActive(id, false);
 }
 
 async function loadPermitHearings() {
@@ -2894,6 +2921,108 @@ async function handleWorkTemplateSubmit(event) {
   } catch (error) {
     showAppMessage(`業務テンプレート保存に失敗しました。${formatSupabaseError(error)}`, true);
   }
+}
+
+function normalizeBusinessResourceProcedureType(value) {
+  const normalized = String(value || "").trim();
+  return CONSTRUCTION_PROCEDURE_TYPE_LABELS[normalized] ? normalized : CONSTRUCTION_PROCEDURE_TYPES[0].value;
+}
+
+function normalizeBusinessResourceCategory(value) {
+  const normalized = String(value || "").trim();
+  return BUSINESS_RESOURCE_CATEGORY_LABELS[normalized] ? normalized : BUSINESS_RESOURCE_CATEGORIES[0].value;
+}
+
+function getBusinessResourceProcedureLabel(value) {
+  return CONSTRUCTION_PROCEDURE_TYPE_LABELS[value] || value || "未設定";
+}
+
+function getBusinessResourceCategoryLabel(value) {
+  return BUSINESS_RESOURCE_CATEGORY_LABELS[value] || value || "未設定";
+}
+
+function getBusinessResourceSortOrder(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getBusinessResourceActiveValue(entry) {
+  return entry?.is_active !== false;
+}
+
+function getBusinessResourceText(entry, key) {
+  return asTrimmedText(entry?.[key]) || "";
+}
+
+function getBusinessResourceSourceLabel(entry) {
+  const sourceType = getBusinessResourceText(entry, "source_type");
+  const sourceName = getBusinessResourceText(entry, "source_name");
+  return [sourceType, sourceName].filter(Boolean).join(" / ") || "未設定";
+}
+
+function buildBusinessResourceTemplatePayload() {
+  if (!businessResourceTemplateForm || !currentUser) return null;
+  const elements = businessResourceTemplateForm.elements;
+  const resourceName = asTrimmedText(elements.resourceName.value);
+  if (!resourceName) {
+    showAppMessage("資料名を入力してください。", true);
+    return null;
+  }
+  return {
+    id: editState.businessResourceTemplateId || undefined,
+    user_id: currentUser.id,
+    procedure_type: normalizeBusinessResourceProcedureType(elements.procedureType.value),
+    resource_category: normalizeBusinessResourceCategory(elements.resourceCategory.value),
+    resource_name: resourceName,
+    description: asTrimmedText(elements.description.value) || null,
+    url: asTrimmedText(elements.url.value) || null,
+    file_url: asTrimmedText(elements.fileUrl.value) || null,
+    customer_visible: Boolean(elements.customerVisible.checked),
+    required: Boolean(elements.required.checked),
+    last_checked_at: elements.lastCheckedAt.value || null,
+    source_type: asTrimmedText(elements.sourceType.value) || null,
+    source_name: asTrimmedText(elements.sourceName.value) || null,
+    memo: asTrimmedText(elements.memo.value) || null,
+    related_task_type: asTrimmedText(elements.relatedTaskType.value) || null,
+    related_estimate_item: asTrimmedText(elements.relatedEstimateItem.value) || null,
+    related_expense_item: asTrimmedText(elements.relatedExpenseItem.value) || null,
+    sort_order: getBusinessResourceSortOrder(elements.sortOrder.value),
+    is_active: Boolean(elements.isActive.checked),
+  };
+}
+
+async function handleBusinessResourceTemplateSubmit(event) {
+  event.preventDefault();
+  const payload = buildBusinessResourceTemplatePayload();
+  if (!payload) return;
+  const isEdit = Boolean(editState.businessResourceTemplateId);
+  try {
+    await runMutation(isEdit ? "業務資料更新" : "業務資料登録", async () => {
+      const query = isEdit
+        ? sbClient.from("business_resource_templates").update(payload).eq("id", editState.businessResourceTemplateId).eq("user_id", currentUser.id)
+        : sbClient.from("business_resource_templates").insert(payload);
+      const { data, error } = await query.select().single();
+      if (error) throw error;
+      if (!data) throw new Error(isEdit ? "更新結果を取得できませんでした。" : "登録結果を取得できませんでした。");
+      return data;
+    }, {
+      successMessage: isEdit ? "業務資料を更新しました。" : "業務資料を登録しました。",
+      resetForm: resetBusinessResourceTemplateForm,
+      afterSuccess: () => {
+        subtabState["work-templates"] = "resource-library";
+      },
+    });
+  } catch (error) {
+    showAppMessage(`業務資料保存に失敗しました。${formatSupabaseError(error)}`, true);
+  }
+}
+
+function handleBusinessResourceFilterChange() {
+  state.businessResourceProcedureFilter = businessResourceFilterProcedure?.value || "all";
+  state.businessResourceCategoryFilter = businessResourceFilterCategory?.value || "all";
+  state.businessResourceActiveFilter = businessResourceFilterActive?.value || "active";
+  state.businessResourceSearchQuery = asTrimmedText(businessResourceSearchInput?.value).toLowerCase();
+  renderBusinessResourceTemplates();
 }
 
 async function createCaseTasksFromTemplate(caseRow, templateId) {
@@ -3558,6 +3687,82 @@ function startWorkTemplateEdit(templateId) {
   workTemplateSubmitBtn.textContent = "テンプレートを更新";
   activateTab("work-templates");
   workTemplateForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function handleBusinessResourceTemplateListAction(event) {
+  const btn = event.target.closest("button");
+  if (!(btn instanceof HTMLButtonElement) || !currentUser) return;
+  const id = btn.dataset.id || btn.closest("[data-id]")?.dataset?.id;
+  if (!id) return;
+  const listAction = btn.dataset.listAction;
+  if (listAction === "edit_business_resource_template") {
+    startBusinessResourceTemplateEdit(id);
+    return;
+  }
+  if (listAction === "disable_business_resource_template") {
+    await setBusinessResourceTemplateActive(id, false);
+    return;
+  }
+  if (listAction === "reactivate_business_resource_template") {
+    await setBusinessResourceTemplateActive(id, true);
+  }
+}
+
+function startBusinessResourceTemplateEdit(templateId) {
+  const target = state.businessResourceTemplates.find((entry) => String(entry.id) === String(templateId));
+  if (!target || !businessResourceTemplateForm) return;
+  editState.businessResourceTemplateId = target.id;
+  const elements = businessResourceTemplateForm.elements;
+  elements.procedureType.value = normalizeBusinessResourceProcedureType(target.procedure_type);
+  elements.resourceCategory.value = normalizeBusinessResourceCategory(target.resource_category);
+  elements.resourceName.value = target.resource_name || "";
+  elements.description.value = target.description || "";
+  elements.url.value = target.url || "";
+  elements.fileUrl.value = target.file_url || "";
+  elements.customerVisible.checked = Boolean(target.customer_visible);
+  elements.required.checked = Boolean(target.required);
+  elements.lastCheckedAt.value = target.last_checked_at || "";
+  elements.sourceType.value = target.source_type || "";
+  elements.sourceName.value = target.source_name || "";
+  elements.memo.value = target.memo || "";
+  elements.relatedTaskType.value = target.related_task_type || "";
+  elements.relatedEstimateItem.value = target.related_estimate_item || "";
+  elements.relatedExpenseItem.value = target.related_expense_item || "";
+  elements.sortOrder.value = getBusinessResourceSortOrder(target.sort_order);
+  elements.isActive.checked = getBusinessResourceActiveValue(target);
+  if (businessResourceSubmitBtn) businessResourceSubmitBtn.textContent = "業務資料を更新";
+  activateTab("work-templates");
+  activateSubtab("work-templates", "resource-library");
+  businessResourceTemplateForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function setBusinessResourceTemplateActive(templateId, isActive) {
+  const target = state.businessResourceTemplates.find((entry) => String(entry.id) === String(templateId));
+  if (!target) {
+    showAppMessage("対象の業務資料が見つかりません。", true);
+    return;
+  }
+  const actionName = isActive ? "業務資料再有効化" : "業務資料無効化";
+  const confirmMessage = isActive ? "この業務資料を有効化しますか？" : "この業務資料を無効化しますか？通常一覧から外れます。";
+  if (!window.confirm(confirmMessage)) return;
+  await runMutation(actionName, async () => {
+    const { data, error } = await sbClient
+      .from("business_resource_templates")
+      .update({ is_active: Boolean(isActive), user_id: currentUser.id })
+      .eq("id", templateId)
+      .eq("user_id", currentUser.id)
+      .select()
+      .single();
+    if (error) throw error;
+    if (!data) throw new Error("更新結果を取得できませんでした。");
+    return data;
+  }, {
+    successMessage: isActive ? "業務資料を有効化しました。" : "業務資料を無効化しました。",
+    afterSuccess: () => {
+      if (editState.businessResourceTemplateId === templateId) resetBusinessResourceTemplateForm();
+      subtabState["work-templates"] = "resource-library";
+    },
+  });
 }
 
 
@@ -5387,6 +5592,7 @@ function renderAfterDataChanged() {
   safeRender("clientOptions", renderClientOptions);
   safeRender("clientHistory", renderClientHistory);
   safeRender("workTemplates", renderWorkTemplates);
+  safeRender("businessResourceTemplates", renderBusinessResourceTemplates);
   safeRender("workTemplateOptions", renderWorkTemplateOptions);
   safeRender("caseOptions", renderCaseOptions);
   safeRender("caseTasks", renderCaseTasks);
@@ -7412,6 +7618,80 @@ function renderWorkTemplates() {
   workTemplatesEmpty.hidden = sorted.length > 0;
 }
 
+function getFilteredBusinessResourceTemplates() {
+  const procedureFilter = state.businessResourceProcedureFilter || "all";
+  const categoryFilter = state.businessResourceCategoryFilter || "all";
+  const activeFilter = state.businessResourceActiveFilter || "active";
+  const query = asTrimmedText(state.businessResourceSearchQuery).toLowerCase();
+  return (Array.isArray(state.businessResourceTemplates) ? state.businessResourceTemplates : [])
+    .filter((entry) => {
+      if (procedureFilter !== "all" && entry.procedure_type !== procedureFilter) return false;
+      if (categoryFilter !== "all" && entry.resource_category !== categoryFilter) return false;
+      const isActive = getBusinessResourceActiveValue(entry);
+      if (activeFilter === "active" && !isActive) return false;
+      if (activeFilter === "inactive" && isActive) return false;
+      if (!query) return true;
+      return [entry.resource_name, entry.description, entry.source_name, entry.memo]
+        .some((value) => String(value || "").toLowerCase().includes(query));
+    })
+    .sort((a, b) => {
+      const proc = CONSTRUCTION_PROCEDURE_TYPES.findIndex((entry) => entry.value === a.procedure_type) - CONSTRUCTION_PROCEDURE_TYPES.findIndex((entry) => entry.value === b.procedure_type);
+      if (proc) return proc;
+      const category = BUSINESS_RESOURCE_CATEGORIES.findIndex((entry) => entry.value === a.resource_category) - BUSINESS_RESOURCE_CATEGORIES.findIndex((entry) => entry.value === b.resource_category);
+      if (category) return category;
+      const sortOrder = getBusinessResourceSortOrder(a.sort_order) - getBusinessResourceSortOrder(b.sort_order);
+      if (sortOrder) return sortOrder;
+      return String(a.resource_name || "").localeCompare(String(b.resource_name || ""), "ja");
+    });
+}
+
+function renderBusinessResourceTemplates() {
+  if (!businessResourceTemplatesBody || !businessResourceTemplatesEmpty || !businessResourceTemplatesWrap) return;
+  if (businessResourceFilterProcedure) businessResourceFilterProcedure.value = state.businessResourceProcedureFilter || "all";
+  if (businessResourceFilterCategory) businessResourceFilterCategory.value = state.businessResourceCategoryFilter || "all";
+  if (businessResourceFilterActive) businessResourceFilterActive.value = state.businessResourceActiveFilter || "active";
+  if (businessResourceSearchInput && businessResourceSearchInput.value !== (state.businessResourceSearchQuery || "")) {
+    businessResourceSearchInput.value = state.businessResourceSearchQuery || "";
+  }
+
+  const filtered = getFilteredBusinessResourceTemplates();
+  businessResourceTemplatesBody.innerHTML = "";
+  filtered.forEach((entry) => {
+    const tr = document.createElement("tr");
+    tr.dataset.id = entry.id;
+    const isActive = getBusinessResourceActiveValue(entry);
+    const urlLinks = [
+      entry.url ? `<a href="${escapeHtml(entry.url)}" target="_blank" rel="noopener noreferrer">参照URL</a>` : "",
+      entry.file_url ? `<a href="${escapeHtml(entry.file_url)}" target="_blank" rel="noopener noreferrer">ファイルURL</a>` : "",
+    ].filter(Boolean).join(" / ");
+    tr.innerHTML = `
+      <td>${escapeHtml(getBusinessResourceProcedureLabel(entry.procedure_type))}</td>
+      <td>${escapeHtml(getBusinessResourceCategoryLabel(entry.resource_category))}</td>
+      <td>
+        <strong>${escapeHtml(entry.resource_name || "未設定")}</strong>
+        <div class="meta">${escapeHtml(truncateText(entry.description || "説明なし", 80))}</div>
+        ${urlLinks ? `<div class="meta">${urlLinks}</div>` : ""}
+      </td>
+      <td>${entry.required ? "必須" : "任意"}</td>
+      <td>${entry.customer_visible ? "表示可" : "非表示"}</td>
+      <td>${entry.last_checked_at ? formatDate(entry.last_checked_at) : "未設定"}</td>
+      <td>${escapeHtml(getBusinessResourceSourceLabel(entry))}</td>
+      <td>${isActive ? "有効" : "無効"}</td>
+      <td>${escapeHtml(truncateText(entry.memo || "", 80)) || "-"}</td>
+      <td>
+        <div class="row-actions">
+          <button type="button" class="secondary-btn" data-action="edit_business_resource_template" data-list-action="edit_business_resource_template" data-id="${escapeHtml(entry.id)}">編集</button>
+          <button type="button" class="${isActive ? "danger-btn" : "secondary-btn"}" data-action="${isActive ? "disable_business_resource_template" : "reactivate_business_resource_template"}" data-list-action="${isActive ? "disable_business_resource_template" : "reactivate_business_resource_template"}" data-id="${escapeHtml(entry.id)}">${isActive ? "無効化" : "有効化"}</button>
+        </div>
+      </td>
+    `;
+    businessResourceTemplatesBody.appendChild(tr);
+  });
+  businessResourceTemplatesEmpty.hidden = filtered.length > 0;
+  businessResourceTemplatesEmpty.textContent = state.businessResourceTemplates.length ? "条件に一致する業務資料はありません。" : "業務資料はまだありません。";
+  businessResourceTemplatesWrap.hidden = filtered.length === 0;
+}
+
 function renderDailyReports() {
   if (!dailyReportsBody || !dailyReportsEmpty || !dailyReportsListWrap || !dailyReportSummaryList) return;
   const sorted = state.dailyReports.slice().sort((a, b) => toSortTimestamp(b.reportDate) - toSortTimestamp(a.reportDate));
@@ -8657,6 +8937,20 @@ function resetWorkTemplateForm() {
   resetEditMode("workTemplate");
   workTemplateForm?.reset();
   if (workTemplateSubmitBtn) workTemplateSubmitBtn.textContent = "テンプレートを登録";
+}
+
+function resetBusinessResourceTemplateForm() {
+  editState.businessResourceTemplateId = null;
+  businessResourceTemplateForm?.reset();
+  if (businessResourceTemplateForm?.elements?.procedureType) {
+    businessResourceTemplateForm.elements.procedureType.value = CONSTRUCTION_PROCEDURE_TYPES[0].value;
+  }
+  if (businessResourceTemplateForm?.elements?.resourceCategory) {
+    businessResourceTemplateForm.elements.resourceCategory.value = BUSINESS_RESOURCE_CATEGORIES[0].value;
+  }
+  if (businessResourceTemplateForm?.elements?.sortOrder) businessResourceTemplateForm.elements.sortOrder.value = "0";
+  if (businessResourceTemplateForm?.elements?.isActive) businessResourceTemplateForm.elements.isActive.checked = true;
+  if (businessResourceSubmitBtn) businessResourceSubmitBtn.textContent = "業務資料を登録";
 }
 
 function resetSaleForm() {
@@ -11462,6 +11756,10 @@ function resetViewState() {
   state.expensesSearchQuery = "";
   state.dailyReportSearchQuery = "";
   state.dailyReportDateFilter = "all";
+  state.businessResourceProcedureFilter = "all";
+  state.businessResourceCategoryFilter = "all";
+  state.businessResourceActiveFilter = "active";
+  state.businessResourceSearchQuery = "";
   state.estimateCustomerQuery = "";
   state.estimateTitleQuery = "";
   state.estimateStatusFilter = "all";
@@ -11472,6 +11770,7 @@ function resetEditState() {
   editState.clientId = null;
   editState.caseId = null;
   editState.workTemplateId = null;
+  editState.businessResourceTemplateId = null;
   editState.saleId = null;
   editState.expenseId = null;
   editState.fixedExpenseId = null;
@@ -11507,6 +11806,7 @@ function clearAppState() {
   resetCaseTaskForm();
   resetCaseDocumentForm();
   resetWorkTemplateForm();
+  resetBusinessResourceTemplateForm();
   resetEstimateForm();
   resetSaleForm();
   resetExpenseForm();
