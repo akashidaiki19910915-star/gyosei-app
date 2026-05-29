@@ -1598,14 +1598,17 @@
     </div>
 
     <template id="case-item-template">
-      <li class="item">
-        <div>
-          <p class="title"></p>
-          <p class="meta"></p>
-          <p class="meta case-work-meta"></p>
-          <p class="meta profit-meta"></p>
+      <li class="item case-card">
+        <div class="case-card-main">
+          <div class="case-card-header">
+            <p class="title case-card-title"></p>
+            <span class="case-status-badge"></span>
+          </div>
+          <div class="case-card-summary-grid"></div>
+          <p class="meta case-work-meta case-card-detail-summary"></p>
+          <p class="meta profit-meta case-card-profit"></p>
         </div>
-        <div class="row-actions"><button type="button" class="edit-btn secondary-btn" data-action="edit_case" data-list-action="edit_case">編集</button><button type="button" class="danger-btn delete-btn" data-action="delete_case" data-list-action="delete_case">削除</button></div>
+        <div class="row-actions case-card-actions"><button type="button" class="edit-btn secondary-btn" data-action="edit_case" data-list-action="edit_case">編集</button><button type="button" class="danger-btn delete-btn" data-action="delete_case" data-list-action="delete_case">削除</button></div>
       </li>
     </template>
     <template id="expense-item-template">
