@@ -32,7 +32,7 @@ export type AnswerTemplateId = 'journal' | 'numeric' | 'statementTable' | 'accou
 export type GradeMark = '未採点' | '正解' | '不正解' | '要確認' | '○' | '△' | '×';
 export type ReviewRank = '' | 'A' | 'B' | 'C';
 export type MissReason = '論点理解不足' | '仕訳ミス' | '借方貸方逆' | '金額ミス' | '集計ミス' | '転記ミス' | '表の入力位置ミス' | '下書き不足' | '時間不足' | '解答形式の誤認' | '問題文読み落とし' | 'その他';
-export type VisualAidType = 'industrial_account_flow';
+export type VisualAidType = 'industrial_account_flow' | 'wip_box';
 
 export interface QualityCheck {
   scopeChecked: boolean;
@@ -55,8 +55,21 @@ export interface IndustrialAccountFlowData {
   edges: [string, string][];
 }
 
+export interface WipBoxRow {
+  leftLabel: string;
+  rightLabel: string;
+}
+
+export interface WipBoxData {
+  title: string;
+  description?: string;
+  rows: WipBoxRow[];
+  notes: string[];
+}
+
 export interface VisualAidDataMap {
   industrial_account_flow?: IndustrialAccountFlowData;
+  wip_box?: WipBoxData;
 }
 
 export interface AnswerLine {
@@ -178,10 +191,4 @@ export interface ReviewSchedule {
 
 export interface StudyBackupPayload {
   exportedAt: string;
-  appName: string;
-  version: string;
-  questions: QuestionItem[];
-  externalProblemRefs: ExternalProblemRef[];
-  answerAttempts: AnswerAttempt[];
-  reviewSchedules: ReviewSchedule[];
 }
