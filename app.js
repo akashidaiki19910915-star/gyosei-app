@@ -174,8 +174,8 @@ const CLICK_ACTION_HANDLERS = {
   view_saved_permit_hearing: handleViewSavedPermitHearing,
   delete_saved_permit_hearing: handleDeleteSavedPermitHearing,
   clear_permit_hearing_filters: clearPermitHearingFilters,
-  add_estimate_item_row: () => preserveEstimateFormDuring(() => addEstimateItemRow()),
-  add_estimate_discount_row: () => preserveEstimateFormDuring(() => addEstimateDiscountRow()),
+  add_estimate_item_row: () => addEstimateItemRow(),
+  add_estimate_discount_row: () => addEstimateDiscountRow(),
   remove_estimate_item_row: handleEstimateItemsClick,
   status_summary_filter: handleStatusSummaryClick,
   deadline_alert_click: handleDeadlineAlertClick,
@@ -923,20 +923,20 @@ function bindEvents() {
   document.addEventListener("wheel", handleNumberInputWheel, { passive: true });
   if (estimateAddItemBtn) {
     estimateAddItemBtn.type = "button";
-    estimateAddItemBtn.dataset.action = "add_estimate_item_row";
+    delete estimateAddItemBtn.dataset.action;
     estimateAddItemBtn.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      preserveEstimateFormDuring(() => addEstimateItemRow());
+      addEstimateItemRow();
     });
   }
   if (estimateAddDiscountBtn) {
     estimateAddDiscountBtn.type = "button";
-    estimateAddDiscountBtn.dataset.action = "add_estimate_discount_row";
+    delete estimateAddDiscountBtn.dataset.action;
     estimateAddDiscountBtn.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      preserveEstimateFormDuring(() => addEstimateDiscountRow());
+      addEstimateDiscountRow();
     });
   }
   estimateItemsWrap?.addEventListener("input", handleEstimateItemsInput);
@@ -7919,15 +7919,33 @@ function renderWorkTemplateOptions() {
 
 function renderClientOptions() {
   if (!caseClientSelect && !estimateClientSelect && !reportClientSelect && !clientHistoryClientSelect) return;
+  const currentValues = {
+    caseClient: caseClientSelect?.value || "",
+    estimateClient: estimateClientSelect?.value || "",
+    reportClient: reportClientSelect?.value || "",
+    clientHistory: clientHistoryClientSelect?.value || "",
+  };
   const options = state.clients
     .slice()
     .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
     .map((client) => `<option value="${client.id}">${escapeHtml(client.name)}${client.clientType ? `（${escapeHtml(client.clientType)}）` : ""}</option>`)
     .join("");
-  if (caseClientSelect) caseClientSelect.innerHTML = `<option value="">選択しない</option>${options}`;
-  if (estimateClientSelect) estimateClientSelect.innerHTML = `<option value="">選択しない</option>${options}`;
-  if (reportClientSelect) reportClientSelect.innerHTML = `<option value="">選択しない</option>${options}`;
-  if (clientHistoryClientSelect) clientHistoryClientSelect.innerHTML = `<option value="">顧客を選択してください</option>${options}`;
+  if (caseClientSelect) {
+    caseClientSelect.innerHTML = `<option value="">選択しない</option>${options}`;
+    caseClientSelect.value = currentValues.caseClient;
+  }
+  if (estimateClientSelect) {
+    estimateClientSelect.innerHTML = `<option value="">選択しない</option>${options}`;
+    estimateClientSelect.value = currentValues.estimateClient;
+  }
+  if (reportClientSelect) {
+    reportClientSelect.innerHTML = `<option value="">選択しない</option>${options}`;
+    reportClientSelect.value = currentValues.reportClient;
+  }
+  if (clientHistoryClientSelect) {
+    clientHistoryClientSelect.innerHTML = `<option value="">顧客を選択してください</option>${options}`;
+    clientHistoryClientSelect.value = currentValues.clientHistory;
+  }
 }
 
 function syncCaseCustomerFromClient() {
@@ -8252,6 +8270,12 @@ function collectEstimateFormDraft() {
       sortOrder: idx,
     };
   });
+  const fields = Array.from(estimateForm?.querySelectorAll("input, select, textarea") || []).reduce((acc, field) => {
+    if (!field || field.closest("#estimate-items")) return acc;
+    const key = field.name || field.id;
+    if (key) acc[key] = field.value || "";
+    return acc;
+  }, {});
   return {
     clientId: estimateForm?.elements?.clientId?.value || "",
     customerName: estimateForm?.elements?.customerName?.value || "",
@@ -8260,19 +8284,29 @@ function collectEstimateFormDraft() {
     validUntil: estimateForm?.elements?.validUntil?.value || "",
     status: estimateForm?.elements?.status?.value || "作成中",
     memo: estimateForm?.elements?.memo?.value || "",
+    fields,
     items,
   };
 }
 
 function restoreEstimateFormDraft(draft, options = {}) {
   if (!draft || !estimateForm) return;
-  if (estimateForm.elements.clientId) estimateForm.elements.clientId.value = draft.clientId || "";
-  if (estimateForm.elements.customerName) estimateForm.elements.customerName.value = draft.customerName || "";
-  if (estimateForm.elements.estimateTitle) estimateForm.elements.estimateTitle.value = draft.estimateTitle || "";
-  if (estimateForm.elements.estimateDate) estimateForm.elements.estimateDate.value = draft.estimateDate || "";
-  if (estimateForm.elements.validUntil) estimateForm.elements.validUntil.value = draft.validUntil || "";
-  if (estimateForm.elements.status) estimateForm.elements.status.value = normalizeEstimateStatus(draft.status || "作成中");
-  if (estimateForm.elements.memo) estimateForm.elements.memo.value = draft.memo || "";
+  const fieldValues = {
+    clientId: draft.clientId || "",
+    customerName: draft.customerName || "",
+    estimateTitle: draft.estimateTitle || "",
+    estimateDate: draft.estimateDate || "",
+    validUntil: draft.validUntil || "",
+    status: normalizeEstimateStatus(draft.status || "作成中"),
+    memo: draft.memo || "",
+    ...(draft.fields || {}),
+  };
+  Array.from(estimateForm.querySelectorAll("input, select, textarea")).forEach((field) => {
+    if (!field || field.closest("#estimate-items")) return;
+    const key = field.name || field.id;
+    if (!key || !Object.prototype.hasOwnProperty.call(fieldValues, key)) return;
+    field.value = key === "status" ? normalizeEstimateStatus(fieldValues[key]) : fieldValues[key];
+  });
   if (options.restoreItems && estimateItemsWrap) {
     estimateItemsWrap.innerHTML = "";
     const items = Array.isArray(draft.items) && draft.items.length ? draft.items : [{}];
@@ -8283,8 +8317,8 @@ function restoreEstimateFormDraft(draft, options = {}) {
 
 function preserveEstimateFormDuring(operation, options = {}) {
   const draft = collectEstimateFormDraft();
-  const result = typeof operation === "function" ? operation() : undefined;
-  restoreEstimateFormDraft(draft, { restoreItems: Boolean(options.restoreItems) });
+  const result = typeof operation === "function" ? operation(draft) : undefined;
+  restoreEstimateFormDraft(draft, { restoreItems: options.restoreItems !== false });
   return result;
 }
 
@@ -8317,7 +8351,7 @@ function handleEstimateItemsInput() {
 
 function handleEstimateItemsChange(event) {
   if (!event.target?.closest?.(".estimate-item-row")) return;
-  preserveEstimateFormDuring(() => recalcEstimateTotals());
+  recalcEstimateTotals();
 }
 
 function handleEstimateItemsClick(event) {
@@ -8325,11 +8359,9 @@ function handleEstimateItemsClick(event) {
   if (!btn) return;
   event.preventDefault();
   event.stopPropagation();
-  preserveEstimateFormDuring(() => {
-    btn.closest(".estimate-item-row")?.remove();
-    if (!estimateItemsWrap.children.length) addEstimateItemRow();
-    recalcEstimateTotals();
-  });
+  btn.closest(".estimate-item-row")?.remove();
+  if (!estimateItemsWrap.children.length) addEstimateItemRow();
+  recalcEstimateTotals();
 }
 
 function getEstimateItemsFromForm() {
@@ -8492,6 +8524,7 @@ async function handleEstimateSubmit(event) {
         const { data, error } = await sbClient.from("estimates").update(payload).eq("id", estimateId).eq("user_id", currentUser.id).select().single();
         if (error) throw error;
         if (!data) throw new Error("更新結果を取得できませんでした。");
+        addEstimateToState(mapEstimateFromDb(data));
         const oldItemsDeleteRes = await sbClient.from("estimate_items").delete().eq("estimate_id", estimateId).eq("user_id", currentUser.id);
         if (oldItemsDeleteRes.error) throw oldItemsDeleteRes.error;
       } else {
@@ -8609,17 +8642,18 @@ function compareEstimatesByCreatedOrDateDesc(a, b) {
 
 function addEstimateToState(estimate) {
   if (!estimate || !estimate.id) return;
-  const next = Array.isArray(state.estimates) ? state.estimates.slice() : [];
-  next.unshift(estimate);
-  state.estimates = next
-    .filter((entry, index, self) => entry?.id && self.findIndex((x) => x.id === entry.id) === index)
+  const existing = Array.isArray(state.estimates) ? state.estimates : [];
+  state.estimates = [estimate, ...existing.filter((entry) => entry?.id !== estimate.id)]
     .sort(compareEstimatesByCreatedOrDateDesc);
 }
 
 function addEstimateItemsToState(items) {
   if (!Array.isArray(items) || !items.length) return;
-  const next = Array.isArray(state.estimateItems) ? state.estimateItems.slice() : [];
-  next.push(...items.filter((item) => item?.id));
+  const validItems = items.filter((item) => item?.id);
+  const replacedEstimateIds = new Set(validItems.map((item) => item.estimateId).filter(Boolean));
+  const next = (Array.isArray(state.estimateItems) ? state.estimateItems : [])
+    .filter((entry) => !replacedEstimateIds.has(entry?.estimateId));
+  next.push(...validItems);
   state.estimateItems = next.filter((entry, index, self) => self.findIndex((x) => x.id === entry.id) === index);
 }
 
@@ -9711,6 +9745,8 @@ function buildInvoiceDocumentFromCase(foundCase, noteOverride = null) {
     registrationNumber: appSettings.invoiceRegistrationNumber,
     details: [{
       no: 1,
+      itemType: "reward",
+      itemTypeLabel: getEstimateItemTypeLabel("reward"),
       itemName: foundCase.caseName,
       quantity: 1,
       unitPrice: subtotal,
@@ -9850,7 +9886,7 @@ function buildReceiptDocumentData(sale, payment) {
     companyPhone: appSettings.tel,
     companyEmail: appSettings.email,
     registrationNumber: appSettings.invoiceRegistrationNumber,
-    details: [{ itemName: `行政書士業務報酬として / ${resolveCaseName(sale.caseId) || "案件名未設定"}`, quantity: 1, unitPrice: total, amount: total }],
+    details: [{ itemType: "reward", itemTypeLabel: getEstimateItemTypeLabel("reward"), itemName: `行政書士業務報酬として / ${resolveCaseName(sale.caseId) || "案件名未設定"}`, quantity: 1, unitPrice: total, amount: total }],
     subtotal,
     tax,
     total,
@@ -9918,7 +9954,7 @@ function buildPeripheralDocumentFromCase(foundCase, documentType) {
     total,
     taxRate,
     note: sanitizeLegacyEstimateMemo(foundCase.workMemo) || "",
-    details: [{ itemName: foundCase.caseName || "業務一式", quantity: 1, unitPrice: subtotal, amount: subtotal }],
+    details: [{ itemType: "reward", itemTypeLabel: getEstimateItemTypeLabel("reward"), itemName: foundCase.caseName || "業務一式", quantity: 1, unitPrice: subtotal, amount: subtotal }],
   };
 }
 
@@ -9996,8 +10032,8 @@ function getEstimateDocumentDetailRows(estimate, fallbackItemName = "見積内�
     });
   if (rawRows.length) return rawRows;
   return [{
-    itemType: "",
-    itemTypeLabel: "",
+    itemType: "reward",
+    itemTypeLabel: getEstimateItemTypeLabel("reward"),
     itemName: fallbackItemName,
     quantity: 1,
     unitPrice: estimate.subtotal ?? 0,
@@ -10021,6 +10057,15 @@ function aggregateEstimateItemsForCustomer(estimate) {
     .reduce((sum, row) => sum + row.amount, 0);
   return { rewardTotal, expenseTotal, advanceTotal, discountTotal };
 }
+function getDocumentDetailItemTypeLabel(row = {}) {
+  const explicitLabel = asTrimmedText(row.itemTypeLabel ?? row.item_type_label ?? "");
+  if (explicitLabel) {
+    if (ESTIMATE_ITEM_TYPE_VALUES.has(explicitLabel)) return getEstimateItemTypeLabel(explicitLabel);
+    return explicitLabel;
+  }
+  return getEstimateItemTypeLabel(row.itemType ?? row.item_type);
+}
+
 function downloadInvoiceWorkbook(invoiceData) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, createBusinessDocumentSheet(invoiceData, { type: "invoice" }), "請求書");
@@ -10124,7 +10169,7 @@ function createBusinessDocumentSheet(documentData, options = { type: "invoice" }
 
   detailRows.forEach((row, index) => {
     const r = 14 + index;
-    rows[r] = [row.no, row.itemTypeLabel || "", row.itemName, "", "", row.quantity, row.unitPrice, row.amount];
+    rows[r] = [row.no, row.itemName ? getDocumentDetailItemTypeLabel(row) : "", row.itemName, "", "", row.quantity, row.unitPrice, row.amount];
   });
 
   rows[26][6] = "小計";
@@ -10240,7 +10285,7 @@ function buildBusinessDocumentHtml(documentData, options = { type: "invoice" }) 
     ? "<tr><th>区分</th><th>品名</th><th>単価</th><th>数量</th><th>金額</th></tr>"
     : "<tr><th>区分</th><th>摘要</th><th>数量</th><th>単位</th><th>単価</th><th>金額</th></tr>";
   const detailRows = (documentData.details || []).map((row) => {
-    const itemTypeLabel = row.itemTypeLabel ? escapeHtml(row.itemTypeLabel) : "";
+    const itemTypeLabel = row.itemName ? escapeHtml(getDocumentDetailItemTypeLabel(row)) : "";
     if (isInvoice) {
       return `<tr><td class="align-center">${itemTypeLabel}</td><td class="item-name">${escapeHtml(row.itemName || "")}</td><td class="align-right">${formatCurrencyCompact(row.unitPrice)}</td><td class="align-center">${escapeHtml(String(row.quantity || ""))}</td><td class="align-right">${formatCurrencyCompact(row.amount)}</td></tr>`;
     }
