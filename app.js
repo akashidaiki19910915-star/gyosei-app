@@ -8526,18 +8526,33 @@ function handleEstimateItemsClick(event) {
   saveEstimateFormDraft();
 }
 
+function isMeaningfulEstimateItem(item = {}) {
+  const itemName = asTrimmedText(item.itemName ?? item.item_name);
+  const itemType = normalizeEstimateItemType(item.itemType ?? item.item_type);
+  const quantity = parseDecimalInput(item.quantity ?? "");
+  const unitPrice = parseNumberInput(item.unitPrice ?? item.unit_price ?? "");
+  const amount = Number(item.amount ?? 0) || 0;
+  if (itemName) return true;
+  if (itemType !== "reward") return true;
+  if (Number.isFinite(quantity) && quantity !== 1) return true;
+  if (unitPrice !== 0) return true;
+  if (amount !== 0) return true;
+  return false;
+}
+
 function getEstimateItemsFromForm() {
   if (!estimateItemsWrap) return [];
   return Array.from(estimateItemsWrap.querySelectorAll(".estimate-item-row"))
     .map((row, idx) => {
       const itemType = normalizeEstimateItemType(row.querySelector('[data-key="itemType"]')?.value);
       const itemName = asTrimmedText(row.querySelector('[data-key="itemName"]')?.value);
-      const quantity = parseDecimalInput(row.querySelector('[data-key="quantity"]')?.value);
+      const quantityInput = row.querySelector('[data-key="quantity"]')?.value;
+      const quantity = parseDecimalInput(quantityInput);
       const unitPrice = parseNumberInput(row.querySelector('[data-key="unitPrice"]')?.value);
       const amount = Math.floor((Number.isFinite(quantity) ? quantity : 0) * unitPrice);
-      return { itemName, itemType, quantity, unitPrice, amount, sortOrder: idx };
+      return { itemName, itemType, quantity: Number.isFinite(quantity) ? quantity : 1, unitPrice, amount, sortOrder: idx };
     })
-    .filter((item) => item.itemName);
+    .filter(isMeaningfulEstimateItem);
 }
 
 function getAppSettings() {
@@ -8690,6 +8705,7 @@ async function handleEstimateSubmit(event) {
         addEstimateToState(mapEstimateFromDb(data));
         const oldItemsDeleteRes = await sbClient.from("estimate_items").delete().eq("estimate_id", estimateId).eq("user_id", currentUser.id);
         if (oldItemsDeleteRes.error) throw oldItemsDeleteRes.error;
+        removeEstimateItemsFromState(estimateId);
       } else {
         payload.estimate_number = await getNextMonthlyNumber("estimates", "estimate_number", "M", estimateDate);
         const res = await sbClient.from("estimates").insert(payload).select("*").single();
@@ -8810,6 +8826,12 @@ function addEstimateToState(estimate) {
   const existing = Array.isArray(state.estimates) ? state.estimates : [];
   state.estimates = [estimate, ...existing.filter((entry) => entry?.id !== estimate.id)]
     .sort(compareEstimatesByCreatedOrDateDesc);
+}
+
+function removeEstimateItemsFromState(estimateId) {
+  if (!estimateId) return;
+  state.estimateItems = (Array.isArray(state.estimateItems) ? state.estimateItems : [])
+    .filter((entry) => entry?.estimateId !== estimateId);
 }
 
 function addEstimateItemsToState(items) {
@@ -9678,6 +9700,7 @@ async function startEstimateEdit(estimateId) {
     subtabState.estimates = "create";
     activateTab("estimates");
     editState.estimateId = target.id;
+    estimateDraftRestoreRunId += 1;
     if (estimateForm.elements.clientId) estimateForm.elements.clientId.value = target.clientId || "";
     estimateForm.elements.customerName.value = target.customerName;
     estimateForm.elements.estimateTitle.value = target.estimateTitle;
@@ -9690,8 +9713,7 @@ async function startEstimateEdit(estimateId) {
     if (!rows.length) addEstimateItemRow();
     rows.forEach((row) => addEstimateItemRow(row));
     recalcEstimateTotals();
-    restoreEstimateFormDraft();
-    estimateSubmitBtn.textContent = "見積を更新";
+    if (estimateSubmitBtn) estimateSubmitBtn.textContent = "見積を更新";
     estimateForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -10194,16 +10216,27 @@ function getCustomerFacingEstimateNotice() {
   return "本見積は、現時点で確認できる情報に基づくものです。必要資料、申請先、業務範囲により金額が変動する場合があります。";
 }
 
+function getEstimateItemDisplayName(row = {}, fallbackItemName = "見積内容") {
+  const explicitName = asTrimmedText(row.itemName ?? row.item_name);
+  if (explicitName) return explicitName;
+  const itemType = row.itemType ?? row.item_type;
+  if (hasExplicitEstimateItemType(itemType)) return getEstimateItemTypeLabel(itemType);
+  const label = asTrimmedText(row.itemTypeLabel ?? row.item_type_label);
+  if (label) return label;
+  return fallbackItemName;
+}
+
 function getEstimateDocumentDetailRows(estimate, fallbackItemName = "見積内容") {
   const rawRows = state.estimateItems
     .filter((row) => row.estimateId === estimate.id)
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((row) => {
       const classification = getEstimateItemClassification(row);
+      const itemTypeLabel = getEstimateItemTypeLabel(classification);
       return {
         itemType: classification,
-        itemTypeLabel: getEstimateItemTypeLabel(classification),
-        itemName: row.itemName || fallbackItemName,
+        itemTypeLabel,
+        itemName: getEstimateItemDisplayName({ ...row, itemType: classification, itemTypeLabel }, fallbackItemName),
         quantity: row.quantity ?? 1,
         unitPrice: row.unitPrice ?? 0,
         amount: Number(row.amount || 0) || 0,
@@ -10242,6 +10275,12 @@ function getDocumentDetailItemTypeLabel(row = {}) {
     if (ESTIMATE_ITEM_TYPE_VALUES.has(explicitLabel)) return getEstimateItemTypeLabel(explicitLabel);
     return explicitLabel;
   }
+  const hasTypeValue = Object.prototype.hasOwnProperty.call(row, "itemType") || Object.prototype.hasOwnProperty.call(row, "item_type");
+  const hasDetailValue = asTrimmedText(row.itemName ?? row.item_name)
+    || Number(row.amount ?? 0) !== 0
+    || Number(row.unitPrice ?? row.unit_price ?? 0) !== 0
+    || (asTrimmedText(row.quantity ?? "") && Number(row.quantity) !== 0);
+  if (!hasTypeValue && !hasDetailValue) return "";
   return getEstimateItemTypeLabel(row.itemType ?? row.item_type);
 }
 
@@ -10348,7 +10387,7 @@ function createBusinessDocumentSheet(documentData, options = { type: "invoice" }
 
   detailRows.forEach((row, index) => {
     const r = 14 + index;
-    rows[r] = [row.no, row.itemName ? getDocumentDetailItemTypeLabel(row) : "", row.itemName, "", "", row.quantity, row.unitPrice, row.amount];
+    rows[r] = [row.no, getDocumentDetailItemTypeLabel(row), row.itemName, "", "", row.quantity, row.unitPrice, row.amount];
   });
 
   rows[26][6] = "小計";
@@ -10464,7 +10503,7 @@ function buildBusinessDocumentHtml(documentData, options = { type: "invoice" }) 
     ? "<tr><th>区分</th><th>品名</th><th>単価</th><th>数量</th><th>金額</th></tr>"
     : "<tr><th>区分</th><th>摘要</th><th>数量</th><th>単位</th><th>単価</th><th>金額</th></tr>";
   const detailRows = (documentData.details || []).map((row) => {
-    const itemTypeLabel = row.itemName ? escapeHtml(getDocumentDetailItemTypeLabel(row)) : "";
+    const itemTypeLabel = escapeHtml(getDocumentDetailItemTypeLabel(row));
     if (isInvoice) {
       return `<tr><td class="align-center">${itemTypeLabel}</td><td class="item-name">${escapeHtml(row.itemName || "")}</td><td class="align-right">${formatCurrencyCompact(row.unitPrice)}</td><td class="align-center">${escapeHtml(String(row.quantity || ""))}</td><td class="align-right">${formatCurrencyCompact(row.amount)}</td></tr>`;
     }
