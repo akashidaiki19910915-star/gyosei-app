@@ -69,6 +69,60 @@ const VISUAL_AID_STYLE = `
     color: #31543d;
     font-size: 0.9rem;
   }
+  .wip-box-title {
+    text-align: center;
+    font-weight: 800;
+    color: #173a22;
+    margin-bottom: 10px;
+  }
+  .wip-box-frame {
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) minmax(120px, 0.8fr) minmax(150px, 1fr);
+    border: 2px solid #4c9b61;
+    border-radius: 12px;
+    overflow: hidden;
+    min-width: 520px;
+  }
+  .wip-box-side {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    background: #fbfefd;
+  }
+  .wip-box-left { border-right: 1px solid #d9eadf; }
+  .wip-box-right { border-left: 1px solid #d9eadf; }
+  .wip-box-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #dff2e4;
+    color: #173a22;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+  }
+  .wip-box-entry {
+    border: 1px solid #8fc39e;
+    border-radius: 10px;
+    background: #eef8f0;
+    padding: 10px;
+    text-align: center;
+    font-weight: 700;
+    color: #173a22;
+  }
+  .wip-box-notes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .wip-box-notes span {
+    background: #f1f6f3;
+    border: 1px solid #d8e8dd;
+    border-radius: 999px;
+    color: #31543d;
+    padding: 5px 10px;
+    font-size: 0.9rem;
+  }
   @media (max-width: 760px) {
     .visual-aid-header { align-items: flex-start; flex-direction: column; }
     .flow-row {
@@ -78,6 +132,13 @@ const VISUAL_AID_STYLE = `
     }
     .flow-arrow { transform: rotate(90deg); align-self: center; }
     .flow-node { width: 100%; box-sizing: border-box; }
+    .wip-box-frame {
+      grid-template-columns: 1fr;
+      min-width: 0;
+    }
+    .wip-box-left,
+    .wip-box-right { border: 0; }
+    .wip-box-center { padding: 12px; border-top: 1px solid #d9eadf; border-bottom: 1px solid #d9eadf; }
   }
 `;
 
@@ -120,6 +181,38 @@ const INDUSTRIAL_ACCOUNT_FLOW_HTML = `
   </section>
 `;
 
+const WIP_BOX_HTML = `
+  <section class="panel visual-aid-panel" aria-label="図表で確認">
+    <div class="visual-aid-header">
+      <div>
+        <p class="eyebrow">図表で確認</p>
+        <h2>仕掛品BOX</h2>
+      </div>
+      <button type="button" class="secondary" data-visual-aid-toggle>図表で確認</button>
+    </div>
+    <div class="visual-aid-body" data-visual-aid-body hidden>
+      <p class="visual-aid-description">仕掛品BOXは、月初仕掛品と当月投入が、完成品と月末仕掛品へ分かれる関係を整理するための図です。</p>
+      <div class="visual-aid-diagram wip-box-diagram" aria-label="仕掛品BOX">
+        <div class="wip-box-title">仕掛品BOX</div>
+        <div class="wip-box-frame">
+          <div class="wip-box-side wip-box-left" aria-label="投入側">
+            <div class="wip-box-entry">月初仕掛品</div>
+            <div class="wip-box-entry">当月投入</div>
+          </div>
+          <div class="wip-box-center" aria-hidden="true">仕掛品</div>
+          <div class="wip-box-side wip-box-right" aria-label="完成・月末側">
+            <div class="wip-box-entry">完成品</div>
+            <div class="wip-box-entry">月末仕掛品</div>
+          </div>
+        </div>
+        <div class="wip-box-notes" aria-label="確認ポイント">
+          <span>材料費</span><span>加工費</span><span>換算量</span><span>完成品換算量</span>
+        </div>
+      </div>
+    </div>
+  </section>
+`;
+
 function ensureVisualAidStyle() {
   if (document.getElementById(VISUAL_AID_STYLE_ID)) return;
   const style = document.createElement('style');
@@ -128,10 +221,13 @@ function ensureVisualAidStyle() {
   document.head.appendChild(style);
 }
 
-function currentQuestionHasIndustrial41(): boolean {
+function getCurrentVisualAidKind(): 'industrial_account_flow' | 'wip_box' | null {
   const questionCard = document.querySelector('.question-reference-card');
   const text = questionCard?.textContent ?? '';
-  return text.includes('教材なしモード') && text.includes('industrial_4_1');
+  if (!text.includes('教材なしモード')) return null;
+  if (text.includes('industrial_4_1')) return 'industrial_account_flow';
+  if (text.includes('industrial_4_2') || text.includes('industrial_4_4')) return 'wip_box';
+  return null;
 }
 
 function unmountEditor() {
@@ -146,7 +242,7 @@ function unmountEditor() {
 
 function removeVisualAidIfNeeded() {
   const root = document.getElementById(VISUAL_AID_ROOT_ID);
-  if (root && !currentQuestionHasIndustrial41()) {
+  if (root && !getCurrentVisualAidKind()) {
     unmountEditor();
     root.remove();
   }
@@ -201,15 +297,22 @@ function ensureVisualAid() {
   ensureVisualAidStyle();
   const answerArea = document.querySelector('.focused-answer-area.answer-only-main');
   if (!answerArea) return;
-  if (!currentQuestionHasIndustrial41()) {
+  const visualAidKind = getCurrentVisualAidKind();
+  if (!visualAidKind) {
     removeVisualAidIfNeeded();
     return;
   }
-  if (document.getElementById(VISUAL_AID_ROOT_ID)) return;
+  const existingRoot = document.getElementById(VISUAL_AID_ROOT_ID);
+  if (existingRoot?.dataset.visualAidKind === visualAidKind) return;
+  if (existingRoot) {
+    unmountEditor();
+    existingRoot.remove();
+  }
 
   const root = document.createElement('div');
   root.id = VISUAL_AID_ROOT_ID;
-  root.innerHTML = INDUSTRIAL_ACCOUNT_FLOW_HTML;
+  root.dataset.visualAidKind = visualAidKind;
+  root.innerHTML = visualAidKind === 'industrial_account_flow' ? INDUSTRIAL_ACCOUNT_FLOW_HTML : WIP_BOX_HTML;
   answerArea.parentElement?.insertBefore(root, answerArea);
   wireVisualAidControls(root);
 }
