@@ -1,6 +1,7 @@
 import { cpaTrialSections, findTrialSection } from './cpaTrialSections';
 import type { AnswerLine, CpaTrialSectionRef, QuestionItem, VerificationStatus } from '../originalStudyTypes';
 import { installVisualAidBridge } from '../components/visualAidBridge';
+import { installOriginalQuestionGroupSelectorBridge } from '../components/originalQuestionGroupBridge';
 
 installVisualAidBridge();
 
@@ -109,3 +110,5 @@ const draftQuestions: QuestionItem[] = cpaTrialSections.filter((section) => !app
 export const originalQuestions: QuestionItem[] = [...approvedQuestions, ...draftQuestions];
 export const approvedOriginalQuestions: QuestionItem[] = originalQuestions.filter((question) => question.verificationStatus === 'approved');
 export const draftOriginalQuestions: QuestionItem[] = originalQuestions.filter((question) => question.verificationStatus === 'draft');
+
+installOriginalQuestionGroupSelectorBridge(approvedOriginalQuestions);
