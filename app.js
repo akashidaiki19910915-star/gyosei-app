@@ -2390,14 +2390,21 @@ async function applyAuthState(options = {}) {
     if (!silent) setDataMutationControlsEnabled(false);
     state.isInitialDataReady = false;
     userLabel.textContent = currentUser.email || "ログイン中";
+    ensureEstimateFormDraftContext("applyAuthState:before-load");
 
     let shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
     await loadAllDataSafely();
     shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend() || shouldRestoreEstimateDraft;
+    const shouldPreserveActiveEstimateForm = hasMeaningfulActiveEstimateFormDraft();
     resetCaseForm();
     resetCaseTaskForm();
     resetCaseDocumentForm();
-    resetEstimateForm({ allowDraftRestore: shouldRestoreEstimateDraft || hasStoredMeaningfulEstimateDraft() });
+    if (shouldPreserveActiveEstimateForm) {
+      shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend() || shouldRestoreEstimateDraft;
+      ensureEstimateFormDraftContext("applyAuthState:preserve-active-estimate-form");
+    } else {
+      resetEstimateForm({ allowDraftRestore: shouldRestoreEstimateDraft || hasStoredMeaningfulEstimateDraft() });
+    }
     resetSaleForm();
     resetExpenseForm();
     resetFixedExpenseForm();
@@ -8619,8 +8626,12 @@ function isEstimateCreatePanelVisible() {
   return Boolean(panel && !panel.hidden && panels.estimates?.classList?.contains("active"));
 }
 
-function canUseEstimateFormDomForDraft() {
+function isEstimateFormDraftSurfaceActive() {
   return Boolean(estimateForm && (isEstimateCreateSubtabActive() || isEstimateCreatePanelVisible()));
+}
+
+function canUseEstimateFormDomForDraft() {
+  return isEstimateFormDraftSurfaceActive();
 }
 
 function ensureEstimateFormDraftContext(reason = "ensureEstimateFormDraftContext") {
@@ -8642,7 +8653,7 @@ function getEstimateDraftSavableContext(reason = "estimate-draft-save") {
 }
 
 function isEstimateDraftEligibleContext(context = getEstimateFormContextSnapshot()) {
-  if (!isEstimateCreateSubtabActive()) return false;
+  if (!isEstimateFormDraftSurfaceActive()) return false;
   if (context.mode === "new") return context.estimateId === null;
   if (context.mode === "edit") return Boolean(context.estimateId);
   return false;
@@ -8712,6 +8723,16 @@ function hasMeaningfulEstimateDraft(draft) {
     if (unitPrice !== 0 || amount !== 0) return true;
     return false;
   });
+}
+
+function hasMeaningfulActiveEstimateFormDraft() {
+  if (!canUseEstimateFormDomForDraft()) return false;
+  try {
+    return hasMeaningfulEstimateDraft(collectEstimateFormDraft());
+  } catch (error) {
+    console.warn("見積フォーム入力状態の確認に失敗", error);
+    return false;
+  }
 }
 
 function hasStoredMeaningfulEstimateDraft(key = getEstimateDraftKey()) {
