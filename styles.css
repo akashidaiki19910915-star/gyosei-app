@@ -1399,3 +1399,60 @@ button:disabled {
     gap: 0.1rem;
   }
 }
+
+.construction-estimate-preview-wrap {
+  margin-top: 0.75rem;
+}
+
+.construction-estimate-preview {
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.construction-estimate-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.construction-estimate-preview-header h3,
+.construction-estimate-preview-group h4 {
+  margin: 0;
+}
+
+.construction-estimate-preview-group {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.construction-estimate-preview-table-wrap {
+  overflow-x: auto;
+}
+
+.construction-estimate-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+  background: #fff;
+}
+
+.construction-estimate-preview-table th,
+.construction-estimate-preview-table td {
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+  vertical-align: top;
+  font-size: 0.88rem;
+}
+
+.construction-estimate-preview-table th {
+  background: #eef4ff;
+  color: #1f2937;
+  white-space: nowrap;
+}
