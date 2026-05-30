@@ -6674,17 +6674,38 @@ function activateTab(tabKey) {
 
   if (dashboardSection) dashboardSection.hidden = normalizedTabKey !== "cases";
   applySubtabVisibility(normalizedTabKey);
-  if (normalizedTabKey === "estimates" && subtabState.estimates === "create") scheduleEstimateDraftRestore("activateTab");
+  if (normalizedTabKey === "estimates") {
+    if (subtabState.estimates === "create") {
+      if (!estimateFormState.mode) setEstimateFormContext("new", null, "activateTab:create");
+      scheduleEstimateDraftRestore("activateTab");
+    } else {
+      setEstimateFormContext("view", null, "activateTab:non-create");
+    }
+  }
 }
 
 function activateSubtab(parentTab, subtab) {
   saveEstimateDraftBeforeSuspend();
   const normalizedTab = normalizeTabKey(parentTab);
   if (!subtab) return;
+  const previousEstimateMode = estimateFormState.mode;
   subtabState[normalizedTab] = subtab;
+  if (normalizedTab === "estimates") {
+    if (subtab === "create") {
+      setEstimateFormContext("new", null, "activateSubtab:create");
+    } else {
+      setEstimateFormContext("view", null, `activateSubtab:${subtab}`);
+    }
+  }
   applySubtabVisibility(normalizedTab);
   if (normalizedTab === "daily-reports" && subtab === "entry") restoreDailyReportDraft();
-  if (normalizedTab === "estimates" && subtab === "create") scheduleEstimateDraftRestore("activateSubtab");
+  if (normalizedTab === "estimates" && subtab === "create") {
+    if (previousEstimateMode && previousEstimateMode !== "new") {
+      resetEstimateForm({ allowDraftRestore: true, reason: "activateSubtab:create" });
+    } else {
+      scheduleEstimateDraftRestore("activateSubtab");
+    }
+  }
 }
 
 function applySubtabVisibility(activeMainTab) {
@@ -8527,14 +8548,73 @@ const ESTIMATE_DRAFT_STORAGE_KEY = "gyosei_estimate_draft_v1";
 let isRestoringEstimateDraft = false;
 let estimateDraftSaveTimer = null;
 let estimateDraftRestoreRunId = 0;
+const estimateFormState = {
+  mode: null,
+  currentEstimateId: null,
+  generation: 0,
+  dirty: false,
+};
+
+function normalizeEstimateFormMode(mode) {
+  return ["new", "edit", "view"].includes(mode) ? mode : null;
+}
+
+function normalizeEstimateFormEstimateId(estimateId) {
+  return estimateId ? String(estimateId) : null;
+}
+
+function bumpEstimateFormGeneration(reason = "") {
+  estimateFormState.generation += 1;
+  estimateDraftRestoreRunId += 1;
+  window.clearTimeout(estimateDraftSaveTimer);
+  debugLog("ESTIMATE FORM GENERATION", estimateFormState.generation, reason, estimateFormState.mode, estimateFormState.currentEstimateId);
+  return estimateFormState.generation;
+}
+
+function setEstimateFormContext(mode, estimateId = null, reason = "") {
+  const normalizedMode = normalizeEstimateFormMode(mode);
+  const normalizedEstimateId = normalizedMode === "edit" ? normalizeEstimateFormEstimateId(estimateId) : null;
+  const changed = estimateFormState.mode !== normalizedMode || estimateFormState.currentEstimateId !== normalizedEstimateId;
+  estimateFormState.mode = normalizedMode;
+  estimateFormState.currentEstimateId = normalizedEstimateId;
+  estimateFormState.dirty = false;
+  if (normalizedMode === "edit") editState.estimateId = normalizedEstimateId;
+  if (normalizedMode === "new" || normalizedMode === "view" || normalizedMode === null) editState.estimateId = null;
+  if (changed) bumpEstimateFormGeneration(reason || "context-change");
+  return getEstimateFormContextSnapshot();
+}
+
+function getEstimateFormContextSnapshot() {
+  return {
+    mode: estimateFormState.mode,
+    estimateId: estimateFormState.currentEstimateId,
+    generation: estimateFormState.generation,
+  };
+}
+
+function isEstimateFormContextCurrent(context) {
+  return Boolean(context)
+    && estimateFormState.mode === context.mode
+    && estimateFormState.currentEstimateId === (context.estimateId || null)
+    && estimateFormState.generation === context.generation;
+}
 
 function isEstimateCreateSubtabActive() {
   return getActiveMainTabKey() === "estimates" && subtabState.estimates === "create";
 }
 
-function getEstimateDraftKey() {
+function isEstimateDraftEligibleContext(context = getEstimateFormContextSnapshot()) {
+  if (!isEstimateCreateSubtabActive()) return false;
+  if (context.mode === "new") return context.estimateId === null;
+  if (context.mode === "edit") return Boolean(context.estimateId);
+  return false;
+}
+
+function getEstimateDraftKey(context = getEstimateFormContextSnapshot()) {
   const userPart = currentUser?.id ? `user:${currentUser.id}` : "guest";
-  const modePart = editState.estimateId ? `edit:${editState.estimateId}` : "new";
+  const mode = normalizeEstimateFormMode(context?.mode) || "new";
+  const estimateId = normalizeEstimateFormEstimateId(context?.estimateId);
+  const modePart = mode === "edit" && estimateId ? `edit:${estimateId}` : "new";
   return `${ESTIMATE_DRAFT_STORAGE_KEY}:${userPart}:${modePart}`;
 }
 
@@ -8563,8 +8643,8 @@ function collectEstimateFormDraft() {
     return acc;
   }, {});
   return {
-    estimateId: editState.estimateId || null,
-    mode: editState.estimateId ? "edit" : "new",
+    estimateId: estimateFormState.mode === "edit" ? estimateFormState.currentEstimateId : null,
+    mode: estimateFormState.mode === "edit" ? "edit" : "new",
     clientId: estimateForm.elements.clientId?.value || "",
     customerName: estimateForm.elements.customerName?.value || "",
     estimateTitle: estimateForm.elements.estimateTitle?.value || "",
@@ -8607,19 +8687,30 @@ function hasStoredMeaningfulEstimateDraft(key = getEstimateDraftKey()) {
   }
 }
 
+function doesEstimateDraftMatchContext(draft, context = getEstimateFormContextSnapshot()) {
+  if (!draft || !context) return false;
+  const draftMode = draft.mode === "edit" ? "edit" : "new";
+  const draftEstimateId = normalizeEstimateFormEstimateId(draft.estimateId);
+  if (context.mode === "new") return draftMode === "new" && draftEstimateId === null;
+  if (context.mode === "edit") return draftMode === "edit" && draftEstimateId === normalizeEstimateFormEstimateId(context.estimateId);
+  return false;
+}
+
 function saveEstimateFormDraft(options = {}) {
-  if (!estimateForm || !isEstimateCreateSubtabActive() || isRestoringEstimateDraft) return false;
+  const context = options.context || getEstimateFormContextSnapshot();
+  if (!estimateForm || isRestoringEstimateDraft || !isEstimateDraftEligibleContext(context) || !isEstimateFormContextCurrent(context)) return false;
   if (!options.immediate) {
     window.clearTimeout(estimateDraftSaveTimer);
-    estimateDraftSaveTimer = window.setTimeout(() => saveEstimateFormDraft({ immediate: true }), 120);
+    estimateDraftSaveTimer = window.setTimeout(() => saveEstimateFormDraft({ immediate: true, context }), 120);
     return true;
   }
   try {
     const draft = collectEstimateFormDraft();
-    if (!hasMeaningfulEstimateDraft(draft)) {
+    if (!doesEstimateDraftMatchContext(draft, context) || !hasMeaningfulEstimateDraft(draft)) {
       return false;
     }
-    sessionStorage.setItem(getEstimateDraftKey(), JSON.stringify(draft));
+    sessionStorage.setItem(getEstimateDraftKey(context), JSON.stringify(draft));
+    estimateFormState.dirty = true;
     return true;
   } catch (error) {
     console.warn("見積下書き保存に失敗", error);
@@ -8628,17 +8719,19 @@ function saveEstimateFormDraft(options = {}) {
 }
 
 function saveEstimateDraftBeforeSuspend() {
-  if (!estimateForm || !isEstimateCreateSubtabActive()) return false;
+  const context = getEstimateFormContextSnapshot();
+  if (!estimateForm || !isEstimateDraftEligibleContext(context)) return false;
   window.clearTimeout(estimateDraftSaveTimer);
-  return saveEstimateFormDraft({ immediate: true });
+  return saveEstimateFormDraft({ immediate: true, context });
 }
 
-function readEstimateFormDraft() {
+function readEstimateFormDraft(context = getEstimateFormContextSnapshot()) {
+  if (!isEstimateDraftEligibleContext(context) || !isEstimateFormContextCurrent(context)) return null;
   try {
-    const raw = sessionStorage.getItem(getEstimateDraftKey());
+    const raw = sessionStorage.getItem(getEstimateDraftKey(context));
     if (!raw) return null;
     const draft = JSON.parse(raw);
-    if (!draft || (draft.estimateId || null) !== (editState.estimateId || null)) return null;
+    if (!doesEstimateDraftMatchContext(draft, context)) return null;
     if (!hasMeaningfulEstimateDraft(draft)) return null;
     return draft;
   } catch (error) {
@@ -8648,7 +8741,8 @@ function readEstimateFormDraft() {
 }
 
 function restoreEstimateFormDraft(draft = readEstimateFormDraft(), options = {}) {
-  if (!draft || !estimateForm) return false;
+  const context = options.context || getEstimateFormContextSnapshot();
+  if (!draft || !estimateForm || !isEstimateDraftEligibleContext(context) || !isEstimateFormContextCurrent(context) || !doesEstimateDraftMatchContext(draft, context)) return false;
   isRestoringEstimateDraft = true;
   try {
     const fieldValues = {
@@ -8682,18 +8776,19 @@ function restoreEstimateFormDraft(draft = readEstimateFormDraft(), options = {})
   }
 }
 
-function restoreEstimateDraftOnResume() {
-  if (!isEstimateCreateSubtabActive()) return false;
-  return restoreEstimateFormDraft();
+function restoreEstimateDraftOnResume(context = getEstimateFormContextSnapshot()) {
+  if (!isEstimateDraftEligibleContext(context) || !isEstimateFormContextCurrent(context)) return false;
+  return restoreEstimateFormDraft(readEstimateFormDraft(context), { context });
 }
 
 function scheduleEstimateDraftRestore(reason = "") {
-  if (!isEstimateCreateSubtabActive() || !hasStoredMeaningfulEstimateDraft()) return false;
+  const context = getEstimateFormContextSnapshot();
+  if (isRestoringEstimateDraft || !isEstimateDraftEligibleContext(context) || !hasStoredMeaningfulEstimateDraft(getEstimateDraftKey(context))) return false;
   const runId = ++estimateDraftRestoreRunId;
   const restoreIfCurrent = () => {
-    if (runId !== estimateDraftRestoreRunId || !isEstimateCreateSubtabActive()) return false;
-    debugLog("ESTIMATE DRAFT RESTORE", reason);
-    return restoreEstimateDraftOnResume();
+    if (runId !== estimateDraftRestoreRunId || !isEstimateFormContextCurrent(context) || !isEstimateDraftEligibleContext(context)) return false;
+    debugLog("ESTIMATE DRAFT RESTORE", reason, context);
+    return restoreEstimateDraftOnResume(context);
   };
 
   restoreIfCurrent();
@@ -8719,9 +8814,10 @@ function clearCurrentEstimateFormDraft() {
 }
 
 function preserveEstimateFormDuring(operation, options = {}) {
+  const context = getEstimateFormContextSnapshot();
   const draft = collectEstimateFormDraft();
   const result = typeof operation === "function" ? operation(draft) : undefined;
-  restoreEstimateFormDraft(draft, { restoreItems: options.restoreItems !== false });
+  restoreEstimateFormDraft(draft, { restoreItems: options.restoreItems !== false, context });
   return result;
 }
 
@@ -9951,50 +10047,66 @@ async function startEstimateEdit(estimateId) {
     const target = state.estimates.find((entry) => entry.id === estimateId);
     if (!target || !estimateForm) return;
     subtabState.estimates = "create";
+    const editContext = setEstimateFormContext("edit", target.id, "startEstimateEdit");
+    clearEstimateFormDraft(getEstimateDraftKey(editContext));
+    isRestoringEstimateDraft = true;
     activateTab("estimates");
-    editState.estimateId = target.id;
-    estimateDraftRestoreRunId += 1;
-    if (estimateForm.elements.clientId) estimateForm.elements.clientId.value = target.clientId || "";
-    estimateForm.elements.customerName.value = target.customerName;
-    estimateForm.elements.estimateTitle.value = target.estimateTitle;
-    estimateForm.elements.estimateDate.value = target.estimateDate || "";
-    estimateForm.elements.validUntil.value = target.validUntil || "";
-    estimateForm.elements.status.value = normalizeEstimateStatus(target.status);
-    estimateForm.elements.memo.value = target.memo || "";
-    estimateItemsWrap.innerHTML = "";
-    const rows = state.estimateItems.filter((item) => item.estimateId === target.id).sort((a, b) => a.sortOrder - b.sortOrder);
-    if (!rows.length) addEstimateItemRow();
-    rows.forEach((row) => addEstimateItemRow(row));
-    recalcEstimateTotals();
+    try {
+      if (estimateForm.elements.clientId) estimateForm.elements.clientId.value = target.clientId || "";
+      estimateForm.elements.customerName.value = target.customerName;
+      estimateForm.elements.estimateTitle.value = target.estimateTitle;
+      estimateForm.elements.estimateDate.value = target.estimateDate || "";
+      estimateForm.elements.validUntil.value = target.validUntil || "";
+      estimateForm.elements.status.value = normalizeEstimateStatus(target.status);
+      estimateForm.elements.memo.value = target.memo || "";
+      estimateItemsWrap.innerHTML = "";
+      const rows = state.estimateItems.filter((item) => item.estimateId === target.id).sort((a, b) => a.sortOrder - b.sortOrder);
+      if (!rows.length) addEstimateItemRow();
+      rows.forEach((row) => addEstimateItemRow(row));
+      recalcEstimateTotals();
+      estimateFormState.dirty = false;
+    } finally {
+      isRestoringEstimateDraft = false;
+    }
     if (estimateSubmitBtn) estimateSubmitBtn.textContent = "見積を更新";
     estimateForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 
 function resetEstimateForm(options = {}) {
-  const shouldRestoreDraft = options.allowDraftRestore !== false
+  if (estimateFormState.mode === "edit" && !options.force && !options.forceEditReset) {
+    debugLog("SKIP ESTIMATE RESET WHILE EDITING", options);
+    return;
+  }
+  const resetMode = isEstimateCreateSubtabActive() ? "new" : "view";
+  const context = setEstimateFormContext(resetMode, null, options.reason || "resetEstimateForm");
+  const shouldRestoreDraft = resetMode === "new"
+    && options.allowDraftRestore !== false
     && !options.force
-    && !editState.estimateId
-    && isEstimateCreateSubtabActive()
-    && hasStoredMeaningfulEstimateDraft();
+    && isEstimateDraftEligibleContext(context)
+    && hasStoredMeaningfulEstimateDraft(getEstimateDraftKey(context));
   if (shouldRestoreDraft) {
-    resetEditMode("estimate");
     if (estimateSubmitBtn) estimateSubmitBtn.textContent = "見積を登録";
     scheduleEstimateDraftRestore("resetEstimateForm");
     return;
   }
 
-  resetEditMode("estimate");
-  estimateForm?.reset();
-  if (estimateForm?.elements?.clientId) estimateForm.elements.clientId.value = "";
-  if (estimateForm?.elements?.estimateDate) estimateForm.elements.estimateDate.value = toDateString(new Date());
-  if (estimateForm?.elements?.status) estimateForm.elements.status.value = "作成中";
-  if (estimateItemsWrap) {
-    estimateItemsWrap.innerHTML = "";
-    addEstimateItemRow();
+  isRestoringEstimateDraft = true;
+  try {
+    estimateForm?.reset();
+    if (estimateForm?.elements?.clientId) estimateForm.elements.clientId.value = "";
+    if (estimateForm?.elements?.estimateDate) estimateForm.elements.estimateDate.value = toDateString(new Date());
+    if (estimateForm?.elements?.status) estimateForm.elements.status.value = "作成中";
+    if (estimateItemsWrap) {
+      estimateItemsWrap.innerHTML = "";
+      addEstimateItemRow();
+    }
+    if (estimateSubmitBtn) estimateSubmitBtn.textContent = "見積を登録";
+    recalcEstimateTotals();
+    estimateFormState.dirty = false;
+  } finally {
+    isRestoringEstimateDraft = false;
   }
-  if (estimateSubmitBtn) estimateSubmitBtn.textContent = "見積を登録";
-  recalcEstimateTotals();
 }
 
 function resetClientForm() {
@@ -10088,7 +10200,10 @@ function resetEditMode(target) {
   if (target === "expense") editState.expenseId = null;
   if (target === "fixedExpense") editState.fixedExpenseId = null;
   if (target === "dailyReport") editState.dailyReportId = null;
-  if (target === "estimate") editState.estimateId = null;
+  if (target === "estimate") {
+    editState.estimateId = null;
+    setEstimateFormContext("new", null, "resetEditMode:estimate");
+  }
   if (target === "caseTask") editState.caseTaskId = null;
   if (target === "caseDocument") editState.caseDocumentId = null;
 }
