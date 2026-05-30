@@ -3506,11 +3506,25 @@ function getConstructionEstimateTemplateSummary(procedureType) {
 const CONSTRUCTION_ESTIMATE_PREVIEW_ITEM_TYPE_ORDER = ["reward", "advance", "expense", "discount"];
 
 function getCaseProcedureType(caseItem) {
+  const constructionDetail = getConstructionCaseDetailForCase(caseItem?.id);
   const detailProcedureType = normalizeConstructionProcedureType(
-    getConstructionCaseDetailForCase(caseItem?.id)?.procedure_type
+    constructionDetail?.procedure_type ?? constructionDetail?.procedureType
   );
   if (detailProcedureType) return detailProcedureType;
-  return normalizeConstructionProcedureType(caseItem?.procedureType ?? caseItem?.procedure_type);
+
+  return normalizeConstructionProcedureType(
+    caseItem?.procedureType
+      ?? caseItem?.procedure_type
+      ?? caseItem?.constructionProcedureType
+      ?? caseItem?.construction_procedure_type
+  );
+}
+
+function isConstructionEstimatePreviewAvailable(caseItem) {
+  const procedureType = getCaseProcedureType(caseItem);
+  if (!procedureType) return false;
+  if (!CONSTRUCTION_PROCEDURE_TYPE_LABELS[procedureType]) return false;
+  return getConstructionEstimateTemplates(procedureType).length > 0;
 }
 
 function getConstructionEstimatePreviewItems(caseItem) {
@@ -3557,80 +3571,63 @@ function calculateEstimatePreviewTotal(items) {
 
 function renderConstructionEstimatePreview(caseItem) {
   const preview = getConstructionEstimatePreviewItems(caseItem);
-  if (!preview.procedureType) {
-    return `
-      <section class="construction-estimate-preview" aria-label="見積候補プレビュー">
-        <div class="construction-estimate-preview-header">
-          <h3>見積候補プレビュー</h3>
-          <button type="button" class="secondary-btn" data-action="close_construction_estimate_preview" data-list-action="close_construction_estimate_preview" data-case-id="${escapeHtml(preview.caseId)}">閉じる</button>
-        </div>
-        <p class="meta">この案件には手続種別が設定されていないため、見積候補を表示できません。</p>
-      </section>
-    `;
-  }
-  if (!preview.items.length) {
-    return `
-      <section class="construction-estimate-preview" aria-label="見積候補プレビュー">
-        <div class="construction-estimate-preview-header">
-          <h3>見積候補プレビュー</h3>
-          <button type="button" class="secondary-btn" data-action="close_construction_estimate_preview" data-list-action="close_construction_estimate_preview" data-case-id="${escapeHtml(preview.caseId)}">閉じる</button>
-        </div>
-        <p class="meta">対象手続：${escapeHtml(preview.procedureLabel)}</p>
-        <p class="meta">この手続種別に対応する見積候補は登録されていません。</p>
-      </section>
-    `;
-  }
+  if (!preview.procedureType || !preview.items.length) return "";
 
   const hasUnsetUnitPrice = preview.items.some((item) => item.defaultUnitPrice === null || item.defaultUnitPrice === undefined || item.defaultUnitPrice === "");
-  const hasPricedItems = preview.items.some((item) => item.defaultUnitPrice !== null && item.defaultUnitPrice !== undefined && item.defaultUnitPrice !== "" && Number.isFinite(Number(item.defaultUnitPrice)));
-  const previewTotal = calculateEstimatePreviewTotal(preview.items);
-  const previewTotalLabel = hasPricedItems
-    ? `単価設定済み分合計：${formatCurrency(previewTotal)}${hasUnsetUnitPrice ? "（金額未設定の候補があります）" : ""}`
-    : "単価未設定のため合計は未計算です（金額未設定の候補があります）";
-  const groupedSections = groupEstimatePreviewItemsByType(preview.items).map(({ itemType, items }) => `
-    <section class="construction-estimate-preview-group">
-      <h4>${escapeHtml(getEstimateItemTypeLabel(itemType))}</h4>
-      <div class="construction-estimate-preview-table-wrap">
-        <table class="construction-estimate-preview-table">
-          <thead>
-            <tr>
-              <th>区分</th>
-              <th>項目名</th>
-              <th>初期数量</th>
-              <th>初期単価</th>
-              <th>任意項目</th>
-              <th>説明</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${items.map((item) => `
+  const groupedSections = groupEstimatePreviewItemsByType(preview.items).map(({ itemType, items }) => {
+    const itemTypeLabel = getEstimateItemTypeLabel(itemType);
+    return `
+      <details class="construction-estimate-preview-group"${itemType === "reward" ? " open" : ""}>
+        <summary>
+          <span>${escapeHtml(itemTypeLabel)}</span>
+          <span class="meta">${items.length}件</span>
+        </summary>
+        <div class="construction-estimate-preview-table-wrap">
+          <table class="construction-estimate-preview-table">
+            <thead>
               <tr>
-                <td>${escapeHtml(getEstimateItemTypeLabel(item.itemType))}</td>
-                <td>${escapeHtml(item.itemName)}</td>
-                <td>${escapeHtml(String(item.defaultQuantity ?? 1))}</td>
-                <td>${escapeHtml(formatEstimatePreviewUnitPrice(item.defaultUnitPrice))}</td>
-                <td>${item.optional ? "任意" : "標準"}</td>
-                <td>${escapeHtml(item.description || "-")}</td>
+                <th>区分</th>
+                <th>項目名</th>
+                <th>初期数量</th>
+                <th>初期単価</th>
+                <th>任意項目</th>
+                <th>説明</th>
               </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  `).join("");
+            </thead>
+            <tbody>
+              ${items.map((item) => `
+                <tr>
+                  <td>${escapeHtml(itemTypeLabel)}</td>
+                  <td>${escapeHtml(item.itemName)}</td>
+                  <td>${escapeHtml(String(item.defaultQuantity ?? 1))}</td>
+                  <td>${escapeHtml(formatEstimatePreviewUnitPrice(item.defaultUnitPrice))}</td>
+                  <td>${item.optional ? "任意" : "標準"}</td>
+                  <td>${escapeHtml(item.description || "-")}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    `;
+  }).join("");
 
   return `
     <section class="construction-estimate-preview" aria-label="見積候補プレビュー">
       <div class="construction-estimate-preview-header">
         <div>
           <h3>見積候補プレビュー</h3>
-          <p class="meta">${escapeHtml(preview.customerName)}｜${escapeHtml(preview.caseName)}</p>
+          <p class="meta">対象手続：${escapeHtml(preview.procedureLabel)} / 候補数：${preview.items.length}件</p>
+          ${hasUnsetUnitPrice ? '<p class="meta warning-text">単価未設定の候補があります</p>' : ""}
         </div>
         <button type="button" class="secondary-btn" data-action="close_construction_estimate_preview" data-list-action="close_construction_estimate_preview" data-case-id="${escapeHtml(preview.caseId)}">閉じる</button>
       </div>
-      <p class="meta">対象手続：${escapeHtml(preview.procedureLabel)} / 候補数：${preview.items.length}件</p>
-      <p class="meta">プレビュー合計：${escapeHtml(previewTotalLabel)}</p>
-      ${groupedSections}
+      <div class="construction-estimate-preview-groups">
+        ${groupedSections}
+      </div>
+      <div class="construction-estimate-preview-footer">
+        <button type="button" class="secondary-btn" data-action="close_construction_estimate_preview" data-list-action="close_construction_estimate_preview" data-case-id="${escapeHtml(preview.caseId)}">閉じる</button>
+      </div>
     </section>
   `;
 }
@@ -3642,6 +3639,19 @@ function setConstructionEstimatePreviewVisibility(caseId, visible) {
   if (!previewWrap || !targetCase) {
     showAppMessage("見積候補プレビュー対象の案件が見つかりません。", true);
     return;
+  }
+  if (visible && !isConstructionEstimatePreviewAvailable(targetCase)) {
+    previewWrap.hidden = true;
+    previewWrap.innerHTML = "";
+    showAppMessage("この案件には表示できる建設業許可の見積候補がありません。", true);
+    return;
+  }
+  if (visible) {
+    caseList?.querySelectorAll(".construction-estimate-preview-wrap").forEach((wrap) => {
+      if (wrap === previewWrap) return;
+      wrap.hidden = true;
+      wrap.innerHTML = "";
+    });
   }
   previewWrap.hidden = !visible;
   previewWrap.innerHTML = visible ? renderConstructionEstimatePreview(targetCase) : "";
@@ -10292,7 +10302,7 @@ function renderCases() {
       btn.textContent = config.label;
       rowActions.appendChild(btn);
     });
-    if (rowActions && !rowActions.querySelector(".case-estimate-preview-btn")) {
+    if (rowActions && isConstructionEstimatePreviewAvailable(entry) && !rowActions.querySelector(".case-estimate-preview-btn")) {
       const estimatePreviewBtn = document.createElement("button");
       estimatePreviewBtn.type = "button";
       estimatePreviewBtn.className = "secondary-btn case-estimate-preview-btn";
