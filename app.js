@@ -3394,6 +3394,22 @@ function getConstructionEstimateTemplateItemTypeLabel(itemType) {
   return getEstimateItemTypeLabel(itemType);
 }
 
+function getConstructionEstimateTemplateSummary(procedureType) {
+  const templates = getConstructionEstimateTemplates(procedureType);
+  const itemTypeCounts = ESTIMATE_ITEM_TYPES.reduce((acc, itemType) => {
+    acc[itemType.value] = 0;
+    return acc;
+  }, {});
+  templates.forEach((item) => {
+    itemTypeCounts[item.itemType] = (itemTypeCounts[item.itemType] || 0) + 1;
+  });
+  return {
+    procedureType: normalizeConstructionProcedureType(procedureType),
+    totalCount: templates.length,
+    itemTypeCounts,
+  };
+}
+
 function getBusinessResourceSortOrder(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -12946,6 +12962,7 @@ window.GyoseiApp = {
   getConstructionProcedureTypeLabels: () => ({ ...CONSTRUCTION_PROCEDURE_TYPE_LABELS }),
   getConstructionEstimateTemplates,
   getConstructionEstimateTemplateItemTypeLabel,
+  getConstructionEstimateTemplateSummary,
   getConstructionCaseDetails: () => Array.isArray(state.constructionCaseDetails) ? state.constructionCaseDetails.slice() : [],
   fetchConstructionCaseDetails,
   upsertConstructionCaseDetail,
