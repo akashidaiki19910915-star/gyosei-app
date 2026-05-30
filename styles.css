@@ -1497,3 +1497,58 @@ button:disabled {
   color: #1f2937;
   white-space: nowrap;
 }
+
+.construction-estimate-preview-select-cell {
+  white-space: nowrap;
+}
+
+.construction-estimate-preview-table input[type="text"],
+.construction-estimate-preview-table textarea {
+  width: 100%;
+  min-width: 6rem;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.35rem 0.45rem;
+  font: inherit;
+}
+
+.construction-estimate-preview-table textarea {
+  min-width: 12rem;
+  resize: vertical;
+}
+
+.construction-estimate-preview-confirmation {
+  border: 1px solid #fbbf24;
+  border-radius: 10px;
+  background: #fffbeb;
+  padding: 0.75rem;
+}
+
+.construction-estimate-selection-confirmation-inner {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.construction-estimate-selection-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.75rem;
+  align-items: center;
+  font-size: 0.92rem;
+}
+
+.construction-estimate-confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-weight: 600;
+}
