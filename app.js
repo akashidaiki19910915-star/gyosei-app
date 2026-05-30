@@ -335,6 +335,17 @@ const state = {
   selectedBusinessResourceTemplateIds: [],
 };
 const editState = { clientId: null, caseId: null, workTemplateId: null, businessResourceTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
+const CASE_FORM_DRAFT_STORAGE_KEY = "gyosei_case_form_draft_v1";
+const caseFormState = {
+  mode: null,
+  caseId: null,
+  generation: 0,
+  dirty: false,
+  restoring: false,
+};
+let caseFormDraftSaveTimer = null;
+let suppressCaseFormDraftSave = false;
+
 const ESTIMATE_DRAFT_STORAGE_KEY = "gyosei_estimate_draft_v1";
 const estimateFormState = {
   mode: null,
@@ -1038,6 +1049,8 @@ function bindEvents() {
 
   clientForm?.addEventListener("submit", handleClientSubmit);
   caseForm.addEventListener("submit", handleCaseSubmit);
+  caseForm.addEventListener("input", saveCaseFormDraft);
+  caseForm.addEventListener("change", saveCaseFormDraft);
   caseTaskForm?.addEventListener("submit", handleCaseTaskSubmit);
   caseDocumentForm?.addEventListener("submit", handleCaseDocumentSubmit);
   permitHearingForm?.addEventListener("submit", handlePermitHearingSubmit);
@@ -1109,18 +1122,29 @@ function bindEvents() {
   permitHearingUrgencyFilter?.addEventListener("change", handlePermitHearingUrgencyFilterChange);
   if (permitHearingFilterClearBtn) permitHearingFilterClearBtn.dataset.action = "clear_permit_hearing_filters";
   window.addEventListener("pageshow", forceHideLoading);
+  window.addEventListener("pageshow", restoreCaseFormDraftOnResume);
   window.addEventListener("pageshow", () => scheduleEstimateDraftRestore("pageshow"));
-  window.addEventListener("pagehide", saveEstimateDraftBeforeSuspend);
+  window.addEventListener("pagehide", () => {
+    saveCaseFormDraftBeforeSuspend();
+    saveEstimateDraftBeforeSuspend();
+  });
+  window.addEventListener("beforeunload", saveCaseFormDraftBeforeSuspend);
   window.addEventListener("focus", forceHideLoading);
   window.addEventListener("focus", restoreDailyReportDraftOnResume);
+  window.addEventListener("focus", restoreCaseFormDraftOnResume);
   window.addEventListener("focus", () => scheduleEstimateDraftRestore("focus"));
-  window.addEventListener("blur", saveEstimateDraftBeforeSuspend);
+  window.addEventListener("blur", () => {
+    saveCaseFormDraftBeforeSuspend();
+    saveEstimateDraftBeforeSuspend();
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
+      saveCaseFormDraftBeforeSuspend();
       saveEstimateDraftBeforeSuspend();
     } else if (document.visibilityState === "visible") {
       forceHideLoading();
       restoreDailyReportDraftOnResume();
+      restoreCaseFormDraftOnResume();
       scheduleEstimateDraftRestore("visibilitychange");
     }
   });
@@ -2394,11 +2418,15 @@ async function applyAuthState(options = {}) {
     userLabel.textContent = currentUser.email || "ログイン中";
     ensureEstimateFormDraftContext("applyAuthState:before-load");
 
+    const shouldRestoreCaseDraft = saveCaseFormDraftBeforeSuspend();
     let shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
     await loadAllDataSafely();
+    saveCaseFormDraftBeforeSuspend();
     shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend() || shouldRestoreEstimateDraft;
     const shouldPreserveActiveEstimateForm = hasMeaningfulActiveEstimateFormDraft();
-    resetCaseForm();
+    if (!shouldRestoreCaseDraft) {
+      resetCaseForm();
+    }
     resetCaseTaskForm();
     resetCaseDocumentForm();
     if (shouldPreserveActiveEstimateForm) {
@@ -2414,6 +2442,7 @@ async function applyAuthState(options = {}) {
       resetDailyReportForm();
     }
     safeRender("renderAfterDataChanged", renderAfterDataChanged);
+    if (shouldRestoreCaseDraft) restoreCaseFormDraftOnResume();
     state.isInitialDataReady = true;
     setDataMutationControlsEnabled(true);
   } catch (error) {
@@ -3263,8 +3292,15 @@ async function handleCaseSubmit(event) {
   debugLog("CASE SUBMIT FIRED");
   if (!currentUser || !ensureInitialDataReady("案件登録")) return;
 
+  saveCaseFormDraftBeforeSuspend();
   const taskName = editState.caseId ? "案件更新" : "案件登録";
   const isEdit = Boolean(editState.caseId);
+  const submitCaseDraftContext = {
+    mode: isEdit ? "edit" : "new",
+    caseId: isEdit ? normalizeCaseFormCaseId(editState.caseId) : null,
+    generation: caseFormState.generation,
+  };
+  let savedCaseId = submitCaseDraftContext.caseId;
   try {
     await runMutation(taskName, async () => {
       const payload = buildCasePayloadFromForm();
@@ -3280,12 +3316,14 @@ async function handleCaseSubmit(event) {
         if (error) throw error;
         if (!data) throw new Error("更新結果を取得できませんでした。");
         savedCase = data;
+        savedCaseId = data.id;
         debugLog("CASE UPDATE SUCCESS", data);
       } else {
         const { data, error } = await sbClient.from("cases").insert(payload).select().single();
         if (error) throw error;
         if (!data) throw new Error("案件登録結果を取得できませんでした。");
         savedCase = data;
+        savedCaseId = data.id;
         await createCaseTasksFromTemplate(data, payload.template_id);
         await createCaseDocumentsFromTemplate(data, payload.template_id);
         debugLog("CASE INSERT SUCCESS", data);
@@ -3295,10 +3333,18 @@ async function handleCaseSubmit(event) {
       return true;
     }, {
       successMessage: isEdit ? "案件を更新しました。" : "案件を登録しました。",
-      resetForm: resetCaseForm,
+      resetForm: () => resetCaseForm({ skipDraftSave: true }),
       afterSuccess: () => {
-        subtabState.cases = "list";
-        activateTab("cases");
+        suppressCaseFormDraftSave = true;
+        try {
+          clearCaseFormDraft(isEdit ? submitCaseDraftContext : { mode: "new", caseId: null, generation: submitCaseDraftContext.generation });
+          if (savedCaseId) clearCaseFormDraft({ mode: "edit", caseId: normalizeCaseFormCaseId(savedCaseId), generation: submitCaseDraftContext.generation });
+          setCaseFormContext("new", null, "case-save-success");
+          subtabState.cases = "list";
+          activateTab("cases");
+        } finally {
+          suppressCaseFormDraftSave = false;
+        }
       },
     });
   } catch (error) {
@@ -4316,10 +4362,17 @@ async function handleCaseListAction(event) {
 }
 
 async function startCaseEdit(caseId) {
+    saveCaseFormDraftBeforeSuspend();
     const target = state.cases.find((entry) => entry.id === caseId);
     if (!target) return;
     subtabState.cases = "entry";
-    activateTab("cases");
+    suppressCaseFormDraftSave = true;
+    try {
+      activateTab("cases");
+    } finally {
+      suppressCaseFormDraftSave = false;
+    }
+    setCaseFormContext("edit", target.id, "startCaseEdit");
     editState.caseId = target.id;
     caseForm.elements.caseClientId.value = target.clientId || "";
     caseForm.elements.caseTemplateId.value = target.templateId || "";
@@ -4344,6 +4397,7 @@ async function startCaseEdit(caseId) {
     caseForm.elements.constructionApplicationRoute.value = normalizeConstructionApplicationRoute(constructionDetail?.application_route);
     caseForm.elements.constructionMemo.value = constructionDetail?.memo || "";
     caseSubmitBtn.textContent = "案件を更新";
+    restoreCaseFormDraft(readCaseFormDraft(), { context: getCaseFormContextSnapshot() });
     caseForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -6454,6 +6508,7 @@ function safeRender(name, fn) {
 }
 
 function renderAfterDataChanged() {
+  const shouldRestoreCaseDraft = saveCaseFormDraftBeforeSuspend();
   const shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
   safeRender("clients", renderClients);
   safeRender("clientOptions", renderClientOptions);
@@ -6487,6 +6542,7 @@ function renderAfterDataChanged() {
   safeRender("clientAnalysis", renderClientAnalysis);
   safeRender("referralAnalysis", renderReferralAnalysis);
   hydrateActionButtons();
+  if (shouldRestoreCaseDraft) restoreCaseFormDraftOnResume();
   if (shouldRestoreEstimateDraft || hasStoredMeaningfulEstimateDraft()) scheduleEstimateDraftRestore("renderAfterDataChanged");
   debugLog("RENDER DONE");
 }
@@ -6841,6 +6897,7 @@ function renderReferralAnalysis() {
 }
 
 function activateTab(tabKey) {
+  saveCaseFormDraftBeforeSuspend();
   saveEstimateDraftBeforeSuspend();
   const normalizedTabKey = normalizeTabKey(tabKey);
 
@@ -6863,6 +6920,7 @@ function activateTab(tabKey) {
 }
 
 function activateSubtab(parentTab, subtab) {
+  saveCaseFormDraftBeforeSuspend();
   saveEstimateDraftBeforeSuspend();
   const normalizedTab = normalizeTabKey(parentTab);
   if (!subtab) return;
@@ -6876,6 +6934,10 @@ function activateSubtab(parentTab, subtab) {
     }
   }
   applySubtabVisibility(normalizedTab);
+  if (normalizedTab === "cases" && subtab === "entry") {
+    if (!editState.caseId) setCaseFormContext("new", null, "activateSubtab:cases-entry");
+    restoreCaseFormDraftOnResume();
+  }
   if (normalizedTab === "daily-reports" && subtab === "entry") restoreDailyReportDraft();
   if (normalizedTab === "estimates" && subtab === "create") {
     if (previousEstimateMode && previousEstimateMode !== "new") {
@@ -8722,6 +8784,232 @@ function matchesDailyReportDateFilter(entry, filter) {
 }
 
 
+
+function normalizeCaseFormMode(mode) {
+  return ["new", "edit"].includes(mode) ? mode : null;
+}
+
+function normalizeCaseFormCaseId(caseId) {
+  return caseId ? String(caseId) : null;
+}
+
+function bumpCaseFormGeneration(reason = "") {
+  caseFormState.generation += 1;
+  window.clearTimeout(caseFormDraftSaveTimer);
+  debugLog("CASE FORM GENERATION", caseFormState.generation, reason, caseFormState.mode, caseFormState.caseId);
+  return caseFormState.generation;
+}
+
+function setCaseFormContext(mode, caseId = null, reason = "") {
+  const normalizedMode = normalizeCaseFormMode(mode);
+  const normalizedCaseId = normalizedMode === "edit" ? normalizeCaseFormCaseId(caseId) : null;
+  const changed = caseFormState.mode !== normalizedMode || caseFormState.caseId !== normalizedCaseId;
+  caseFormState.mode = normalizedMode;
+  caseFormState.caseId = normalizedCaseId;
+  caseFormState.dirty = false;
+  if (normalizedMode === "edit" && normalizedCaseId) editState.caseId = normalizedCaseId;
+  if (normalizedMode === "new" || normalizedMode === null) editState.caseId = null;
+  if (changed) bumpCaseFormGeneration(reason || "context-change");
+  return getCaseFormContextSnapshot();
+}
+
+function getCaseFormContextSnapshot() {
+  return {
+    mode: caseFormState.mode,
+    caseId: caseFormState.caseId,
+    generation: caseFormState.generation,
+  };
+}
+
+function isCaseFormContextCurrent(context) {
+  return Boolean(context)
+    && caseFormState.mode === context.mode
+    && caseFormState.caseId === (context.caseId || null)
+    && caseFormState.generation === context.generation;
+}
+
+function isCaseEntrySubtabActive() {
+  return getActiveMainTabKey() === "cases" && subtabState.cases === "entry";
+}
+
+function isCaseEntryPanelVisible() {
+  const panel = caseForm?.closest?.('.subtab-panel[data-parent-tab="cases"][data-subtab="entry"]');
+  return Boolean(panel && !panel.hidden && panels.cases?.classList?.contains("active"));
+}
+
+function isCaseFormDraftSurfaceActive() {
+  return Boolean(caseForm && (isCaseEntrySubtabActive() || isCaseEntryPanelVisible()));
+}
+
+function ensureCaseFormDraftContext(reason = "ensureCaseFormDraftContext") {
+  if (!caseForm) return getCaseFormContextSnapshot();
+  if (caseFormState.mode === "edit" && caseFormState.caseId) return getCaseFormContextSnapshot();
+  if (editState.caseId) return setCaseFormContext("edit", editState.caseId, reason);
+  if (!isCaseFormDraftSurfaceActive() && subtabState.cases !== "entry") return getCaseFormContextSnapshot();
+  if (caseFormState.mode !== "new" || caseFormState.caseId !== null) {
+    return setCaseFormContext("new", null, reason);
+  }
+  return getCaseFormContextSnapshot();
+}
+
+function isCaseDraftEligibleContext(context = getCaseFormContextSnapshot()) {
+  if (!isCaseFormDraftSurfaceActive()) return false;
+  if (context.mode === "new") return context.caseId === null;
+  if (context.mode === "edit") return Boolean(context.caseId);
+  return false;
+}
+
+function getCaseFormDraftStorageKey(context = getCaseFormContextSnapshot()) {
+  const userPart = currentUser?.id ? `user:${currentUser.id}` : "guest";
+  const mode = normalizeCaseFormMode(context?.mode) || "new";
+  const caseId = normalizeCaseFormCaseId(context?.caseId);
+  const modePart = mode === "edit" && caseId ? `edit:${caseId}` : "new";
+  return `${CASE_FORM_DRAFT_STORAGE_KEY}:${userPart}:${modePart}`;
+}
+
+function collectCaseFormDraftFromDom() {
+  if (!caseForm) return null;
+  const fields = Array.from(caseForm.querySelectorAll("input, select, textarea")).reduce((acc, field) => {
+    if (!field) return acc;
+    const key = field.name || field.id;
+    if (!key) return acc;
+    if (field.type === "checkbox") acc[key] = Boolean(field.checked);
+    else acc[key] = field.value || "";
+    return acc;
+  }, {});
+  return {
+    mode: caseFormState.mode === "edit" ? "edit" : "new",
+    caseId: caseFormState.mode === "edit" ? caseFormState.caseId : null,
+    generation: caseFormState.generation,
+    fields,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function hasMeaningfulCaseFormDraft(draft) {
+  if (!draft?.fields || typeof draft.fields !== "object") return false;
+  const fields = draft.fields;
+  const meaningfulKeys = [
+    "caseClientId",
+    "caseTemplateId",
+    "customerName",
+    "caseName",
+    "amount",
+    "receivedDate",
+    "dueDate",
+    "requiredDocuments",
+    "taskList",
+    "workMemo",
+    "constructionProcedureType",
+    "constructionPermitExpiryDate",
+    "constructionFiscalMonth",
+    "constructionMemo",
+    "nextActionDate",
+    "nextAction",
+    "documentUrl",
+    "invoiceUrl",
+    "receiptUrl",
+  ];
+  if (meaningfulKeys.some((key) => asTrimmedText(fields[key]))) return true;
+  if (fields.constructionApplicationRoute && fields.constructionApplicationRoute !== "未定") return true;
+  if (fields.status && normalizeStatus(fields.status) !== "未着手") return true;
+  return false;
+}
+
+function doesCaseFormDraftMatchContext(draft, context = getCaseFormContextSnapshot()) {
+  if (!draft || !context) return false;
+  const draftMode = draft.mode === "edit" ? "edit" : "new";
+  const draftCaseId = normalizeCaseFormCaseId(draft.caseId);
+  if (context.mode === "new") return draftMode === "new" && draftCaseId === null;
+  if (context.mode === "edit") return draftMode === "edit" && draftCaseId === normalizeCaseFormCaseId(context.caseId);
+  return false;
+}
+
+function saveCaseFormDraft(options = {}) {
+  const context = options.context || ensureCaseFormDraftContext("saveCaseFormDraft");
+  if (suppressCaseFormDraftSave || !caseForm || caseFormState.restoring || !isCaseDraftEligibleContext(context) || !isCaseFormContextCurrent(context)) return false;
+  if (!options.immediate) {
+    window.clearTimeout(caseFormDraftSaveTimer);
+    caseFormDraftSaveTimer = window.setTimeout(() => saveCaseFormDraft({ immediate: true, context }), 120);
+    return true;
+  }
+  try {
+    const draft = collectCaseFormDraftFromDom();
+    if (!doesCaseFormDraftMatchContext(draft, context) || !hasMeaningfulCaseFormDraft(draft)) return false;
+    sessionStorage.setItem(getCaseFormDraftStorageKey(context), JSON.stringify(draft));
+    caseFormState.dirty = true;
+    return true;
+  } catch (error) {
+    console.warn("案件フォーム下書き保存に失敗", error);
+    return false;
+  }
+}
+
+function saveCaseFormDraftBeforeSuspend() {
+  if (suppressCaseFormDraftSave) return false;
+  const context = ensureCaseFormDraftContext("saveCaseFormDraftBeforeSuspend");
+  if (!caseForm || !isCaseDraftEligibleContext(context)) return false;
+  window.clearTimeout(caseFormDraftSaveTimer);
+  return saveCaseFormDraft({ immediate: true, context });
+}
+
+function readCaseFormDraft(context = getCaseFormContextSnapshot()) {
+  if (!isCaseDraftEligibleContext(context) || !isCaseFormContextCurrent(context)) return null;
+  try {
+    const raw = sessionStorage.getItem(getCaseFormDraftStorageKey(context));
+    if (!raw) return null;
+    const draft = JSON.parse(raw);
+    if (!doesCaseFormDraftMatchContext(draft, context)) return null;
+    if (!hasMeaningfulCaseFormDraft(draft)) return null;
+    return draft;
+  } catch (error) {
+    console.warn("案件フォーム下書き読込に失敗", error);
+    return null;
+  }
+}
+
+function restoreCaseFormDraft(draft = readCaseFormDraft(), options = {}) {
+  const context = options.context || getCaseFormContextSnapshot();
+  if (!draft || !caseForm || !isCaseDraftEligibleContext(context) || !isCaseFormContextCurrent(context) || !doesCaseFormDraftMatchContext(draft, context)) return false;
+  caseFormState.restoring = true;
+  try {
+    const fields = draft.fields || {};
+    Array.from(caseForm.querySelectorAll("input, select, textarea")).forEach((field) => {
+      if (!field) return;
+      const key = field.name || field.id;
+      if (!key || !Object.prototype.hasOwnProperty.call(fields, key)) return;
+      if (field.type === "checkbox") field.checked = Boolean(fields[key]);
+      else if (key === "status") field.value = normalizeStatus(fields[key]);
+      else if (key === "constructionProcedureType") field.value = normalizeConstructionProcedureType(fields[key]) || "";
+      else if (key === "constructionApplicationRoute") field.value = normalizeConstructionApplicationRoute(fields[key]);
+      else field.value = fields[key] || "";
+    });
+    if (caseSubmitBtn) caseSubmitBtn.textContent = context.mode === "edit" ? "案件を更新" : "案件を追加";
+    caseFormState.dirty = true;
+    return true;
+  } catch (error) {
+    console.warn("案件フォーム下書き復元に失敗", error);
+    return false;
+  } finally {
+    caseFormState.restoring = false;
+  }
+}
+
+function restoreCaseFormDraftOnResume() {
+  if (!isCaseFormDraftSurfaceActive()) return false;
+  const context = ensureCaseFormDraftContext("restoreCaseFormDraftOnResume");
+  if (!isCaseDraftEligibleContext(context) || !isCaseFormContextCurrent(context)) return false;
+  return restoreCaseFormDraft(readCaseFormDraft(context), { context });
+}
+
+function clearCaseFormDraft(context = getCaseFormContextSnapshot()) {
+  try {
+    sessionStorage.removeItem(getCaseFormDraftStorageKey(context));
+  } catch (error) {
+    console.warn("案件フォーム下書き削除に失敗", error);
+  }
+}
+
 function normalizeEstimateFormMode(mode) {
   return ["new", "edit", "view"].includes(mode) ? mode : null;
 }
@@ -10364,8 +10652,10 @@ function resetClientForm() {
   if (clientSubmitBtn) clientSubmitBtn.textContent = "顧客を登録";
 }
 
-function resetCaseForm() {
+function resetCaseForm(options = {}) {
+  if (!options.skipDraftSave) saveCaseFormDraftBeforeSuspend();
   resetEditMode("case");
+  setCaseFormContext("new", null, "resetCaseForm");
   caseForm.reset();
   if (caseForm?.elements?.caseClientId) caseForm.elements.caseClientId.value = "";
   if (caseForm?.elements?.caseTemplateId) caseForm.elements.caseTemplateId.value = "";
@@ -10443,7 +10733,12 @@ function resetCaseDocumentForm() {
 
 function resetEditMode(target) {
   if (target === "client") editState.clientId = null;
-  if (target === "case") editState.caseId = null;
+  if (target === "case") {
+    editState.caseId = null;
+    if (caseFormState.mode !== "new" || caseFormState.caseId !== null) {
+      setCaseFormContext("new", null, "resetEditMode:case");
+    }
+  }
   if (target === "workTemplate") editState.workTemplateId = null;
   if (target === "sale") editState.saleId = null;
   if (target === "expense") editState.expenseId = null;
