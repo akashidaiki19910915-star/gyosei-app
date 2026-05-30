@@ -335,6 +335,17 @@ const state = {
   selectedBusinessResourceTemplateIds: [],
 };
 const editState = { clientId: null, caseId: null, workTemplateId: null, businessResourceTemplateId: null, saleId: null, expenseId: null, fixedExpenseId: null, dailyReportId: null, estimateId: null, caseTaskId: null, caseDocumentId: null };
+const ESTIMATE_DRAFT_STORAGE_KEY = "gyosei_estimate_draft_v1";
+const estimateFormState = {
+  mode: null,
+  currentEstimateId: null,
+  generation: 0,
+  dirty: false,
+  restoring: false,
+};
+let isRestoringEstimateDraft = false;
+let estimateDraftSaveTimer = null;
+let estimateDraftRestoreRunId = 0;
 
 const CLICK_ACTION_HANDLERS = {
   activate_tab: (event, button) => activateTab(button?.dataset?.tab),
@@ -8544,19 +8555,13 @@ function matchesDailyReportDateFilter(entry, filter) {
 }
 
 
-const ESTIMATE_DRAFT_STORAGE_KEY = "gyosei_estimate_draft_v1";
-let isRestoringEstimateDraft = false;
-let estimateDraftSaveTimer = null;
-let estimateDraftRestoreRunId = 0;
-const estimateFormState = {
-  mode: null,
-  currentEstimateId: null,
-  generation: 0,
-  dirty: false,
-};
-
 function normalizeEstimateFormMode(mode) {
   return ["new", "edit", "view"].includes(mode) ? mode : null;
+}
+
+function setEstimateFormRestoring(restoring) {
+  isRestoringEstimateDraft = Boolean(restoring);
+  estimateFormState.restoring = isRestoringEstimateDraft;
 }
 
 function normalizeEstimateFormEstimateId(estimateId) {
@@ -8743,7 +8748,7 @@ function readEstimateFormDraft(context = getEstimateFormContextSnapshot()) {
 function restoreEstimateFormDraft(draft = readEstimateFormDraft(), options = {}) {
   const context = options.context || getEstimateFormContextSnapshot();
   if (!draft || !estimateForm || !isEstimateDraftEligibleContext(context) || !isEstimateFormContextCurrent(context) || !doesEstimateDraftMatchContext(draft, context)) return false;
-  isRestoringEstimateDraft = true;
+  setEstimateFormRestoring(true);
   try {
     const fieldValues = {
       clientId: draft.clientId || "",
@@ -8772,7 +8777,7 @@ function restoreEstimateFormDraft(draft = readEstimateFormDraft(), options = {})
     console.warn("見積下書き復元に失敗", error);
     return false;
   } finally {
-    isRestoringEstimateDraft = false;
+    setEstimateFormRestoring(false);
   }
 }
 
@@ -10049,7 +10054,7 @@ async function startEstimateEdit(estimateId) {
     subtabState.estimates = "create";
     const editContext = setEstimateFormContext("edit", target.id, "startEstimateEdit");
     clearEstimateFormDraft(getEstimateDraftKey(editContext));
-    isRestoringEstimateDraft = true;
+    setEstimateFormRestoring(true);
     activateTab("estimates");
     try {
       if (estimateForm.elements.clientId) estimateForm.elements.clientId.value = target.clientId || "";
@@ -10066,7 +10071,7 @@ async function startEstimateEdit(estimateId) {
       recalcEstimateTotals();
       estimateFormState.dirty = false;
     } finally {
-      isRestoringEstimateDraft = false;
+      setEstimateFormRestoring(false);
     }
     if (estimateSubmitBtn) estimateSubmitBtn.textContent = "見積を更新";
     estimateForm.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -10091,7 +10096,7 @@ function resetEstimateForm(options = {}) {
     return;
   }
 
-  isRestoringEstimateDraft = true;
+  setEstimateFormRestoring(true);
   try {
     estimateForm?.reset();
     if (estimateForm?.elements?.clientId) estimateForm.elements.clientId.value = "";
@@ -10105,7 +10110,7 @@ function resetEstimateForm(options = {}) {
     recalcEstimateTotals();
     estimateFormState.dirty = false;
   } finally {
-    isRestoringEstimateDraft = false;
+    setEstimateFormRestoring(false);
   }
 }
 
