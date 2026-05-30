@@ -1077,6 +1077,8 @@ function bindEvents() {
   estimateForm?.addEventListener("submit", handleEstimateSubmit);
   estimateForm?.addEventListener("input", saveEstimateFormDraft);
   estimateForm?.addEventListener("change", saveEstimateFormDraft);
+  document.addEventListener("input", handleEstimateFormDraftDelegatedEvent);
+  document.addEventListener("change", handleEstimateFormDraftDelegatedEvent);
   settingsForm?.addEventListener("submit", handleSettingsSubmit);
 
   clearBtn.dataset.action = "clear_all";
@@ -2389,8 +2391,9 @@ async function applyAuthState(options = {}) {
     state.isInitialDataReady = false;
     userLabel.textContent = currentUser.email || "ログイン中";
 
-    const shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
+    let shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
     await loadAllDataSafely();
+    shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend() || shouldRestoreEstimateDraft;
     resetCaseForm();
     resetCaseTaskForm();
     resetCaseDocumentForm();
@@ -6680,18 +6683,21 @@ function activateTab(tabKey) {
   saveEstimateDraftBeforeSuspend();
   const normalizedTabKey = normalizeTabKey(tabKey);
 
+  if (normalizedTabKey === "estimates") {
+    if (subtabState.estimates === "create") {
+      ensureEstimateFormDraftContext("activateTab:create-before-display");
+    } else {
+      setEstimateFormContext("view", null, "activateTab:non-create-before-display");
+    }
+  }
+
   tabs.forEach((btn) => btn.classList.toggle("active", normalizeTabKey(btn.dataset.tab) === normalizedTabKey));
   Object.entries(panels).forEach(([key, panel]) => panel.classList.toggle("active", key === normalizedTabKey));
 
   if (dashboardSection) dashboardSection.hidden = normalizedTabKey !== "cases";
   applySubtabVisibility(normalizedTabKey);
-  if (normalizedTabKey === "estimates") {
-    if (subtabState.estimates === "create") {
-      if (!estimateFormState.mode) setEstimateFormContext("new", null, "activateTab:create");
-      scheduleEstimateDraftRestore("activateTab");
-    } else {
-      setEstimateFormContext("view", null, "activateTab:non-create");
-    }
+  if (normalizedTabKey === "estimates" && subtabState.estimates === "create") {
+    scheduleEstimateDraftRestore("activateTab");
   }
 }
 
@@ -8608,6 +8614,33 @@ function isEstimateCreateSubtabActive() {
   return getActiveMainTabKey() === "estimates" && subtabState.estimates === "create";
 }
 
+function isEstimateCreatePanelVisible() {
+  const panel = estimateForm?.closest?.('.subtab-panel[data-parent-tab="estimates"][data-subtab="create"]');
+  return Boolean(panel && !panel.hidden && panels.estimates?.classList?.contains("active"));
+}
+
+function canUseEstimateFormDomForDraft() {
+  return Boolean(estimateForm && (isEstimateCreateSubtabActive() || isEstimateCreatePanelVisible()));
+}
+
+function ensureEstimateFormDraftContext(reason = "ensureEstimateFormDraftContext") {
+  if (!estimateForm) return getEstimateFormContextSnapshot();
+  if (estimateFormState.mode === "edit" && estimateFormState.currentEstimateId) return getEstimateFormContextSnapshot();
+  if (!canUseEstimateFormDomForDraft() && subtabState.estimates !== "create") return getEstimateFormContextSnapshot();
+  if (estimateFormState.mode !== "new" || estimateFormState.currentEstimateId !== null) {
+    return setEstimateFormContext("new", null, reason);
+  }
+  return getEstimateFormContextSnapshot();
+}
+
+function getEstimateDraftSavableContext(reason = "estimate-draft-save") {
+  const ensuredContext = ensureEstimateFormDraftContext(reason);
+  if (isEstimateDraftEligibleContext(ensuredContext) && isEstimateFormContextCurrent(ensuredContext)) return ensuredContext;
+  const currentContext = getEstimateFormContextSnapshot();
+  if (isEstimateDraftEligibleContext(currentContext) && isEstimateFormContextCurrent(currentContext)) return currentContext;
+  return ensuredContext;
+}
+
 function isEstimateDraftEligibleContext(context = getEstimateFormContextSnapshot()) {
   if (!isEstimateCreateSubtabActive()) return false;
   if (context.mode === "new") return context.estimateId === null;
@@ -8702,7 +8735,7 @@ function doesEstimateDraftMatchContext(draft, context = getEstimateFormContextSn
 }
 
 function saveEstimateFormDraft(options = {}) {
-  const context = options.context || getEstimateFormContextSnapshot();
+  const context = options.context || getEstimateDraftSavableContext("saveEstimateFormDraft");
   if (!estimateForm || isRestoringEstimateDraft || !isEstimateDraftEligibleContext(context) || !isEstimateFormContextCurrent(context)) return false;
   if (!options.immediate) {
     window.clearTimeout(estimateDraftSaveTimer);
@@ -8724,10 +8757,16 @@ function saveEstimateFormDraft(options = {}) {
 }
 
 function saveEstimateDraftBeforeSuspend() {
-  const context = getEstimateFormContextSnapshot();
+  const context = getEstimateDraftSavableContext("saveEstimateDraftBeforeSuspend");
   if (!estimateForm || !isEstimateDraftEligibleContext(context)) return false;
   window.clearTimeout(estimateDraftSaveTimer);
   return saveEstimateFormDraft({ immediate: true, context });
+}
+
+function handleEstimateFormDraftDelegatedEvent(event) {
+  if (!event?.target?.closest?.("#estimate-form")) return;
+  if (event.target.closest("#estimate-items")) recalcEstimateTotals();
+  saveEstimateFormDraft();
 }
 
 function readEstimateFormDraft(context = getEstimateFormContextSnapshot()) {
@@ -8806,6 +8845,15 @@ function scheduleEstimateDraftRestore(reason = "") {
   return true;
 }
 
+function getEstimateDraftStorageKeys() {
+  try {
+    return Object.keys(sessionStorage).filter((key) => key.startsWith(`${ESTIMATE_DRAFT_STORAGE_KEY}:`));
+  } catch (error) {
+    console.warn("見積下書きキー確認に失敗", error);
+    return [];
+  }
+}
+
 function clearEstimateFormDraft(key = getEstimateDraftKey()) {
   try {
     if (key) sessionStorage.removeItem(key);
@@ -8816,6 +8864,12 @@ function clearEstimateFormDraft(key = getEstimateDraftKey()) {
 
 function clearCurrentEstimateFormDraft() {
   clearEstimateFormDraft(getEstimateDraftKey());
+}
+
+function clearAllEstimateFormDrafts() {
+  const keys = getEstimateDraftStorageKeys();
+  keys.forEach((key) => clearEstimateFormDraft(key));
+  return keys.length;
 }
 
 function preserveEstimateFormDuring(operation, options = {}) {
@@ -13113,6 +13167,8 @@ window.GyoseiApp = {
   showMessage: (text, isError = false) => showAppMessage(text, isError),
   getEstimateCalculatorBridgeData: () => window.__estimateCalculatorBridgeData ? { ...window.__estimateCalculatorBridgeData } : null,
   clearEstimateCalculatorBridgeData: () => { window.__estimateCalculatorBridgeData = null; },
+  getEstimateDraftStorageKeys,
+  clearAllEstimateFormDrafts,
 };
 
 const DAILY_REPORT_DRAFT_STORAGE_KEY = "gyosei_daily_report_draft_v1";
