@@ -358,6 +358,37 @@ let isRestoringEstimateDraft = false;
 let estimateDraftSaveTimer = null;
 let estimateDraftRestoreRunId = 0;
 
+
+const FORM_DRAFT_STORAGE_PREFIX = "draft";
+let genericFormDraftRestoring = false;
+
+function getFormDraftUserId() {
+  return currentUser?.id ? String(currentUser.id) : "guest";
+}
+
+function normalizeFormDraftMode(mode) {
+  return mode === "edit" ? "edit" : "new";
+}
+
+function normalizeFormDraftRecordId(recordId) {
+  const text = String(recordId ?? "").trim();
+  return text || null;
+}
+
+function getFormDraftKey({ formType, mode = "new", recordId = null } = {}) {
+  const normalizedFormType = String(formType || "").trim();
+  if (!normalizedFormType) return "";
+  const normalizedMode = normalizeFormDraftMode(mode);
+  const normalizedRecordId = normalizedMode === "edit" ? normalizeFormDraftRecordId(recordId) : null;
+  return [FORM_DRAFT_STORAGE_PREFIX, getFormDraftUserId(), normalizedFormType, normalizedMode, normalizedRecordId]
+    .filter((part) => part !== null && part !== undefined && part !== "")
+    .join(":");
+}
+
+function isFormDraftKeyForUserAndType(key, formType) {
+  return String(key || "").startsWith(`${FORM_DRAFT_STORAGE_PREFIX}:${getFormDraftUserId()}:${formType}:`);
+}
+
 const CLICK_ACTION_HANDLERS = {
   activate_tab: (event, button) => activateTab(button?.dataset?.tab),
   activate_subtab: (event, button) => activateSubtab(button?.dataset?.parentTab, button?.dataset?.subtab),
@@ -1048,6 +1079,10 @@ function bindEvents() {
   if (manualReloadBtn) manualReloadBtn.dataset.action = "manual_reload";
 
   clientForm?.addEventListener("submit", handleClientSubmit);
+  [clientForm, saleForm, expenseForm, businessResourceTemplateForm].forEach((form) => {
+    form?.addEventListener("input", () => saveFormDraft({ formElement: form }));
+    form?.addEventListener("change", () => saveFormDraft({ formElement: form }));
+  });
   caseForm.addEventListener("submit", handleCaseSubmit);
   caseForm.addEventListener("input", saveCaseFormDraft);
   caseForm.addEventListener("change", saveCaseFormDraft);
@@ -1122,30 +1157,18 @@ function bindEvents() {
   permitHearingUrgencyFilter?.addEventListener("change", handlePermitHearingUrgencyFilterChange);
   if (permitHearingFilterClearBtn) permitHearingFilterClearBtn.dataset.action = "clear_permit_hearing_filters";
   window.addEventListener("pageshow", forceHideLoading);
-  window.addEventListener("pageshow", restoreCaseFormDraftOnResume);
-  window.addEventListener("pageshow", () => scheduleEstimateDraftRestore("pageshow"));
-  window.addEventListener("pagehide", () => {
-    saveCaseFormDraftBeforeSuspend();
-    saveEstimateDraftBeforeSuspend();
-  });
-  window.addEventListener("beforeunload", saveCaseFormDraftBeforeSuspend);
+  window.addEventListener("pageshow", restoreActiveFormDraftOnResume);
+  window.addEventListener("pagehide", saveActiveFormDraftBeforeSuspend);
+  window.addEventListener("beforeunload", saveActiveFormDraftBeforeSuspend);
   window.addEventListener("focus", forceHideLoading);
-  window.addEventListener("focus", restoreDailyReportDraftOnResume);
-  window.addEventListener("focus", restoreCaseFormDraftOnResume);
-  window.addEventListener("focus", () => scheduleEstimateDraftRestore("focus"));
-  window.addEventListener("blur", () => {
-    saveCaseFormDraftBeforeSuspend();
-    saveEstimateDraftBeforeSuspend();
-  });
+  window.addEventListener("focus", restoreActiveFormDraftOnResume);
+  window.addEventListener("blur", saveActiveFormDraftBeforeSuspend);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
-      saveCaseFormDraftBeforeSuspend();
-      saveEstimateDraftBeforeSuspend();
+      saveActiveFormDraftBeforeSuspend();
     } else if (document.visibilityState === "visible") {
       forceHideLoading();
-      restoreDailyReportDraftOnResume();
-      restoreCaseFormDraftOnResume();
-      scheduleEstimateDraftRestore("visibilitychange");
+      restoreActiveFormDraftOnResume();
     }
   });
   if (loadingForceCloseBtn) loadingForceCloseBtn.dataset.action = "force_close_loading";
@@ -2418,13 +2441,13 @@ async function applyAuthState(options = {}) {
     userLabel.textContent = currentUser.email || "ログイン中";
     ensureEstimateFormDraftContext("applyAuthState:before-load");
 
-    const shouldRestoreCaseDraft = saveCaseFormDraftBeforeSuspend();
-    let shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
+    const shouldRestoreActiveDraft = saveActiveFormDraftBeforeSuspend();
+    let shouldRestoreEstimateDraft = hasStoredMeaningfulEstimateDraft();
     await loadAllDataSafely();
-    saveCaseFormDraftBeforeSuspend();
-    shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend() || shouldRestoreEstimateDraft;
+    saveActiveFormDraftBeforeSuspend();
+    shouldRestoreEstimateDraft = hasStoredMeaningfulEstimateDraft() || shouldRestoreEstimateDraft;
     const shouldPreserveActiveEstimateForm = hasMeaningfulActiveEstimateFormDraft();
-    if (!shouldRestoreCaseDraft) {
+    if (!shouldRestoreActiveDraft) {
       resetCaseForm();
     }
     resetCaseTaskForm();
@@ -2435,14 +2458,14 @@ async function applyAuthState(options = {}) {
     } else {
       resetEstimateForm({ allowDraftRestore: shouldRestoreEstimateDraft || hasStoredMeaningfulEstimateDraft() });
     }
-    resetSaleForm();
-    resetExpenseForm();
+    if (!isGenericFormDraftSurfaceActive(getGenericFormDraftDefinition("sale"))) resetSaleForm();
+    if (!isGenericFormDraftSurfaceActive(getGenericFormDraftDefinition("expense"))) resetExpenseForm();
     resetFixedExpenseForm();
     if (!editState.dailyReportId) {
       resetDailyReportForm();
     }
     safeRender("renderAfterDataChanged", renderAfterDataChanged);
-    if (shouldRestoreCaseDraft) restoreCaseFormDraftOnResume();
+    if (shouldRestoreActiveDraft) restoreActiveFormDraftOnResume();
     state.isInitialDataReady = true;
     setDataMutationControlsEnabled(true);
   } catch (error) {
@@ -2508,10 +2531,10 @@ async function handleManualReload(event) {
   if (!currentUser) return;
   if (manualReloadBtn) manualReloadBtn.disabled = true;
   try {
-    const shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
+    const shouldRestoreActiveDraft = saveActiveFormDraftBeforeSuspend();
     await loadAllDataSafely();
     renderAfterDataChanged();
-    if (shouldRestoreEstimateDraft || hasStoredMeaningfulEstimateDraft()) scheduleEstimateDraftRestore("reloadAllData");
+    if (shouldRestoreActiveDraft || hasStoredMeaningfulEstimateDraft()) restoreActiveFormDraftOnResume();
     showAppMessage("最新データを読み込みました", false);
   } catch (error) {
     showAppMessage(`最新データ再読込に失敗しました。${formatSupabaseError(error)}`, true);
@@ -3272,6 +3295,7 @@ async function handleClientSubmit(event) {
     }, {
       successMessage: editState.clientId ? "顧客を更新しました。" : "顧客を登録しました。",
       resetForm: resetClientForm,
+      afterSuccess: () => clearFormDraft({ formType: "client", mode: editState.clientId ? "edit" : "new", recordId: editState.clientId || null }),
     });
   } catch (error) {
     showAppMessage(`顧客保存に失敗しました。${formatSupabaseError(error)}`, true);
@@ -3691,6 +3715,7 @@ async function handleBusinessResourceTemplateSubmit(event) {
       successMessage: isEdit ? "業務資料を更新しました。" : "業務資料を登録しました。",
       resetForm: resetBusinessResourceTemplateForm,
       afterSuccess: () => {
+        clearFormDraft({ formType: "businessResourceTemplate", mode: isEdit ? "edit" : "new", recordId: isEdit ? editState.businessResourceTemplateId : null });
         subtabState["work-templates"] = "resource-library";
       },
     });
@@ -4058,6 +4083,7 @@ async function handleSaleSubmit(event) {
         editState.saleId = null;
       },
       afterSuccess: () => {
+        clearFormDraft({ formType: "sale", mode: isEdit ? "edit" : "new", recordId: isEdit ? editState.saleId : null });
         activateSubtab("sales", "list");
       },
     });
@@ -4129,6 +4155,7 @@ async function handleExpenseSubmit(event) {
       successMessage: editState.expenseId ? "経費を更新しました。" : "経費を登録しました。",
       resetForm: resetExpenseForm,
       afterSuccess: () => {
+        clearFormDraft({ formType: "expense", mode: editState.expenseId ? "edit" : "new", recordId: editState.expenseId || null });
         subtabState.expenses = "list";
         activateSubtab("expenses", "list");
       },
@@ -4268,9 +4295,6 @@ async function handleDailyReportSubmit(event) {
       resetForm: resetDailyReportForm,
       afterSuccess: () => {
         clearCurrentDailyReportDraft();
-        if (!isEdit) {
-          clearDailyReportDraft();
-        }
         activateSubtab("daily-reports", "list");
       },
     });
@@ -4303,6 +4327,7 @@ async function handleClientListAction(event) {
     clientForm.elements.clientReferralSource.value = target.referralSource || "";
     clientForm.elements.clientMemo.value = target.memo || "";
     if (clientSubmitBtn) clientSubmitBtn.textContent = "顧客を更新";
+    restoreFormDraft({ formType: "client", mode: "edit", recordId: target.id });
     clientForm.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
@@ -4648,6 +4673,7 @@ function startBusinessResourceTemplateEdit(templateId) {
   if (businessResourceSubmitBtn) businessResourceSubmitBtn.textContent = "業務資料を更新";
   activateTab("work-templates");
   activateSubtab("work-templates", "resource-library");
+  restoreFormDraft({ formType: "businessResourceTemplate", mode: "edit", recordId: target.id });
   businessResourceTemplateForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -5170,6 +5196,7 @@ async function startExpenseEdit(expenseId) {
     expenseForm.elements.expenseReceiptUrl.value = target.receiptUrl || "";
     if (expenseCaseSelect) expenseCaseSelect.value = target.caseId || "";
     expenseSubmitBtn.textContent = "経費を更新";
+    restoreFormDraft({ formType: "expense", mode: "edit", recordId: target.id });
     expenseForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -5387,6 +5414,7 @@ async function editSale(saleId) {
   activateTab("sales");
   activateSubtab("sales", "entry");
   renderPayments();
+  restoreFormDraft({ formType: "sale", mode: "edit", recordId: saleId });
   saleForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -6508,8 +6536,8 @@ function safeRender(name, fn) {
 }
 
 function renderAfterDataChanged() {
-  const shouldRestoreCaseDraft = saveCaseFormDraftBeforeSuspend();
-  const shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
+  const shouldRestoreActiveDraft = saveActiveFormDraftBeforeSuspend();
+  const shouldRestoreEstimateDraft = hasStoredMeaningfulEstimateDraft();
   safeRender("clients", renderClients);
   safeRender("clientOptions", renderClientOptions);
   safeRender("clientHistory", renderClientHistory);
@@ -6542,8 +6570,8 @@ function renderAfterDataChanged() {
   safeRender("clientAnalysis", renderClientAnalysis);
   safeRender("referralAnalysis", renderReferralAnalysis);
   hydrateActionButtons();
-  if (shouldRestoreCaseDraft) restoreCaseFormDraftOnResume();
-  if (shouldRestoreEstimateDraft || hasStoredMeaningfulEstimateDraft()) scheduleEstimateDraftRestore("renderAfterDataChanged");
+  if (shouldRestoreActiveDraft) restoreActiveFormDraftOnResume();
+  else if (shouldRestoreEstimateDraft || hasStoredMeaningfulEstimateDraft()) scheduleEstimateDraftRestore("renderAfterDataChanged");
   debugLog("RENDER DONE");
 }
 
@@ -6897,8 +6925,7 @@ function renderReferralAnalysis() {
 }
 
 function activateTab(tabKey) {
-  saveCaseFormDraftBeforeSuspend();
-  saveEstimateDraftBeforeSuspend();
+  saveActiveFormDraftBeforeSuspend();
   const normalizedTabKey = normalizeTabKey(tabKey);
 
   if (normalizedTabKey === "estimates") {
@@ -6920,8 +6947,7 @@ function activateTab(tabKey) {
 }
 
 function activateSubtab(parentTab, subtab) {
-  saveCaseFormDraftBeforeSuspend();
-  saveEstimateDraftBeforeSuspend();
+  saveActiveFormDraftBeforeSuspend();
   const normalizedTab = normalizeTabKey(parentTab);
   if (!subtab) return;
   const previousEstimateMode = estimateFormState.mode;
@@ -6939,6 +6965,7 @@ function activateSubtab(parentTab, subtab) {
     restoreCaseFormDraftOnResume();
   }
   if (normalizedTab === "daily-reports" && subtab === "entry") restoreDailyReportDraft();
+  restoreActiveGenericFormDraftsOnResume();
   if (normalizedTab === "estimates" && subtab === "create") {
     if (previousEstimateMode && previousEstimateMode !== "new") {
       resetEstimateForm({ allowDraftRestore: true, reason: "activateSubtab:create" });
@@ -8860,11 +8887,9 @@ function isCaseDraftEligibleContext(context = getCaseFormContextSnapshot()) {
 }
 
 function getCaseFormDraftStorageKey(context = getCaseFormContextSnapshot()) {
-  const userPart = currentUser?.id ? `user:${currentUser.id}` : "guest";
   const mode = normalizeCaseFormMode(context?.mode) || "new";
   const caseId = normalizeCaseFormCaseId(context?.caseId);
-  const modePart = mode === "edit" && caseId ? `edit:${caseId}` : "new";
-  return `${CASE_FORM_DRAFT_STORAGE_KEY}:${userPart}:${modePart}`;
+  return getFormDraftKey({ formType: "case", mode, recordId: caseId });
 }
 
 function collectCaseFormDraftFromDom() {
@@ -9102,11 +9127,9 @@ function isEstimateDraftEligibleContext(context = getEstimateFormContextSnapshot
 }
 
 function getEstimateDraftKey(context = getEstimateFormContextSnapshot()) {
-  const userPart = currentUser?.id ? `user:${currentUser.id}` : "guest";
   const mode = normalizeEstimateFormMode(context?.mode) || "new";
   const estimateId = normalizeEstimateFormEstimateId(context?.estimateId);
-  const modePart = mode === "edit" && estimateId ? `edit:${estimateId}` : "new";
-  return `${ESTIMATE_DRAFT_STORAGE_KEY}:${userPart}:${modePart}`;
+  return getFormDraftKey({ formType: "estimate", mode, recordId: estimateId });
 }
 
 function collectEstimateFormDraft() {
@@ -9302,15 +9325,12 @@ function scheduleEstimateDraftRestore(reason = "") {
   if (typeof window.requestAnimationFrame === "function") {
     window.requestAnimationFrame(restoreIfCurrent);
   }
-  [0, 250, 1000, 3000, 6000].forEach((delay) => {
-    window.setTimeout(restoreIfCurrent, delay);
-  });
   return true;
 }
 
 function getEstimateDraftStorageKeys() {
   try {
-    return Object.keys(sessionStorage).filter((key) => key.startsWith(`${ESTIMATE_DRAFT_STORAGE_KEY}:`));
+    return Object.keys(sessionStorage).filter((key) => isFormDraftKeyForUserAndType(key, "estimate") || key.startsWith(`${ESTIMATE_DRAFT_STORAGE_KEY}:`));
   } catch (error) {
     console.warn("見積下書きキー確認に失敗", error);
     return [];
@@ -10585,7 +10605,6 @@ async function startEstimateEdit(estimateId) {
     if (!target || !estimateForm) return;
     subtabState.estimates = "create";
     const editContext = setEstimateFormContext("edit", target.id, "startEstimateEdit");
-    clearEstimateFormDraft(getEstimateDraftKey(editContext));
     setEstimateFormRestoring(true);
     activateTab("estimates");
     try {
@@ -10606,6 +10625,7 @@ async function startEstimateEdit(estimateId) {
       setEstimateFormRestoring(false);
     }
     if (estimateSubmitBtn) estimateSubmitBtn.textContent = "見積を更新";
+    restoreEstimateDraftOnResume(editContext);
     estimateForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -13632,10 +13652,10 @@ window.GyoseiApp = {
   deleteBusinessResourceTemplate,
   reloadAllData: async () => {
     if (!currentUser) return;
-    const shouldRestoreEstimateDraft = saveEstimateDraftBeforeSuspend();
+    const shouldRestoreActiveDraft = saveActiveFormDraftBeforeSuspend();
     await loadAllDataSafely();
     renderAfterDataChanged();
-    if (shouldRestoreEstimateDraft || hasStoredMeaningfulEstimateDraft()) scheduleEstimateDraftRestore("reloadAllData");
+    if (shouldRestoreActiveDraft || hasStoredMeaningfulEstimateDraft()) restoreActiveFormDraftOnResume();
   },
   refreshEstimateListData: async () => {
     await refreshEstimateListData();
@@ -13659,9 +13679,7 @@ window.GyoseiApp = {
 const DAILY_REPORT_DRAFT_STORAGE_KEY = "gyosei_daily_report_draft_v1";
 
 function getDailyReportDraftStorageKey() {
-  const userPart = currentUser?.id ? `user:${currentUser.id}` : "guest";
-  const modePart = editState.dailyReportId ? `edit:${editState.dailyReportId}` : "new";
-  return `${DAILY_REPORT_DRAFT_STORAGE_KEY}:${userPart}:${modePart}`;
+  return getFormDraftKey({ formType: "dailyReport", mode: editState.dailyReportId ? "edit" : "new", recordId: editState.dailyReportId || null });
 }
 
 function collectDailyReportFormDraft() {
@@ -13676,23 +13694,27 @@ function collectDailyReportFormDraft() {
     reportNextAction: dailyReportForm.elements.reportNextAction?.value || "",
     reportNextActionDate: dailyReportForm.elements.reportNextActionDate?.value || "",
     reportMemo: dailyReportForm.elements.reportMemo?.value || "",
+    formType: "dailyReport",
+    mode: editState.dailyReportId ? "edit" : "new",
+    recordId: editState.dailyReportId || null,
     dailyReportId: editState.dailyReportId || null,
     updatedAt: new Date().toISOString(),
   };
 }
 
 function saveDailyReportDraft() {
-  if (!dailyReportForm) return;
+  if (!dailyReportForm) return false;
   try {
     const draft = collectDailyReportFormDraft();
-    if (!draft) return;
+    if (!draft) return false;
     if (!draft.reportWorkContent && !draft.reportNextAction && !draft.reportMemo && !draft.reportCaseId && !draft.reportClientId) {
-      sessionStorage.removeItem(getDailyReportDraftStorageKey());
-      return;
+      return false;
     }
     sessionStorage.setItem(getDailyReportDraftStorageKey(), JSON.stringify(draft));
+    return true;
   } catch (error) {
     console.warn("日報下書き保存に失敗", error);
+    return false;
   }
 }
 
@@ -13710,6 +13732,184 @@ function isDailyReportEntryActive() {
   return getActiveMainTabKey() === "daily-reports" && subtabState["daily-reports"] === "entry";
 }
 
+
+function getGenericFormDraftDefinitions() {
+  return [
+    { formType: "client", form: clientForm, editStateKey: "clientId", tab: "clients", subtab: "entry", submitButton: clientSubmitBtn, submitLabels: { new: "顧客を登録", edit: "顧客を更新" } },
+    { formType: "sale", form: saleForm, editStateKey: "saleId", tab: "sales", subtab: "entry", submitButton: saleSubmitBtn, submitLabels: { new: "売上を登録", edit: "売上を更新" } },
+    { formType: "expense", form: expenseForm, editStateKey: "expenseId", tab: "expenses", subtab: "entry", submitButton: expenseSubmitBtn, submitLabels: { new: "経費を登録", edit: "経費を更新" } },
+    { formType: "businessResourceTemplate", form: businessResourceTemplateForm, editStateKey: "businessResourceTemplateId", tab: "work-templates", subtab: "resource-library", submitButton: businessResourceSubmitBtn, submitLabels: { new: "業務資料を登録", edit: "業務資料を更新" }, defaultValues: { procedureType: CONSTRUCTION_PROCEDURE_TYPES[0]?.value || "", resourceCategory: BUSINESS_RESOURCE_CATEGORIES[0]?.value || "", sortOrder: "0", isActive: true, required: false, customerVisible: false } },
+  ];
+}
+
+function getGenericFormDraftDefinition(formTypeOrForm) {
+  return getGenericFormDraftDefinitions().find((definition) => definition.formType === formTypeOrForm || definition.form === formTypeOrForm) || null;
+}
+
+function getGenericFormDraftContext(definition) {
+  if (!definition) return null;
+  const recordId = normalizeFormDraftRecordId(editState?.[definition.editStateKey]);
+  return {
+    formType: definition.formType,
+    mode: recordId ? "edit" : "new",
+    recordId,
+  };
+}
+
+function getGenericFormDraftKey(definition, context = getGenericFormDraftContext(definition)) {
+  return getFormDraftKey(context || { formType: definition?.formType });
+}
+
+function isGenericFormDraftSurfaceActive(definition) {
+  if (!definition?.form) return false;
+  if (getActiveMainTabKey() !== normalizeTabKey(definition.tab)) return false;
+  if (definition.subtab && subtabState[normalizeTabKey(definition.tab)] !== definition.subtab) return false;
+  const panel = definition.form.closest?.(".subtab-panel");
+  if (panel?.hidden) return false;
+  return true;
+}
+
+function collectFormDraftFromDom(formElement) {
+  if (!formElement) return null;
+  const fields = {};
+  Array.from(formElement.elements || []).forEach((field) => {
+    if (!field || field.disabled || field.type === "submit" || field.type === "button" || field.type === "fieldset") return;
+    const key = field.name || field.id;
+    if (!key) return;
+    if (field.type === "checkbox") fields[key] = Boolean(field.checked);
+    else if (field.type === "radio") {
+      if (field.checked) fields[key] = field.value || "";
+      else if (!Object.prototype.hasOwnProperty.call(fields, key)) fields[key] = "";
+    } else fields[key] = field.value || "";
+  });
+  return fields;
+}
+
+function hasMeaningfulFormDraft(draft, definition = getGenericFormDraftDefinition(draft?.formType)) {
+  const fields = draft?.fields;
+  if (!fields || typeof fields !== "object") return false;
+  const defaultValues = definition?.defaultValues || {};
+  return Object.entries(fields).some(([key, value]) => {
+    if (["status", "paymentStatus", "reportInteractionType"].includes(key)) return false;
+    if (Object.prototype.hasOwnProperty.call(defaultValues, key)) {
+      if (typeof value === "boolean") return Boolean(value) !== Boolean(defaultValues[key]);
+      return asTrimmedText(value) !== asTrimmedText(defaultValues[key]);
+    }
+    if (typeof value === "boolean") return value;
+    return asTrimmedText(value) !== "";
+  });
+}
+
+function saveFormDraft({ formType, mode, recordId, formElement } = {}) {
+  const definition = getGenericFormDraftDefinition(formType || formElement);
+  if (!definition?.form || genericFormDraftRestoring) return false;
+  const context = { ...(getGenericFormDraftContext(definition) || {}), formType: definition.formType };
+  if (mode) context.mode = normalizeFormDraftMode(mode);
+  if (context.mode === "edit") context.recordId = normalizeFormDraftRecordId(recordId ?? context.recordId);
+  else context.recordId = null;
+  if (context.mode === "edit" && !context.recordId) return false;
+  const fields = collectFormDraftFromDom(formElement || definition.form);
+  const draft = { ...context, fields, updatedAt: new Date().toISOString() };
+  if (!hasMeaningfulFormDraft(draft, definition)) return false;
+  try {
+    sessionStorage.setItem(getFormDraftKey(context), JSON.stringify(draft));
+    return true;
+  } catch (error) {
+    console.warn("フォーム下書き保存に失敗", definition.formType, error);
+    return false;
+  }
+}
+
+function readFormDraft({ formType, mode, recordId } = {}) {
+  const context = { formType, mode: normalizeFormDraftMode(mode), recordId: normalizeFormDraftMode(mode) === "edit" ? normalizeFormDraftRecordId(recordId) : null };
+  if (context.mode === "edit" && !context.recordId) return null;
+  try {
+    const raw = sessionStorage.getItem(getFormDraftKey(context));
+    if (!raw) return null;
+    const draft = JSON.parse(raw);
+    if (!draft || draft.formType !== context.formType || draft.mode !== context.mode) return null;
+    if ((draft.recordId || null) !== (context.recordId || null)) return null;
+    if (!hasMeaningfulFormDraft(draft)) return null;
+    return draft;
+  } catch (error) {
+    console.warn("フォーム下書き読込に失敗", formType, error);
+    return null;
+  }
+}
+
+function restoreFormDraft({ formType, mode, recordId, formElement } = {}) {
+  const definition = getGenericFormDraftDefinition(formType || formElement);
+  if (!definition?.form) return false;
+  const context = getGenericFormDraftContext(definition);
+  if (!context || (mode && context.mode !== normalizeFormDraftMode(mode))) return false;
+  if (context.mode === "edit" && normalizeFormDraftRecordId(recordId ?? context.recordId) !== context.recordId) return false;
+  const draft = readFormDraft(context);
+  if (!draft) return false;
+  genericFormDraftRestoring = true;
+  try {
+    Object.entries(draft.fields || {}).forEach(([key, value]) => {
+      const field = definition.form.elements?.[key];
+      if (!field) return;
+      if (field instanceof RadioNodeList) {
+        field.value = value || "";
+      } else if (field.type === "checkbox") field.checked = Boolean(value);
+      else field.value = value || "";
+    });
+    if (definition.submitButton && definition.submitLabels) definition.submitButton.textContent = definition.submitLabels[context.mode] || definition.submitButton.textContent;
+    return true;
+  } catch (error) {
+    console.warn("フォーム下書き復元に失敗", definition.formType, error);
+    return false;
+  } finally {
+    genericFormDraftRestoring = false;
+  }
+}
+
+function clearFormDraft({ formType, mode, recordId } = {}) {
+  try {
+    sessionStorage.removeItem(getFormDraftKey({ formType, mode, recordId }));
+  } catch (error) {
+    console.warn("フォーム下書き削除に失敗", formType, error);
+  }
+}
+
+function clearCurrentGenericFormDraft(formType) {
+  const definition = getGenericFormDraftDefinition(formType);
+  const context = getGenericFormDraftContext(definition);
+  if (context) clearFormDraft(context);
+}
+
+function saveActiveGenericFormDraftsBeforeSuspend() {
+  return getGenericFormDraftDefinitions().some((definition) => {
+    if (!isGenericFormDraftSurfaceActive(definition)) return false;
+    return saveFormDraft({ formType: definition.formType });
+  });
+}
+
+function restoreActiveGenericFormDraftsOnResume() {
+  return getGenericFormDraftDefinitions().some((definition) => {
+    if (!isGenericFormDraftSurfaceActive(definition)) return false;
+    return restoreFormDraft({ formType: definition.formType });
+  });
+}
+
+function saveActiveFormDraftBeforeSuspend() {
+  const results = [
+    saveCaseFormDraftBeforeSuspend(),
+    saveEstimateDraftBeforeSuspend(),
+    isDailyReportEntryActive() ? saveDailyReportDraft() : false,
+    saveActiveGenericFormDraftsBeforeSuspend(),
+  ];
+  return results.some(Boolean);
+}
+
+function restoreActiveFormDraftOnResume() {
+  restoreDailyReportDraftOnResume();
+  restoreCaseFormDraftOnResume();
+  scheduleEstimateDraftRestore("active-form-resume");
+  return restoreActiveGenericFormDraftsOnResume();
+}
+
 function restoreDailyReportDraftOnResume() {
   if (!isDailyReportEntryActive()) return;
   restoreDailyReportDraft();
@@ -13722,6 +13922,8 @@ function restoreDailyReportDraft() {
     if (!raw) return;
     const draft = JSON.parse(raw);
     if (!draft || draft.dailyReportId !== (editState.dailyReportId || null)) return;
+    if (draft.formType && draft.formType !== "dailyReport") return;
+    if (draft.mode && draft.mode !== (editState.dailyReportId ? "edit" : "new")) return;
     if (draft.reportDate) dailyReportForm.elements.reportDate.value = draft.reportDate;
     if (reportClientSelect) reportClientSelect.value = draft.reportClientId || "";
     if (reportCaseSelect) reportCaseSelect.value = draft.reportCaseId || "";
@@ -13738,11 +13940,9 @@ function restoreDailyReportDraft() {
 }
 
 function clearDailyReportDraft() {
-  if (!currentUser) return;
-  const userPrefix = `${DAILY_REPORT_DRAFT_STORAGE_KEY}:user:${currentUser.id}:`;
   try {
     Object.keys(sessionStorage).forEach((key) => {
-      if (key.startsWith(userPrefix)) sessionStorage.removeItem(key);
+      if (isFormDraftKeyForUserAndType(key, "dailyReport") || key.startsWith(`${DAILY_REPORT_DRAFT_STORAGE_KEY}:`)) sessionStorage.removeItem(key);
     });
   } catch (error) {
     console.warn("日報下書き削除に失敗", error);
