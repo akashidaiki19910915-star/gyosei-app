@@ -477,6 +477,9 @@ const CLICK_ACTION_HANDLERS = {
   },
   show_construction_estimate_preview: handleCaseListAction,
   close_construction_estimate_preview: handleCaseListAction,
+  confirm_construction_estimate_selection: handleCaseListAction,
+  close_construction_estimate_confirmation: handleCaseListAction,
+  apply_construction_estimate_selection: handleCaseListAction,
   export_estimate_excel: handleEstimateListAction,
   export_invoice_excel_from_estimate: handleEstimateListAction,
   edit_sale: handleSalesListAction,
@@ -3559,6 +3562,18 @@ function formatEstimatePreviewUnitPrice(value) {
   return formatCurrency(amount);
 }
 
+function getConstructionEstimateCandidateQuantity(item = {}) {
+  const quantity = Number(item.defaultQuantity ?? item.default_quantity ?? 1);
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+}
+
+function getConstructionEstimateCandidateUnitPriceInputValue(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "";
+  return String(Math.floor(amount));
+}
+
 function calculateEstimatePreviewTotal(items) {
   return (Array.isArray(items) ? items : []).reduce((total, item) => {
     if (item?.defaultUnitPrice === null || item?.defaultUnitPrice === undefined || item?.defaultUnitPrice === "") return total;
@@ -3567,6 +3582,28 @@ function calculateEstimatePreviewTotal(items) {
     if (!Number.isFinite(unitPrice) || !Number.isFinite(quantity)) return total;
     return total + (unitPrice * quantity);
   }, 0);
+}
+
+function renderConstructionEstimateCandidateRow(item, itemTypeLabel, preview) {
+  const candidateId = `${preview.caseId || "case"}-${item.templateKey || item.sortOrder || item.itemName}`.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const quantityValue = getConstructionEstimateCandidateQuantity(item);
+  const unitPriceValue = getConstructionEstimateCandidateUnitPriceInputValue(item.defaultUnitPrice);
+  return `
+    <tr class="construction-estimate-preview-row" data-template-key="${escapeHtml(item.templateKey || "")}" data-item-type="${escapeHtml(item.itemType)}" data-item-name="${escapeHtml(item.itemName)}" data-optional="${item.optional ? "true" : "false"}">
+      <td class="construction-estimate-preview-select-cell">
+        <label class="inline-check" for="${escapeHtml(candidateId)}">
+          <input id="${escapeHtml(candidateId)}" class="construction-estimate-preview-item-checkbox" type="checkbox" data-key="selected" />
+          <span>選択</span>
+        </label>
+      </td>
+      <td>${escapeHtml(itemTypeLabel)}</td>
+      <td>${escapeHtml(item.itemName)}</td>
+      <td><input class="construction-estimate-preview-quantity" type="text" inputmode="decimal" pattern="[0-9.,]*" data-key="quantity" aria-label="${escapeHtml(item.itemName)}の数量" value="${escapeHtml(String(quantityValue))}" /></td>
+      <td><input class="construction-estimate-preview-unit-price" type="text" inputmode="numeric" pattern="-?[0-9,]*" data-allow-negative="true" data-key="unitPrice" aria-label="${escapeHtml(item.itemName)}の単価" placeholder="未設定" value="${escapeHtml(unitPriceValue)}" /></td>
+      <td>${item.optional ? "任意" : "標準"}</td>
+      <td><textarea class="construction-estimate-preview-description" data-key="description" rows="2" aria-label="${escapeHtml(item.itemName)}の説明">${escapeHtml(item.description || "")}</textarea></td>
+    </tr>
+  `;
 }
 
 function renderConstructionEstimatePreview(caseItem) {
@@ -3586,25 +3623,17 @@ function renderConstructionEstimatePreview(caseItem) {
           <table class="construction-estimate-preview-table">
             <thead>
               <tr>
+                <th>選択</th>
                 <th>区分</th>
                 <th>項目名</th>
-                <th>初期数量</th>
-                <th>初期単価</th>
+                <th>数量</th>
+                <th>単価</th>
                 <th>任意項目</th>
                 <th>説明</th>
               </tr>
             </thead>
             <tbody>
-              ${items.map((item) => `
-                <tr>
-                  <td>${escapeHtml(itemTypeLabel)}</td>
-                  <td>${escapeHtml(item.itemName)}</td>
-                  <td>${escapeHtml(String(item.defaultQuantity ?? 1))}</td>
-                  <td>${escapeHtml(formatEstimatePreviewUnitPrice(item.defaultUnitPrice))}</td>
-                  <td>${item.optional ? "任意" : "標準"}</td>
-                  <td>${escapeHtml(item.description || "-")}</td>
-                </tr>
-              `).join("")}
+              ${items.map((item) => renderConstructionEstimateCandidateRow(item, itemTypeLabel, preview)).join("")}
             </tbody>
           </table>
         </div>
@@ -3613,23 +3642,254 @@ function renderConstructionEstimatePreview(caseItem) {
   }).join("");
 
   return `
-    <section class="construction-estimate-preview" aria-label="見積候補プレビュー">
+    <section class="construction-estimate-preview" aria-label="見積候補プレビュー" data-case-id="${escapeHtml(preview.caseId)}" data-procedure-type="${escapeHtml(preview.procedureType)}">
       <div class="construction-estimate-preview-header">
         <div>
           <h3>見積候補プレビュー</h3>
           <p class="meta">対象手続：${escapeHtml(preview.procedureLabel)} / 候補数：${preview.items.length}件</p>
-          ${hasUnsetUnitPrice ? '<p class="meta warning-text">単価未設定の候補があります</p>' : ""}
+          ${hasUnsetUnitPrice ? '<p class="meta warning-text">単価未設定の候補があります。必要に応じて単価を入力してください。</p>' : ""}
         </div>
         <button type="button" class="secondary-btn" data-action="close_construction_estimate_preview" data-list-action="close_construction_estimate_preview" data-case-id="${escapeHtml(preview.caseId)}">閉じる</button>
       </div>
       <div class="construction-estimate-preview-groups">
         ${groupedSections}
       </div>
+      <div class="construction-estimate-preview-confirmation" hidden></div>
       <div class="construction-estimate-preview-footer">
+        <button type="button" class="secondary-btn" data-action="confirm_construction_estimate_selection" data-list-action="confirm_construction_estimate_selection" data-case-id="${escapeHtml(preview.caseId)}">選択候補を確認</button>
         <button type="button" class="secondary-btn" data-action="close_construction_estimate_preview" data-list-action="close_construction_estimate_preview" data-case-id="${escapeHtml(preview.caseId)}">閉じる</button>
       </div>
     </section>
   `;
+}
+
+function getConstructionEstimatePreviewElement(button) {
+  return button?.closest?.(".construction-estimate-preview") || null;
+}
+
+function getConstructionEstimateCandidateRows(previewElement) {
+  return Array.from(previewElement?.querySelectorAll?.(".construction-estimate-preview-row") || []);
+}
+
+function collectSelectedConstructionEstimateCandidates(button) {
+  const previewElement = getConstructionEstimatePreviewElement(button);
+  return getConstructionEstimateCandidateRows(previewElement)
+    .filter((row) => row.querySelector('[data-key="selected"]')?.checked)
+    .map((row, index) => {
+      const quantityInputValue = row.querySelector('[data-key="quantity"]')?.value || "";
+      const parsedQuantity = parseDecimalInput(quantityInputValue);
+      const quantity = Number.isFinite(parsedQuantity) && parsedQuantity > 0 ? parsedQuantity : 1;
+      const unitPriceInputValue = String(row.querySelector('[data-key="unitPrice"]')?.value || "").trim();
+      const hasUnitPrice = unitPriceInputValue !== "";
+      const unitPrice = hasUnitPrice ? parseNumberInput(unitPriceInputValue) : null;
+      return {
+        templateKey: row.dataset.templateKey || `selected-${index}`,
+        itemType: normalizeEstimateItemType(row.dataset.itemType),
+        itemName: row.dataset.itemName || "",
+        quantity,
+        quantityInputValue: quantityInputValue || String(quantity),
+        unitPrice,
+        unitPriceInputValue: hasUnitPrice ? unitPriceInputValue : "",
+        hasUnitPrice,
+        optional: row.dataset.optional === "true",
+        description: asTrimmedText(row.querySelector('[data-key="description"]')?.value),
+        sortOrder: index,
+      };
+    })
+    .filter((item) => item.itemName);
+}
+
+function summarizeConstructionEstimateCandidates(items) {
+  const itemTypeCounts = ESTIMATE_ITEM_TYPES.reduce((acc, itemType) => {
+    acc[itemType.value] = 0;
+    return acc;
+  }, {});
+  let unsetUnitPriceCount = 0;
+  let approximateTotal = 0;
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    itemTypeCounts[item.itemType] = (itemTypeCounts[item.itemType] || 0) + 1;
+    if (!item.hasUnitPrice) {
+      unsetUnitPriceCount += 1;
+      return;
+    }
+    const quantity = Number(item.quantity);
+    const unitPrice = Number(item.unitPrice);
+    if (Number.isFinite(quantity) && Number.isFinite(unitPrice)) approximateTotal += Math.floor(quantity * unitPrice);
+  });
+  return {
+    totalCount: Array.isArray(items) ? items.length : 0,
+    itemTypeCounts,
+    unsetUnitPriceCount,
+    approximateTotal,
+  };
+}
+
+function renderConstructionEstimateSelectionConfirmation(items) {
+  const summary = summarizeConstructionEstimateCandidates(items);
+  const itemTypeBreakdown = ESTIMATE_ITEM_TYPES.map((itemType) => `${escapeHtml(itemType.label)}：${summary.itemTypeCounts[itemType.value] || 0}件`).join(" / ");
+  const rowsHtml = items.map((item) => {
+    const unitPriceText = item.hasUnitPrice ? formatCurrency(item.unitPrice) : "未設定";
+    const amountText = item.hasUnitPrice ? formatCurrency(Math.floor(item.quantity * item.unitPrice)) : "未設定";
+    return `
+      <tr>
+        <td>${escapeHtml(getEstimateItemTypeLabel(item.itemType))}</td>
+        <td>${escapeHtml(item.itemName)}</td>
+        <td>${escapeHtml(String(item.quantity))}</td>
+        <td>${escapeHtml(unitPriceText)}</td>
+        <td>${escapeHtml(amountText)}</td>
+        <td>${escapeHtml(item.description || "-")}</td>
+      </tr>
+    `;
+  }).join("");
+  return `
+    <div class="construction-estimate-selection-confirmation-inner">
+      <div class="construction-estimate-selection-summary">
+        <strong>選択件数：${summary.totalCount}件</strong>
+        <span>${itemTypeBreakdown}</span>
+        <span>単価未設定：${summary.unsetUnitPriceCount}件</span>
+        <span>概算合計：${formatCurrency(summary.approximateTotal)}${summary.unsetUnitPriceCount ? "（未設定項目あり）" : ""}</span>
+      </div>
+      ${summary.unsetUnitPriceCount ? '<p class="warning-text">単価未設定の候補があります。未設定のまま反映すると、見積フォームの単価欄は空欄のままです。</p>' : ""}
+      <div class="construction-estimate-preview-table-wrap">
+        <table class="construction-estimate-preview-table">
+          <thead>
+            <tr>
+              <th>区分</th>
+              <th>項目名</th>
+              <th>数量</th>
+              <th>単価</th>
+              <th>概算金額</th>
+              <th>説明</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+      <div class="construction-estimate-confirmation-actions">
+        <button type="button" class="primary-btn" data-action="apply_construction_estimate_selection" data-list-action="apply_construction_estimate_selection">見積フォームへ反映</button>
+        <button type="button" class="secondary-btn" data-action="close_construction_estimate_confirmation" data-list-action="close_construction_estimate_confirmation">確認を閉じる</button>
+      </div>
+    </div>
+  `;
+}
+
+function confirmConstructionEstimateSelection(caseId, button) {
+  const previewElement = getConstructionEstimatePreviewElement(button);
+  const confirmation = previewElement?.querySelector(".construction-estimate-preview-confirmation");
+  if (!previewElement || !confirmation) {
+    showAppMessage("見積候補の確認エリアが見つかりません。", true);
+    return;
+  }
+  const selectedItems = collectSelectedConstructionEstimateCandidates(button);
+  if (!selectedItems.length) {
+    confirmation.hidden = false;
+    confirmation.innerHTML = '<p class="warning-text">見積フォームへ反映する候補を1件以上選択してください。</p>';
+    return;
+  }
+  confirmation.hidden = false;
+  confirmation.innerHTML = renderConstructionEstimateSelectionConfirmation(selectedItems);
+  confirmation.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function closeConstructionEstimateSelectionConfirmation(button) {
+  const confirmation = getConstructionEstimatePreviewElement(button)?.querySelector(".construction-estimate-preview-confirmation");
+  if (!confirmation) return;
+  confirmation.hidden = true;
+  confirmation.innerHTML = "";
+}
+
+function getConstructionEstimateDefaultTitle(procedureType) {
+  const titles = {
+    construction_license_new: "建設業許可 新規申請サポート",
+    construction_license_renewal: "建設業許可 更新申請サポート",
+    construction_license_add_business: "業種追加申請サポート",
+    annual_closing_report: "決算変更届作成サポート",
+    change_notification: "変更届作成サポート",
+    keishin: "経審申請サポート",
+    management_analysis: "経営状況分析申請サポート",
+  };
+  return titles[normalizeConstructionProcedureType(procedureType)] || "建設業許可申請サポート";
+}
+
+function hasMeaningfulEstimateFormInputForAppend() {
+  if (!estimateForm) return false;
+  if (hasMeaningfulActiveEstimateFormDraft()) return true;
+  return Array.from(estimateItemsWrap?.querySelectorAll(".estimate-item-row") || []).some((row) => isMeaningfulEstimateItem({
+    itemType: row.querySelector('[data-key="itemType"]')?.value,
+    itemName: row.querySelector('[data-key="itemName"]')?.value,
+    quantity: row.querySelector('[data-key="quantity"]')?.value,
+    unitPrice: row.querySelector('[data-key="unitPrice"]')?.value,
+    amount: parseNumberInput(row.querySelector(".item-amount")?.textContent),
+  }));
+}
+
+function applyConstructionEstimateCandidateFormFields(caseItem) {
+  if (!estimateForm) return;
+  const clientId = caseItem?.clientId || caseItem?.client_id || "";
+  const customerName = caseItem?.customerName || caseItem?.customer_name || "";
+  const procedureType = getCaseProcedureType(caseItem);
+  if (clientId && estimateForm.elements.clientId && !estimateForm.elements.clientId.value) estimateForm.elements.clientId.value = clientId;
+  if (customerName && estimateForm.elements.customerName && !asTrimmedText(estimateForm.elements.customerName.value)) estimateForm.elements.customerName.value = customerName;
+  if (estimateForm.elements.estimateTitle && !asTrimmedText(estimateForm.elements.estimateTitle.value)) estimateForm.elements.estimateTitle.value = getConstructionEstimateDefaultTitle(procedureType);
+  if (estimateForm.elements.estimateDate && !estimateForm.elements.estimateDate.value) estimateForm.elements.estimateDate.value = toDateString(new Date());
+  if (estimateForm.elements.status && !estimateForm.elements.status.value) estimateForm.elements.status.value = "作成中";
+}
+
+function applyConstructionEstimateSelectionToForm(caseId, button) {
+  const selectedItems = collectSelectedConstructionEstimateCandidates(button);
+  if (!selectedItems.length) {
+    showAppMessage("見積フォームへ反映する候補を1件以上選択してください。", true);
+    return;
+  }
+  const caseItem = state.cases.find((entry) => String(entry.id) === String(caseId));
+  if (!caseItem || !estimateForm || !estimateItemsWrap) {
+    showAppMessage("見積フォームまたは案件情報が見つかりません。", true);
+    return;
+  }
+  if (estimateFormState.mode === "edit" && estimateFormState.currentEstimateId) {
+    showAppMessage("見積編集中のため、候補反映は行いませんでした。編集中の見積を保存または終了してから、見積作成フォームへ反映してください。", true);
+    return;
+  }
+
+  subtabState.estimates = "create";
+  const context = setEstimateFormContext("new", null, "applyConstructionEstimateSelectionToForm");
+  activateTab("estimates");
+  bumpEstimateFormGeneration("applyConstructionEstimateSelectionToForm:prevent-stale-draft-restore");
+
+  const hasExistingInput = hasMeaningfulEstimateFormInputForAppend();
+  if (hasExistingInput) {
+    const shouldAppend = window.confirm("見積作成フォームに既存の未保存入力があります。既存入力を残して選択候補を追加入力しますか？\n\nOK：追加入力する / キャンセル：反映しない");
+    if (!shouldAppend) {
+      setEstimateFormContext(context.mode, context.estimateId, "applyConstructionEstimateSelectionToForm:cancel");
+      return;
+    }
+  }
+
+  setEstimateFormRestoring(true);
+  try {
+    applyConstructionEstimateCandidateFormFields(caseItem);
+    const rows = Array.from(estimateItemsWrap.querySelectorAll(".estimate-item-row"));
+    const hasOnlyEmptyInitialRow = rows.length === 1 && !isMeaningfulEstimateItem({
+      itemType: rows[0].querySelector('[data-key="itemType"]')?.value,
+      itemName: rows[0].querySelector('[data-key="itemName"]')?.value,
+      quantity: rows[0].querySelector('[data-key="quantity"]')?.value,
+      unitPrice: rows[0].querySelector('[data-key="unitPrice"]')?.value,
+      amount: parseNumberInput(rows[0].querySelector(".item-amount")?.textContent),
+    });
+    if (hasOnlyEmptyInitialRow) estimateItemsWrap.innerHTML = "";
+    selectedItems.forEach((item) => addEstimateItemRow({
+      itemType: item.itemType,
+      itemName: item.itemName,
+      quantity: item.quantityInputValue || item.quantity || 1,
+      unitPrice: item.hasUnitPrice ? item.unitPriceInputValue : "",
+    }));
+    recalcEstimateTotals();
+  } finally {
+    setEstimateFormRestoring(false);
+  }
+  saveEstimateFormDraft({ immediate: true });
+  estimateForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  showAppMessage("選択した見積候補を見積フォームへ反映しました。保存はまだ行っていません。必要に応じて見積保存ボタンを押してください。");
 }
 
 function setConstructionEstimatePreviewVisibility(caseId, visible) {
@@ -3655,6 +3915,9 @@ function setConstructionEstimatePreviewVisibility(caseId, visible) {
   }
   previewWrap.hidden = !visible;
   previewWrap.innerHTML = visible ? renderConstructionEstimatePreview(targetCase) : "";
+  if (visible) {
+    previewWrap.querySelectorAll('.construction-estimate-preview-unit-price').forEach((input) => bindCommaInput(input));
+  }
 }
 
 function getBusinessResourceSortOrder(value) {
@@ -4384,6 +4647,18 @@ async function handleCaseListAction(event) {
   }
   if (listAction === "close_construction_estimate_preview") {
     setConstructionEstimatePreviewVisibility(id, false);
+    return;
+  }
+  if (listAction === "confirm_construction_estimate_selection") {
+    confirmConstructionEstimateSelection(id, btn);
+    return;
+  }
+  if (listAction === "close_construction_estimate_confirmation") {
+    closeConstructionEstimateSelectionConfirmation(btn);
+    return;
+  }
+  if (listAction === "apply_construction_estimate_selection") {
+    applyConstructionEstimateSelectionToForm(id, btn);
     return;
   }
   if (listAction === "print_case_delivery_note") return openCaseBusinessDocumentPrintPreview(id, "delivery_note");
