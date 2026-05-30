@@ -433,6 +433,8 @@ const CLICK_ACTION_HANDLERS = {
     const caseId = button.dataset.caseId;
     return openCaseBusinessDocumentPrintPreview(caseId, "acceptance_certificate");
   },
+  show_construction_estimate_preview: handleCaseListAction,
+  close_construction_estimate_preview: handleCaseListAction,
   export_estimate_excel: handleEstimateListAction,
   export_invoice_excel_from_estimate: handleEstimateListAction,
   edit_sale: handleSalesListAction,
@@ -3431,6 +3433,150 @@ function getConstructionEstimateTemplateSummary(procedureType) {
   };
 }
 
+const CONSTRUCTION_ESTIMATE_PREVIEW_ITEM_TYPE_ORDER = ["reward", "advance", "expense", "discount"];
+
+function getCaseProcedureType(caseItem) {
+  const detailProcedureType = normalizeConstructionProcedureType(
+    getConstructionCaseDetailForCase(caseItem?.id)?.procedure_type
+  );
+  if (detailProcedureType) return detailProcedureType;
+  return normalizeConstructionProcedureType(caseItem?.procedureType ?? caseItem?.procedure_type);
+}
+
+function getConstructionEstimatePreviewItems(caseItem) {
+  const procedureType = getCaseProcedureType(caseItem);
+  const templates = getConstructionEstimateTemplates(procedureType);
+  return {
+    caseId: caseItem?.id || "",
+    customerName: caseItem?.customerName || caseItem?.customer_name || "顧客不明",
+    caseName: caseItem?.caseName || caseItem?.case_name || "案件名未設定",
+    procedureType,
+    procedureLabel: procedureType ? getConstructionProcedureLabel(procedureType) : "手続種別未設定",
+    items: templates.map((item) => ({ ...item })),
+  };
+}
+
+function groupEstimatePreviewItemsByType(items) {
+  const grouped = new Map(CONSTRUCTION_ESTIMATE_PREVIEW_ITEM_TYPE_ORDER.map((itemType) => [itemType, []]));
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const itemType = normalizeEstimateItemType(item?.itemType ?? item?.item_type);
+    if (!grouped.has(itemType)) grouped.set(itemType, []);
+    grouped.get(itemType).push({ ...item, itemType });
+  });
+  return Array.from(grouped.entries())
+    .filter(([, groupItems]) => groupItems.length > 0)
+    .map(([itemType, groupItems]) => ({ itemType, items: groupItems }));
+}
+
+function formatEstimatePreviewUnitPrice(value) {
+  if (value === null || value === undefined || value === "") return "未設定";
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "未設定";
+  return formatCurrency(amount);
+}
+
+function calculateEstimatePreviewTotal(items) {
+  return (Array.isArray(items) ? items : []).reduce((total, item) => {
+    if (item?.defaultUnitPrice === null || item?.defaultUnitPrice === undefined || item?.defaultUnitPrice === "") return total;
+    const unitPrice = Number(item.defaultUnitPrice);
+    const quantity = Number(item?.defaultQuantity ?? 1);
+    if (!Number.isFinite(unitPrice) || !Number.isFinite(quantity)) return total;
+    return total + (unitPrice * quantity);
+  }, 0);
+}
+
+function renderConstructionEstimatePreview(caseItem) {
+  const preview = getConstructionEstimatePreviewItems(caseItem);
+  if (!preview.procedureType) {
+    return `
+      <section class="construction-estimate-preview" aria-label="見積候補プレビュー">
+        <div class="construction-estimate-preview-header">
+          <h3>見積候補プレビュー</h3>
+          <button type="button" class="secondary-btn" data-action="close_construction_estimate_preview" data-list-action="close_construction_estimate_preview" data-case-id="${escapeHtml(preview.caseId)}">閉じる</button>
+        </div>
+        <p class="meta">この案件には手続種別が設定されていないため、見積候補を表示できません。</p>
+      </section>
+    `;
+  }
+  if (!preview.items.length) {
+    return `
+      <section class="construction-estimate-preview" aria-label="見積候補プレビュー">
+        <div class="construction-estimate-preview-header">
+          <h3>見積候補プレビュー</h3>
+          <button type="button" class="secondary-btn" data-action="close_construction_estimate_preview" data-list-action="close_construction_estimate_preview" data-case-id="${escapeHtml(preview.caseId)}">閉じる</button>
+        </div>
+        <p class="meta">対象手続：${escapeHtml(preview.procedureLabel)}</p>
+        <p class="meta">この手続種別に対応する見積候補は登録されていません。</p>
+      </section>
+    `;
+  }
+
+  const hasUnsetUnitPrice = preview.items.some((item) => item.defaultUnitPrice === null || item.defaultUnitPrice === undefined || item.defaultUnitPrice === "");
+  const hasPricedItems = preview.items.some((item) => item.defaultUnitPrice !== null && item.defaultUnitPrice !== undefined && item.defaultUnitPrice !== "" && Number.isFinite(Number(item.defaultUnitPrice)));
+  const previewTotal = calculateEstimatePreviewTotal(preview.items);
+  const previewTotalLabel = hasPricedItems
+    ? `単価設定済み分合計：${formatCurrency(previewTotal)}${hasUnsetUnitPrice ? "（金額未設定の候補があります）" : ""}`
+    : "単価未設定のため合計は未計算です（金額未設定の候補があります）";
+  const groupedSections = groupEstimatePreviewItemsByType(preview.items).map(({ itemType, items }) => `
+    <section class="construction-estimate-preview-group">
+      <h4>${escapeHtml(getEstimateItemTypeLabel(itemType))}</h4>
+      <div class="construction-estimate-preview-table-wrap">
+        <table class="construction-estimate-preview-table">
+          <thead>
+            <tr>
+              <th>区分</th>
+              <th>項目名</th>
+              <th>初期数量</th>
+              <th>初期単価</th>
+              <th>任意項目</th>
+              <th>説明</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map((item) => `
+              <tr>
+                <td>${escapeHtml(getEstimateItemTypeLabel(item.itemType))}</td>
+                <td>${escapeHtml(item.itemName)}</td>
+                <td>${escapeHtml(String(item.defaultQuantity ?? 1))}</td>
+                <td>${escapeHtml(formatEstimatePreviewUnitPrice(item.defaultUnitPrice))}</td>
+                <td>${item.optional ? "任意" : "標準"}</td>
+                <td>${escapeHtml(item.description || "-")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `).join("");
+
+  return `
+    <section class="construction-estimate-preview" aria-label="見積候補プレビュー">
+      <div class="construction-estimate-preview-header">
+        <div>
+          <h3>見積候補プレビュー</h3>
+          <p class="meta">${escapeHtml(preview.customerName)}｜${escapeHtml(preview.caseName)}</p>
+        </div>
+        <button type="button" class="secondary-btn" data-action="close_construction_estimate_preview" data-list-action="close_construction_estimate_preview" data-case-id="${escapeHtml(preview.caseId)}">閉じる</button>
+      </div>
+      <p class="meta">対象手続：${escapeHtml(preview.procedureLabel)} / 候補数：${preview.items.length}件</p>
+      <p class="meta">プレビュー合計：${escapeHtml(previewTotalLabel)}</p>
+      ${groupedSections}
+    </section>
+  `;
+}
+
+function setConstructionEstimatePreviewVisibility(caseId, visible) {
+  const item = caseList?.querySelector(`.case-card[data-id="${CSS.escape(String(caseId || ""))}"]`);
+  const previewWrap = item?.querySelector(".construction-estimate-preview-wrap");
+  const targetCase = state.cases.find((entry) => String(entry.id) === String(caseId));
+  if (!previewWrap || !targetCase) {
+    showAppMessage("見積候補プレビュー対象の案件が見つかりません。", true);
+    return;
+  }
+  previewWrap.hidden = !visible;
+  previewWrap.innerHTML = visible ? renderConstructionEstimatePreview(targetCase) : "";
+}
+
 function getBusinessResourceSortOrder(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -4149,6 +4295,14 @@ async function handleCaseListAction(event) {
   }
   if (listAction === "apply_construction_case_template") {
     await applyConstructionCaseTemplate(id);
+    return;
+  }
+  if (listAction === "show_construction_estimate_preview") {
+    setConstructionEstimatePreviewVisibility(id, true);
+    return;
+  }
+  if (listAction === "close_construction_estimate_preview") {
+    setConstructionEstimatePreviewVisibility(id, false);
     return;
   }
   if (listAction === "print_case_delivery_note") return openCaseBusinessDocumentPrintPreview(id, "delivery_note");
@@ -9718,6 +9872,7 @@ function renderCases() {
     const title = node.querySelector(".title");
     const statusBadge = node.querySelector(".case-status-badge");
     const summaryGrid = node.querySelector(".case-card-summary-grid");
+    const previewWrap = node.querySelector(".construction-estimate-preview-wrap");
     const caseWorkMeta = node.querySelector(".case-work-meta");
     const profitMeta = node.querySelector(".profit-meta");
     const rowActions = node.querySelector(".row-actions");
@@ -9775,6 +9930,10 @@ function renderCases() {
         { url: entry.receiptUrl, label: "領収書" },
       ]);
     }
+    if (previewWrap) {
+      previewWrap.hidden = true;
+      previewWrap.innerHTML = "";
+    }
     if (caseWorkMeta) {
       const auditSummary = auditAlerts.length ? auditAlerts.join(" / ") : "問題なし";
       caseWorkMeta.textContent = `進行監査: ${auditSummary}${hasSaleAmountMismatch ? " / ⚠ 金額不一致あり" : ""}`;
@@ -9825,6 +9984,16 @@ function renderCases() {
       btn.textContent = config.label;
       rowActions.appendChild(btn);
     });
+    if (rowActions && !rowActions.querySelector(".case-estimate-preview-btn")) {
+      const estimatePreviewBtn = document.createElement("button");
+      estimatePreviewBtn.type = "button";
+      estimatePreviewBtn.className = "secondary-btn case-estimate-preview-btn";
+      estimatePreviewBtn.dataset.action = "show_construction_estimate_preview";
+      estimatePreviewBtn.dataset.listAction = "show_construction_estimate_preview";
+      estimatePreviewBtn.dataset.caseId = entry.id;
+      estimatePreviewBtn.textContent = "見積候補を表示";
+      rowActions.appendChild(estimatePreviewBtn);
+    }
     if (rowActions && !rowActions.querySelector(".case-construction-template-btn")) {
       const constructionTemplateBtn = document.createElement("button");
       constructionTemplateBtn.type = "button";
