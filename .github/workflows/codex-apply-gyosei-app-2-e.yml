@@ -1,0 +1,32 @@
+name: Apply 第2-E patch
+
+on:
+  push:
+    branches:
+      - codex/gyosei-app-2-e
+
+permissions:
+  contents: write
+
+jobs:
+  apply-patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/gyosei-app-2-e
+      - name: Apply patch and validate
+        run: |
+          git apply --check .codex/gyosei-app-2-e.patch
+          git apply .codex/gyosei-app-2-e.patch
+          node --check app.js
+          git diff --check
+      - name: Commit final change
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app.js
+          git rm .codex/gyosei-app-2-e.patch .github/workflows/codex-apply-gyosei-app-2-e.yml
+          git commit -m '第2-E 見積候補選択・確認・フォーム反映を完成'
+          git push origin HEAD:codex/gyosei-app-2-e
