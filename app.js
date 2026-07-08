@@ -11551,8 +11551,10 @@ function buildEstimateDocumentFromEstimate(estimate) {
 
   const estimateDate = estimate.estimateDate || toDateString(new Date());
   const expenseNotice = "実費・法定費用は申請先確認後に別途精算";
+  const customEstimateMemo = asTrimmedText(estimate?.memo || "");
   const noteLines = [getCustomerFacingEstimateNotice(), asTrimmedText(appSettings.estimateNote || "") || ""];
   if (expenseTotal + advanceTotal <= 0) noteLines.push(expenseNotice);
+  const defaultEstimateNote = noteLines.filter(Boolean).join("\n");
   return {
     customerName: estimate.customerName || "顧客名未設定",
     subject: estimate.estimateTitle || "見積内容",
@@ -11570,7 +11572,8 @@ function buildEstimateDocumentFromEstimate(estimate) {
     total: estimate.total ?? 0,
     paymentTerms: `お支払い条件：請求書受領後${getDefaultInvoiceDueDays()}日以内に銀行振込`,
     taxRate: getCurrentTaxRate(),
-    note: noteLines.filter(Boolean).join("\n"),
+    note: customEstimateMemo || defaultEstimateNote,
+    hasCustomEstimateMemo: Boolean(customEstimateMemo),
   };
 }
 
@@ -12002,7 +12005,7 @@ body {
       ${receiptMetaHtml}
       <section class="info-section">
         <h3>${isInvoice ? "備考" : "備考"}</h3>
-        <div class="note-box">${escapeHtml(isInvoice ? (documentData.note || "") : `${documentData.note || ""}\n${documentData.paymentTerms || "支払条件: 記載なし"}\n有効期限: ${documentData.validUntil || "記載なし"}`.trim())}</div>
+        <div class="note-box">${escapeHtml(isInvoice || documentData.hasCustomEstimateMemo ? (documentData.note || "") : `${documentData.note || ""}\n${documentData.paymentTerms || "支払条件: 記載なし"}\n有効期限: ${documentData.validUntil || "記載なし"}`.trim())}</div>
       </section>
     </section>
 </main>
