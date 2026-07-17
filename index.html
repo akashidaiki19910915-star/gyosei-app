@@ -1542,7 +1542,13 @@
                   </div>
                 </fieldset>
                 <div id="daily-report-period-field" class="daily-report-period-field">
-                  <span class="daily-report-period-field-label">対象期間</span>
+                  <div class="daily-report-period-picker">
+                    <label id="daily-report-month-picker-field" class="inline-field daily-report-month-picker-field" for="daily-report-month-picker">
+                      対象月
+                      <input id="daily-report-month-picker" type="month" aria-label="対象月" />
+                    </label>
+                    <span id="daily-report-week-period-label" class="daily-report-period-field-label" hidden>対象週</span>
+                  </div>
                   <div id="daily-report-period-nav" class="daily-report-period-nav" aria-label="表示期間の移動">
                     <button id="daily-report-period-prev" type="button" class="secondary-btn" data-action="move_daily_report_period" data-period-step="-1">前月</button>
                     <button id="daily-report-period-current" type="button" class="secondary-btn" data-action="reset_daily_report_period">今月</button>
