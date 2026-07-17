@@ -1039,16 +1039,37 @@ tbody tr:last-child td {
 }
 
 .daily-report-period-field {
-  display: grid;
+  display: flex;
+  align-items: flex-end;
   flex: 0 0 auto;
-  gap: 0.4rem;
+  gap: 0.5rem;
 }
 
 .daily-report-period-field[hidden] {
   display: none;
 }
 
+.daily-report-period-picker {
+  display: grid;
+  align-self: stretch;
+}
+
+.daily-report-month-picker-field {
+  min-width: 145px;
+}
+
+.daily-report-month-picker-field input {
+  min-width: 145px;
+}
+
+.daily-report-month-picker-field[hidden],
+.daily-report-week-period-label[hidden] {
+  display: none;
+}
+
 .daily-report-period-field-label {
+  align-self: end;
+  padding-bottom: 0.7rem;
   color: var(--muted);
   font-size: 0.86rem;
 }
@@ -1216,6 +1237,17 @@ tbody tr:last-child td {
   }
 
   .daily-report-filter-bar > * {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .daily-report-period-field {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .daily-report-month-picker-field,
+  .daily-report-month-picker-field input {
     width: 100%;
     box-sizing: border-box;
   }
