@@ -1524,29 +1524,59 @@
             <section class="panel report-list-panel subtab-panel" data-parent-tab="daily-reports" data-subtab="list" hidden>
               <h2>日報一覧</h2>
               <div class="search-filter-bar daily-report-filter-bar">
-                <label class="inline-field" for="daily-report-search-input">
+                <fieldset class="daily-report-view-mode-field">
+                  <legend>表示単位</legend>
+                  <div class="daily-report-view-mode-options">
+                    <label class="daily-report-view-mode-option">
+                      <input type="radio" name="daily-report-view-mode" value="all" data-daily-report-view-mode />
+                      全期間
+                    </label>
+                    <label class="daily-report-view-mode-option">
+                      <input type="radio" name="daily-report-view-mode" value="month" data-daily-report-view-mode checked />
+                      月別
+                    </label>
+                    <label class="daily-report-view-mode-option">
+                      <input type="radio" name="daily-report-view-mode" value="week" data-daily-report-view-mode />
+                      週別
+                    </label>
+                  </div>
+                </fieldset>
+                <div id="daily-report-period-field" class="daily-report-period-field">
+                  <span class="daily-report-period-field-label">対象期間</span>
+                  <div id="daily-report-period-nav" class="daily-report-period-nav" aria-label="表示期間の移動">
+                    <button id="daily-report-period-prev" type="button" class="secondary-btn" data-action="move_daily_report_period" data-period-step="-1">前月</button>
+                    <button id="daily-report-period-current" type="button" class="secondary-btn" data-action="reset_daily_report_period">今月</button>
+                    <button id="daily-report-period-next" type="button" class="secondary-btn" data-action="move_daily_report_period" data-period-step="1">次月</button>
+                  </div>
+                </div>
+                <label class="inline-field daily-report-search-field" for="daily-report-search-input">
                   キーワード検索
                   <input id="daily-report-search-input" type="search" placeholder="案件名・作業内容・次回対応・メモで検索" />
                 </label>
-                <div class="inline-field daily-report-view-mode-field">
-                  <span>期間表示</span>
-                  <div class="daily-report-view-mode-options" role="group" aria-label="日報の期間表示">
-                    <button type="button" class="secondary-btn daily-report-view-mode-btn is-active" data-action="set_daily_report_view_mode" data-daily-report-view-mode data-view-mode="month" aria-pressed="true">月別</button>
-                    <button type="button" class="secondary-btn daily-report-view-mode-btn" data-action="set_daily_report_view_mode" data-daily-report-view-mode data-view-mode="week" aria-pressed="false">週別</button>
-                    <button type="button" class="secondary-btn daily-report-view-mode-btn" data-action="set_daily_report_view_mode" data-daily-report-view-mode data-view-mode="all" aria-pressed="false">全期間</button>
-                  </div>
-                </div>
                 <button id="daily-report-filter-clear-btn" type="button" class="secondary-btn">条件クリア</button>
               </div>
-              <div class="daily-report-period-toolbar">
-                <div id="daily-report-period-nav" class="daily-report-period-nav" aria-label="表示期間の移動">
-                  <button id="daily-report-period-prev" type="button" class="secondary-btn" data-action="move_daily_report_period" data-period-step="-1">前月</button>
-                  <button id="daily-report-period-current" type="button" class="secondary-btn" data-action="reset_daily_report_period">今月</button>
-                  <button id="daily-report-period-next" type="button" class="secondary-btn" data-action="move_daily_report_period" data-period-step="1">次月</button>
+              <div class="daily-report-filter-summary" aria-live="polite">
+                <div class="daily-report-filter-summary-card">
+                  <span>対象期間</span>
+                  <strong id="daily-report-period-label">今月：0件</strong>
                 </div>
-                <p id="daily-report-period-label" class="daily-report-period-label">今月：0件</p>
+                <div class="daily-report-filter-summary-card">
+                  <span>条件一致</span>
+                  <strong id="daily-report-matched-count">0件</strong>
+                </div>
+                <div class="daily-report-filter-summary-card">
+                  <span>表示範囲</span>
+                  <strong id="daily-report-visible-range">0件</strong>
+                </div>
+                <div class="daily-report-filter-summary-card">
+                  <span>全日報</span>
+                  <strong id="daily-report-total-count">0件</strong>
+                </div>
+                <div class="daily-report-filter-summary-card">
+                  <span>選択</span>
+                  <strong id="daily-report-selected-count">0件</strong>
+                </div>
               </div>
-              <p id="daily-report-filter-count" class="filter-count">表示中 0件 / 条件一致0件 / 全0件 / 選択0件</p>
               <div class="inline-actions">
                 <button type="button" class="secondary-btn" data-action="select_all_daily_reports">現在ページを全選択</button>
                 <button type="button" class="secondary-btn" data-action="clear_all_daily_reports">全解除</button>
