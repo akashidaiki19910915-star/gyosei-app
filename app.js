@@ -546,7 +546,6 @@ const CLICK_ACTION_HANDLERS = {
   select_all_fixed_expenses: ()=>{ setAllSelections('selectedFixedExpenseIds', state.fixedExpenses||[], true); renderFixedExpenses(); },
   clear_all_fixed_expenses: ()=>{ setAllSelections('selectedFixedExpenseIds', state.fixedExpenses||[], false); renderFixedExpenses(); },
   bulk_delete_fixed_expenses: ()=>handleGenericBulkDelete({label:'固定費', table:'fixed_expenses', stateKey:'fixedExpenses', selectionKey:'selectedFixedExpenseIds', render:renderFixedExpenses}),
-  set_daily_report_view_mode: (event, button) => setDailyReportViewMode(button?.dataset?.viewMode),
   move_daily_report_period: (event, button) => moveDailyReportPeriod(Number(button?.dataset?.periodStep || 0)),
   reset_daily_report_period: resetDailyReportPeriod,
   change_daily_report_page: (event, button) => changeDailyReportPage(Number(button?.dataset?.pageStep || 0)),
@@ -950,9 +949,14 @@ const dailyReportAlertListWrap = document.getElementById("daily-report-alert-lis
 const dailyReportSummaryList = document.getElementById("daily-report-summary-list");
 const dailyReportSearchInput = document.getElementById("daily-report-search-input");
 const dailyReportFilterClearBtn = document.getElementById("daily-report-filter-clear-btn");
-const dailyReportFilterCount = document.getElementById("daily-report-filter-count");
+const dailyReportViewModeInputs = document.querySelectorAll("[data-daily-report-view-mode]");
+const dailyReportPeriodField = document.getElementById("daily-report-period-field");
 const dailyReportPeriodNav = document.getElementById("daily-report-period-nav");
 const dailyReportPeriodLabel = document.getElementById("daily-report-period-label");
+const dailyReportMatchedCount = document.getElementById("daily-report-matched-count");
+const dailyReportVisibleRange = document.getElementById("daily-report-visible-range");
+const dailyReportTotalCount = document.getElementById("daily-report-total-count");
+const dailyReportSelectedCount = document.getElementById("daily-report-selected-count");
 const dailyReportPeriodPrevBtn = document.getElementById("daily-report-period-prev");
 const dailyReportPeriodCurrentBtn = document.getElementById("daily-report-period-current");
 const dailyReportPeriodNextBtn = document.getElementById("daily-report-period-next");
@@ -1204,6 +1208,9 @@ function bindEvents() {
   expensesSearchInput?.addEventListener("input", handleExpensesSearchInput);
   if (expensesFilterClearBtn) expensesFilterClearBtn.dataset.action = "clear_expenses_search";
   dailyReportSearchInput?.addEventListener("input", handleDailyReportSearchInput);
+  dailyReportViewModeInputs.forEach((input) => {
+    input.addEventListener("change", handleDailyReportViewModeChange);
+  });
   if (dailyReportFilterClearBtn) dailyReportFilterClearBtn.dataset.action = "clear_daily_report_filters";
   window.addEventListener("resize", updateDailyReportTextToggleVisibility);
   permitHearingSearchInput?.addEventListener("input", handlePermitHearingSearchInput);
@@ -2420,6 +2427,11 @@ function handleDailyReportSearchInput(event) {
   state.dailyReportSearchQuery = String(event?.target?.value ?? "").trim().toLowerCase();
   state.dailyReportCurrentPage = 1;
   safeRender("dailyReports", renderDailyReports);
+}
+
+function handleDailyReportViewModeChange(event) {
+  if (!event?.target?.checked) return;
+  setDailyReportViewMode(event.target.value);
 }
 
 function handlePermitHearingSearchInput(event) {
@@ -9326,20 +9338,20 @@ function renderDailyReports() {
     dailyReportsEmpty.textContent = "条件に一致する日報はありません。";
   }
 
+  const range = hasPageRows ? `${view.rangeStart}～${view.rangeEnd}件` : "0件";
   if (dailyReportPeriodLabel) dailyReportPeriodLabel.textContent = `${view.period.label}：${view.periodRows.length}件`;
-  if (dailyReportFilterCount) {
-    const range = hasPageRows ? `${view.rangeStart}～${view.rangeEnd}件` : "0件";
-    dailyReportFilterCount.textContent = `表示中 ${range} / 条件一致${view.filteredRows.length}件 / 全${view.sortedRows.length}件 / 選択${selectedIds.size}件`;
-  }
+  if (dailyReportMatchedCount) dailyReportMatchedCount.textContent = `${view.filteredRows.length}件`;
+  if (dailyReportVisibleRange) dailyReportVisibleRange.textContent = range;
+  if (dailyReportTotalCount) dailyReportTotalCount.textContent = `${view.sortedRows.length}件`;
+  if (dailyReportSelectedCount) dailyReportSelectedCount.textContent = `${selectedIds.size}件`;
 
-  document.querySelectorAll("[data-daily-report-view-mode]").forEach((button) => {
-    const isActive = button.dataset.viewMode === state.dailyReportViewMode;
-    button.classList.toggle("is-active", isActive);
-    button.setAttribute("aria-pressed", String(isActive));
+  dailyReportViewModeInputs.forEach((input) => {
+    input.checked = input.value === state.dailyReportViewMode;
   });
 
   const isAllPeriod = state.dailyReportViewMode === "all";
   const isWeekPeriod = state.dailyReportViewMode === "week";
+  if (dailyReportPeriodField) dailyReportPeriodField.hidden = isAllPeriod;
   if (dailyReportPeriodNav) dailyReportPeriodNav.hidden = isAllPeriod;
   if (dailyReportPeriodPrevBtn) dailyReportPeriodPrevBtn.textContent = isWeekPeriod ? "前週" : "前月";
   if (dailyReportPeriodCurrentBtn) dailyReportPeriodCurrentBtn.textContent = isWeekPeriod ? "今週" : "今月";
