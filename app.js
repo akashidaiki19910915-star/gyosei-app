@@ -304,7 +304,12 @@ const state = {
   salesSearchQuery: "",
   expensesSearchQuery: "",
   dailyReportSearchQuery: "",
-  dailyReportDateFilter: "all",
+  dailyReportDateFilter: "month",
+  dailyReportViewMode: "month",
+  dailyReportAnchorDate: toDateString(new Date()),
+  dailyReportCurrentPage: 1,
+  dailyReportPageSize: 12,
+  expandedDailyReportIds: [],
   businessResourceProcedureFilter: "all",
   businessResourceCategoryFilter: "all",
   businessResourceActiveFilter: "active",
@@ -541,10 +546,15 @@ const CLICK_ACTION_HANDLERS = {
   select_all_fixed_expenses: ()=>{ setAllSelections('selectedFixedExpenseIds', state.fixedExpenses||[], true); renderFixedExpenses(); },
   clear_all_fixed_expenses: ()=>{ setAllSelections('selectedFixedExpenseIds', state.fixedExpenses||[], false); renderFixedExpenses(); },
   bulk_delete_fixed_expenses: ()=>handleGenericBulkDelete({label:'固定費', table:'fixed_expenses', stateKey:'fixedExpenses', selectionKey:'selectedFixedExpenseIds', render:renderFixedExpenses}),
-  select_daily_report: (e,b)=>{const id=b?.dataset?.dailyReportId; if(!id)return; toggleSelectedId('selectedDailyReportIds',id); renderDailyReports();},
-  select_all_daily_reports: ()=>{ setAllSelections('selectedDailyReportIds', state.dailyReports||[], true); renderDailyReports(); },
+  set_daily_report_view_mode: (event, button) => setDailyReportViewMode(button?.dataset?.viewMode),
+  move_daily_report_period: (event, button) => moveDailyReportPeriod(Number(button?.dataset?.periodStep || 0)),
+  reset_daily_report_period: resetDailyReportPeriod,
+  change_daily_report_page: (event, button) => changeDailyReportPage(Number(button?.dataset?.pageStep || 0)),
+  toggle_daily_report_text: (event, button) => toggleDailyReportText(button?.dataset?.dailyReportId),
+  select_daily_report: (event, button) => handleDailyReportSelection(button?.dataset?.dailyReportId),
+  select_all_daily_reports: selectAllDailyReportsOnCurrentPage,
   clear_all_daily_reports: ()=>{ setAllSelections('selectedDailyReportIds', state.dailyReports||[], false); renderDailyReports(); },
-  bulk_delete_daily_reports: ()=>handleGenericBulkDelete({label:'日報', table:'daily_reports', stateKey:'dailyReports', selectionKey:'selectedDailyReportIds', render:renderDailyReports}),
+  bulk_delete_daily_reports: handleBulkDeleteDailyReports,
   select_permit_hearing: (e,b)=>{const id=b?.dataset?.permitHearingId; if(!id)return; toggleSelectedId('selectedPermitHearingIds',id); renderPermitHearings();},
   select_all_permit_hearings: ()=>{ setAllSelections('selectedPermitHearingIds', state.permitHearings||[], true); renderPermitHearings(); },
   clear_all_permit_hearings: ()=>{ setAllSelections('selectedPermitHearingIds', state.permitHearings||[], false); renderPermitHearings(); },
@@ -839,6 +849,39 @@ async function handleGenericBulkDelete(config) {
     config.render();
   } });
 }
+
+function retainDailyReportSelectionOnCurrentPage(pageRows) {
+  const visibleIds = new Set((pageRows || []).map((entry) => String(entry.id)));
+  state.selectedDailyReportIds = getSelectedIdsByKey("selectedDailyReportIds")
+    .filter((id) => visibleIds.has(id));
+}
+
+function handleDailyReportSelection(dailyReportId) {
+  const id = String(dailyReportId || "");
+  if (!id) return;
+  const pageRows = getDailyReportViewData().pageRows;
+  if (!pageRows.some((entry) => String(entry.id) === id)) return;
+  toggleSelectedId("selectedDailyReportIds", id);
+  renderDailyReports();
+}
+
+function selectAllDailyReportsOnCurrentPage() {
+  const pageRows = getDailyReportViewData().pageRows;
+  setAllSelections("selectedDailyReportIds", pageRows, true);
+  renderDailyReports();
+}
+
+async function handleBulkDeleteDailyReports() {
+  retainDailyReportSelectionOnCurrentPage(getDailyReportViewData().pageRows);
+  await handleGenericBulkDelete({
+    label: "日報",
+    table: "daily_reports",
+    stateKey: "dailyReports",
+    selectionKey: "selectedDailyReportIds",
+    render: renderDailyReports,
+  });
+}
+
 const permitHearingForm = document.getElementById("permit-hearing-form");
 const permitCaseSelect = document.getElementById("permit-case-id");
 const permitScenarioSelect = document.getElementById("permit-scenario");
@@ -906,9 +949,17 @@ const dailyReportAlertEmpty = document.getElementById("daily-report-alert-empty"
 const dailyReportAlertListWrap = document.getElementById("daily-report-alert-list-wrap");
 const dailyReportSummaryList = document.getElementById("daily-report-summary-list");
 const dailyReportSearchInput = document.getElementById("daily-report-search-input");
-const dailyReportDateFilterSelect = document.getElementById("daily-report-date-filter");
 const dailyReportFilterClearBtn = document.getElementById("daily-report-filter-clear-btn");
 const dailyReportFilterCount = document.getElementById("daily-report-filter-count");
+const dailyReportPeriodNav = document.getElementById("daily-report-period-nav");
+const dailyReportPeriodLabel = document.getElementById("daily-report-period-label");
+const dailyReportPeriodPrevBtn = document.getElementById("daily-report-period-prev");
+const dailyReportPeriodCurrentBtn = document.getElementById("daily-report-period-current");
+const dailyReportPeriodNextBtn = document.getElementById("daily-report-period-next");
+const dailyReportPagination = document.getElementById("daily-report-pagination");
+const dailyReportPagePrevBtn = document.getElementById("daily-report-page-prev");
+const dailyReportPageIndicator = document.getElementById("daily-report-page-indicator");
+const dailyReportPageNextBtn = document.getElementById("daily-report-page-next");
 
 const caseItemTemplate = document.getElementById("case-item-template");
 const workTemplateForm = document.getElementById("work-template-form");
@@ -1153,8 +1204,8 @@ function bindEvents() {
   expensesSearchInput?.addEventListener("input", handleExpensesSearchInput);
   if (expensesFilterClearBtn) expensesFilterClearBtn.dataset.action = "clear_expenses_search";
   dailyReportSearchInput?.addEventListener("input", handleDailyReportSearchInput);
-  dailyReportDateFilterSelect?.addEventListener("change", handleDailyReportDateFilterChange);
   if (dailyReportFilterClearBtn) dailyReportFilterClearBtn.dataset.action = "clear_daily_report_filters";
+  window.addEventListener("resize", updateDailyReportTextToggleVisibility);
   permitHearingSearchInput?.addEventListener("input", handlePermitHearingSearchInput);
   permitHearingCategoryFilter?.addEventListener("change", handlePermitHearingCategoryFilterChange);
   permitHearingUrgencyFilter?.addEventListener("change", handlePermitHearingUrgencyFilterChange);
@@ -2367,11 +2418,8 @@ function clearExpensesSearch() {
 
 function handleDailyReportSearchInput(event) {
   state.dailyReportSearchQuery = String(event?.target?.value ?? "").trim().toLowerCase();
+  state.dailyReportCurrentPage = 1;
   safeRender("dailyReports", renderDailyReports);
-}
-
-function handleDailyReportDateFilterChange(event) {
-  applyDailyReportDateFilter(event?.target?.value || "all");
 }
 
 function handlePermitHearingSearchInput(event) {
@@ -2399,17 +2447,62 @@ function clearPermitHearingFilters() {
   safeRender("permitHearings", renderPermitHearings);
 }
 
-function applyDailyReportDateFilter(nextFilter) {
-  const normalized = ["all", "today", "month"].includes(nextFilter) ? nextFilter : "all";
+function setDailyReportViewMode(nextMode) {
+  const normalized = ["month", "week", "all"].includes(nextMode) ? nextMode : "month";
+  state.dailyReportViewMode = normalized;
   state.dailyReportDateFilter = normalized;
-  if (dailyReportDateFilterSelect) dailyReportDateFilterSelect.value = normalized;
+  state.dailyReportCurrentPage = 1;
+  safeRender("dailyReports", renderDailyReports);
+}
+
+function moveDailyReportPeriod(step) {
+  if (!Number.isInteger(step) || !step || state.dailyReportViewMode === "all") return;
+  const anchor = getDailyReportAnchorDate();
+  if (state.dailyReportViewMode === "week") {
+    anchor.setDate(anchor.getDate() + (step * 7));
+  } else {
+    anchor.setDate(1);
+    anchor.setMonth(anchor.getMonth() + step);
+  }
+  state.dailyReportAnchorDate = toDateString(anchor);
+  state.dailyReportCurrentPage = 1;
+  safeRender("dailyReports", renderDailyReports);
+}
+
+function resetDailyReportPeriod() {
+  state.dailyReportAnchorDate = toDateString(new Date());
+  state.dailyReportCurrentPage = 1;
+  safeRender("dailyReports", renderDailyReports);
+}
+
+function changeDailyReportPage(step) {
+  if (!Number.isInteger(step) || !step) return;
+  state.dailyReportCurrentPage = Math.max(1, Number(state.dailyReportCurrentPage || 1) + step);
+  safeRender("dailyReports", renderDailyReports);
+}
+
+function toggleDailyReportText(dailyReportId) {
+  const id = String(dailyReportId || "");
+  if (!id) return;
+  const expandedIds = new Set(getExpandedDailyReportIds());
+  if (expandedIds.has(id)) {
+    expandedIds.delete(id);
+  } else {
+    expandedIds.add(id);
+  }
+  state.expandedDailyReportIds = Array.from(expandedIds);
   safeRender("dailyReports", renderDailyReports);
 }
 
 function clearDailyReportFilters() {
   state.dailyReportSearchQuery = "";
-  applyDailyReportDateFilter("all");
+  state.dailyReportViewMode = "month";
+  state.dailyReportDateFilter = "month";
+  state.dailyReportAnchorDate = toDateString(new Date());
+  state.dailyReportCurrentPage = 1;
+  state.expandedDailyReportIds = [];
   if (dailyReportSearchInput) dailyReportSearchInput.value = "";
+  safeRender("dailyReports", renderDailyReports);
 }
 
 
@@ -9024,31 +9117,171 @@ function renderBusinessResourceTemplates() {
   businessResourceTemplatesWrap.hidden = filtered.length === 0;
 }
 
+function getExpandedDailyReportIds() {
+  const ids = Array.isArray(state.expandedDailyReportIds) ? state.expandedDailyReportIds : [];
+  return [...new Set(ids.map((id) => String(id)).filter(Boolean))];
+}
+
+function parseDailyReportLocalDate(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const date = new Date(year, monthIndex, day);
+  if (date.getFullYear() !== year || date.getMonth() !== monthIndex || date.getDate() !== day) return null;
+  return date;
+}
+
+function getDailyReportDateKey(value) {
+  const date = parseDailyReportLocalDate(value);
+  return date ? toDateString(date) : "";
+}
+
+function getDailyReportAnchorDate() {
+  const anchor = parseDailyReportLocalDate(state.dailyReportAnchorDate) || new Date();
+  state.dailyReportAnchorDate = toDateString(anchor);
+  return anchor;
+}
+
+function formatDailyReportPeriodDate(date, includeYear = true) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "未設定";
+  const prefix = includeYear ? `${date.getFullYear()}年` : "";
+  return `${prefix}${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function formatDailyReportDate(value) {
+  const date = parseDailyReportLocalDate(value);
+  return date ? new Intl.DateTimeFormat("ja-JP").format(date) : "未設定";
+}
+
+function getDailyReportPeriod(viewMode = state.dailyReportViewMode, anchorDate = getDailyReportAnchorDate()) {
+  const normalizedMode = ["month", "week", "all"].includes(viewMode) ? viewMode : "month";
+  if (normalizedMode === "all") {
+    return { mode: "all", startKey: "", endKey: "", label: "全期間" };
+  }
+
+  if (normalizedMode === "week") {
+    const start = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate());
+    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+    const sameYear = start.getFullYear() === end.getFullYear();
+    return {
+      mode: "week",
+      startKey: toDateString(start),
+      endKey: toDateString(end),
+      label: `${formatDailyReportPeriodDate(start)}～${formatDailyReportPeriodDate(end, !sameYear)}`,
+    };
+  }
+
+  const start = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
+  const end = new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 0);
+  return {
+    mode: "month",
+    startKey: toDateString(start),
+    endKey: toDateString(end),
+    label: `${start.getFullYear()}年${start.getMonth() + 1}月`,
+  };
+}
+
+function getDailyReportCreatedTimestamp(entry) {
+  const source = entry?.createdAt ?? entry?.created_at;
+  const timestamp = typeof source === "number" ? source : Date.parse(source);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function sortDailyReportsNewestFirst(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((entry, index) => ({ entry, index }))
+    .sort((left, right) => {
+      const leftDate = getDailyReportDateKey(left.entry.reportDate);
+      const rightDate = getDailyReportDateKey(right.entry.reportDate);
+      if (leftDate !== rightDate) return rightDate.localeCompare(leftDate);
+      const createdDiff = getDailyReportCreatedTimestamp(right.entry) - getDailyReportCreatedTimestamp(left.entry);
+      return createdDiff || left.index - right.index;
+    })
+    .map(({ entry }) => entry);
+}
+
+function getDailyReportViewData() {
+  const sortedRows = sortDailyReportsNewestFirst(state.dailyReports);
+  const period = getDailyReportPeriod();
+  const periodRows = sortedRows.filter((entry) => matchesDailyReportDateFilter(
+    entry,
+    state.dailyReportViewMode,
+    state.dailyReportAnchorDate
+  ));
+  const query = String(state.dailyReportSearchQuery || "").toLowerCase();
+  const filteredRows = query
+    ? periodRows.filter((entry) => matchesDailyReportSearch(entry, query))
+    : periodRows;
+  const pageSize = Math.max(1, Number(state.dailyReportPageSize) || 12);
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const requestedPage = Math.max(1, Number(state.dailyReportCurrentPage) || 1);
+  const currentPage = Math.min(requestedPage, totalPages);
+  const startIndex = (currentPage - 1) * pageSize;
+  const pageRows = filteredRows.slice(startIndex, startIndex + pageSize);
+  state.dailyReportCurrentPage = currentPage;
+
+  return {
+    sortedRows,
+    period,
+    periodRows,
+    filteredRows,
+    pageRows,
+    pageSize,
+    totalPages,
+    currentPage,
+    rangeStart: pageRows.length ? startIndex + 1 : 0,
+    rangeEnd: pageRows.length ? startIndex + pageRows.length : 0,
+  };
+}
+
+function updateDailyReportTextToggleVisibility() {
+  if (!dailyReportsBody) return;
+  dailyReportsBody.querySelectorAll(".daily-report-card").forEach((card) => {
+    const toggle = card.querySelector(".daily-report-text-toggle");
+    if (!(toggle instanceof HTMLButtonElement)) return;
+    if (card.classList.contains("is-expanded")) {
+      toggle.hidden = false;
+      return;
+    }
+    const hasOverflow = Array.from(card.querySelectorAll(".daily-report-text.is-clamped"))
+      .some((element) => element.scrollHeight > element.clientHeight + 1);
+    toggle.hidden = !hasOverflow;
+  });
+}
+
 function renderDailyReports() {
   if (!dailyReportsBody || !dailyReportsEmpty || !dailyReportsListWrap || !dailyReportSummaryList) return;
-  const sorted = state.dailyReports.slice().sort((a, b) => toSortTimestamp(b.reportDate) - toSortTimestamp(a.reportDate));
-  const filtered = sorted.filter((entry) => {
-    if (!matchesDailyReportDateFilter(entry, state.dailyReportDateFilter)) return false;
-    if (!state.dailyReportSearchQuery) return true;
-    return matchesDailyReportSearch(entry, state.dailyReportSearchQuery);
-  });
+  const view = getDailyReportViewData();
+  retainDailyReportSelectionOnCurrentPage(view.pageRows);
+  const selectedIds = new Set(getSelectedIdsByKey("selectedDailyReportIds"));
+  const expandedIds = new Set(getExpandedDailyReportIds());
 
   dailyReportsBody.innerHTML = "";
 
-  filtered.forEach((entry) => {
+  view.pageRows.forEach((entry) => {
+    const entryId = String(entry.id);
+    const escapedEntryId = escapeHtml(entryId);
+    const isExpanded = expandedIds.has(entryId);
+    const textClass = `daily-report-text${isExpanded ? " is-expanded" : " is-clamped"}`;
     const card = document.createElement("article");
-    card.className = "daily-report-card";
-    card.dataset.id = entry.id;
+    card.className = `daily-report-card${isExpanded ? " is-expanded" : ""}`;
+    card.dataset.id = entryId;
     card.innerHTML = `
       <header class="daily-report-card-header">
         <div>
-          <p class="daily-report-card-date">${formatDate(entry.reportDate)}</p>
+          <p class="daily-report-card-date">${formatDailyReportDate(entry.reportDate)}</p>
           <p class="daily-report-card-case">顧客: ${escapeHtml(resolveDailyReportClientName(entry.clientId, entry.caseId))}</p>
           <p class="daily-report-card-case">${escapeHtml(resolveDailyReportCaseName(entry.caseId))}</p>
           <p class="daily-report-card-case">対応種別: ${escapeHtml(entry.interactionType || "作業")}</p>
         </div>
         <div class="daily-report-card-actions">
-          <button type="button" class="secondary-btn card-select-btn" data-action="select_daily_report" data-daily-report-id="${entry.id}" data-id="${entry.id}">${new Set(getSelectedIdsByKey('selectedDailyReportIds')).has(String(entry.id))?"☑":"☐"}</button>
+          <button type="button" class="secondary-btn card-select-btn" data-action="select_daily_report" data-daily-report-id="${escapedEntryId}" data-id="${escapedEntryId}" aria-label="この日報を選択">${selectedIds.has(entryId) ? "☑" : "☐"}</button>
           <button type="button" class="secondary-btn edit-daily-report-btn" data-action="edit_daily_report" data-list-action="edit_daily_report">編集</button>
           <button type="button" class="danger-btn delete-daily-report-btn" data-action="delete_daily_report" data-list-action="delete_daily_report">削除</button>
         </div>
@@ -9060,33 +9293,69 @@ function renderDailyReports() {
         </div>
         <div class="daily-report-field">
           <dt>作業内容</dt>
-          <dd>${escapeHtml(entry.workContent || "未設定")}</dd>
+          <dd class="${textClass}">${escapeHtml(entry.workContent || "未設定")}</dd>
         </div>
         <div class="daily-report-field">
           <dt>次回対応</dt>
-          <dd>${escapeHtml(entry.nextAction || "未設定")}</dd>
+          <dd class="${textClass}">${escapeHtml(entry.nextAction || "未設定")}</dd>
         </div>
         <div class="daily-report-field-inline">
           <dt>次回対応日</dt>
-          <dd>${entry.nextActionDate ? formatDate(entry.nextActionDate) : "未設定"}</dd>
+          <dd>${entry.nextActionDate ? formatDailyReportDate(entry.nextActionDate) : "未設定"}</dd>
         </div>
         <div class="daily-report-field">
           <dt>メモ</dt>
-          <dd>${escapeHtml(entry.memo || "未設定")}</dd>
+          <dd class="${textClass}">${escapeHtml(entry.memo || "未設定")}</dd>
         </div>
       </dl>
+      <div class="daily-report-card-text-actions">
+        <button type="button" class="secondary-btn daily-report-text-toggle" data-action="toggle_daily_report_text" data-daily-report-id="${escapedEntryId}" aria-expanded="${isExpanded}"${isExpanded ? "" : " hidden"}>${isExpanded ? "閉じる" : "全文表示"}</button>
+      </div>
     `;
     dailyReportsBody.appendChild(card);
   });
 
-  dailyReportsEmpty.hidden = filtered.length > 0;
-  dailyReportsListWrap.hidden = filtered.length === 0;
-  dailyReportsEmpty.textContent = filtered.length || (!state.dailyReportSearchQuery && state.dailyReportDateFilter === "all")
-    ? "日報データはまだありません。"
-    : "条件に一致する日報はありません。";
+  const hasPageRows = view.pageRows.length > 0;
+  dailyReportsEmpty.hidden = hasPageRows;
+  dailyReportsListWrap.hidden = !hasPageRows;
+  if (!view.sortedRows.length) {
+    dailyReportsEmpty.textContent = "日報データはまだありません。";
+  } else if (!view.periodRows.length) {
+    dailyReportsEmpty.textContent = "対象期間の日報はありません。";
+  } else {
+    dailyReportsEmpty.textContent = "条件に一致する日報はありません。";
+  }
 
+  if (dailyReportPeriodLabel) dailyReportPeriodLabel.textContent = `${view.period.label}：${view.periodRows.length}件`;
   if (dailyReportFilterCount) {
-    dailyReportFilterCount.textContent = `表示中 ${filtered.length}件 / 全${sorted.length}件 / 選択 ${getSelectedIdsByKey('selectedDailyReportIds').length}件`;
+    const range = hasPageRows ? `${view.rangeStart}～${view.rangeEnd}件` : "0件";
+    dailyReportFilterCount.textContent = `表示中 ${range} / 条件一致${view.filteredRows.length}件 / 全${view.sortedRows.length}件 / 選択${selectedIds.size}件`;
+  }
+
+  document.querySelectorAll("[data-daily-report-view-mode]").forEach((button) => {
+    const isActive = button.dataset.viewMode === state.dailyReportViewMode;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+
+  const isAllPeriod = state.dailyReportViewMode === "all";
+  const isWeekPeriod = state.dailyReportViewMode === "week";
+  if (dailyReportPeriodNav) dailyReportPeriodNav.hidden = isAllPeriod;
+  if (dailyReportPeriodPrevBtn) dailyReportPeriodPrevBtn.textContent = isWeekPeriod ? "前週" : "前月";
+  if (dailyReportPeriodCurrentBtn) dailyReportPeriodCurrentBtn.textContent = isWeekPeriod ? "今週" : "今月";
+  if (dailyReportPeriodNextBtn) dailyReportPeriodNextBtn.textContent = isWeekPeriod ? "次週" : "次月";
+
+  if (dailyReportPagination) dailyReportPagination.hidden = view.totalPages <= 1;
+  if (dailyReportPagePrevBtn) dailyReportPagePrevBtn.disabled = view.currentPage <= 1;
+  if (dailyReportPageIndicator) dailyReportPageIndicator.textContent = `${view.currentPage} / ${view.totalPages}ページ`;
+  if (dailyReportPageNextBtn) dailyReportPageNextBtn.disabled = view.currentPage >= view.totalPages;
+
+  if (hasPageRows) {
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(updateDailyReportTextToggleVisibility);
+    } else {
+      updateDailyReportTextToggleVisibility();
+    }
   }
 
   const summary = buildDailyReportSummary();
@@ -9116,14 +9385,13 @@ function matchesDailyReportSearch(entry, query) {
   return haystacks.some((value) => value.includes(query));
 }
 
-function matchesDailyReportDateFilter(entry, filter) {
+function matchesDailyReportDateFilter(entry, filter, anchorDate = state.dailyReportAnchorDate) {
   if (filter === "all") return true;
-  const reportDate = entry.reportDate;
-  if (!reportDate) return false;
-  const today = toDateString(new Date());
-  if (filter === "today") return reportDate === today;
-  if (filter === "month") return toMonthKey(reportDate) === toMonthKey(today);
-  return true;
+  const reportDateKey = getDailyReportDateKey(entry.reportDate);
+  if (!reportDateKey) return false;
+  if (filter === "today") return reportDateKey === getDailyReportDateKey(anchorDate || new Date());
+  const period = getDailyReportPeriod(filter, parseDailyReportLocalDate(anchorDate) || new Date());
+  return reportDateKey >= period.startKey && reportDateKey <= period.endKey;
 }
 
 
@@ -13902,7 +14170,13 @@ function resetViewState() {
   state.salesSearchQuery = "";
   state.expensesSearchQuery = "";
   state.dailyReportSearchQuery = "";
-  state.dailyReportDateFilter = "all";
+  state.dailyReportDateFilter = "month";
+  state.dailyReportViewMode = "month";
+  state.dailyReportAnchorDate = toDateString(new Date());
+  state.dailyReportCurrentPage = 1;
+  state.dailyReportPageSize = 12;
+  state.expandedDailyReportIds = [];
+  state.selectedDailyReportIds = [];
   state.businessResourceProcedureFilter = "all";
   state.businessResourceCategoryFilter = "all";
   state.businessResourceActiveFilter = "active";
