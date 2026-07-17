@@ -951,6 +951,9 @@ const dailyReportSearchInput = document.getElementById("daily-report-search-inpu
 const dailyReportFilterClearBtn = document.getElementById("daily-report-filter-clear-btn");
 const dailyReportViewModeInputs = document.querySelectorAll("[data-daily-report-view-mode]");
 const dailyReportPeriodField = document.getElementById("daily-report-period-field");
+const dailyReportMonthPickerField = document.getElementById("daily-report-month-picker-field");
+const dailyReportMonthPicker = document.getElementById("daily-report-month-picker");
+const dailyReportWeekPeriodLabel = document.getElementById("daily-report-week-period-label");
 const dailyReportPeriodNav = document.getElementById("daily-report-period-nav");
 const dailyReportPeriodLabel = document.getElementById("daily-report-period-label");
 const dailyReportMatchedCount = document.getElementById("daily-report-matched-count");
@@ -1211,6 +1214,7 @@ function bindEvents() {
   dailyReportViewModeInputs.forEach((input) => {
     input.addEventListener("change", handleDailyReportViewModeChange);
   });
+  dailyReportMonthPicker?.addEventListener("input", handleDailyReportMonthChange);
   if (dailyReportFilterClearBtn) dailyReportFilterClearBtn.dataset.action = "clear_daily_report_filters";
   window.addEventListener("resize", updateDailyReportTextToggleVisibility);
   permitHearingSearchInput?.addEventListener("input", handlePermitHearingSearchInput);
@@ -2432,6 +2436,18 @@ function handleDailyReportSearchInput(event) {
 function handleDailyReportViewModeChange(event) {
   if (!event?.target?.checked) return;
   setDailyReportViewMode(event.target.value);
+}
+
+function handleDailyReportMonthChange(event) {
+  const value = String(event?.target?.value || "");
+  const match = value.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || month < 1 || month > 12) return;
+  state.dailyReportAnchorDate = toDateString(new Date(year, month - 1, 1));
+  state.dailyReportCurrentPage = 1;
+  safeRender("dailyReports", renderDailyReports);
 }
 
 function handlePermitHearingSearchInput(event) {
@@ -9351,7 +9367,14 @@ function renderDailyReports() {
 
   const isAllPeriod = state.dailyReportViewMode === "all";
   const isWeekPeriod = state.dailyReportViewMode === "week";
+  const isMonthPeriod = state.dailyReportViewMode === "month";
+  const anchorDate = getDailyReportAnchorDate();
   if (dailyReportPeriodField) dailyReportPeriodField.hidden = isAllPeriod;
+  if (dailyReportMonthPickerField) dailyReportMonthPickerField.hidden = !isMonthPeriod;
+  if (dailyReportMonthPicker) {
+    dailyReportMonthPicker.value = `${anchorDate.getFullYear()}-${String(anchorDate.getMonth() + 1).padStart(2, "0")}`;
+  }
+  if (dailyReportWeekPeriodLabel) dailyReportWeekPeriodLabel.hidden = !isWeekPeriod;
   if (dailyReportPeriodNav) dailyReportPeriodNav.hidden = isAllPeriod;
   if (dailyReportPeriodPrevBtn) dailyReportPeriodPrevBtn.textContent = isWeekPeriod ? "前週" : "前月";
   if (dailyReportPeriodCurrentBtn) dailyReportPeriodCurrentBtn.textContent = isWeekPeriod ? "今週" : "今月";
