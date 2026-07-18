@@ -6,6 +6,7 @@
   const ESTIMATE_CALCULATION_MUTATION_COLUMNS = [
     "user_id", "client_id", "project_name", "work_type", "application_type", "corporate_type", "governor_type",
     "general_specific", "industry_count", "officer_count", "office_count", "document_level", "urgent",
+    "keikan_level", "sengi_level", "zaisan_level", "keikan_reason", "sengi_reason", "zaisan_reason",
     "expense_amount", "discount_amount", "memo", "base_fee", "addon_fee", "taxable_subtotal", "tax", "total",
     "addon_breakdown", "reflected_estimate_id", "reflected_at",
   ];
@@ -19,6 +20,44 @@
   };
   const NOTICE = "この金額は入力内容に基づく概算です。正式な報酬額は必要資料・申請先・業務範囲確認後に確定します。";
   const PRINT_NOTICE_EXTRA = "上記報酬には、申請書類作成、要件確認、必要書類案内、申請先確認、提出準備に関する業務を含みます。";
+  const CONSTRUCTION_BURDEN_NOTICE = "この区分は許可取得の可否を示すものではなく、要件確認・証明資料収集の作業負担を見積金額へ反映するためのものです。";
+  const CONSTRUCTION_BURDEN_WORK_TYPES = new Set(["建設業許可", "業種追加"]);
+  const CONSTRUCTION_BURDEN_FIELDS = ["keikan", "sengi", "zaisan"];
+  const CONSTRUCTION_BURDEN_CONFIG = {
+    keikan: {
+      label: "経管要件の確認負担",
+      reasonLabel: "経管要件の判定理由",
+      reasonName: "keikanReason",
+      addonAmounts: { "建設業許可": 30000 },
+      criteria: {
+        "低": "同一会社で5年以上の役員・個人事業主経験があり、決算書、登記簿、工事実績、常勤資料がそろっている。",
+        "中": "複数会社・個人事業の経験合算、過去資料の取寄せ、一部資料の追加確認が必要だが、通常の5年経験ルートで確認できる。",
+        "高": "執行役員への権限委譲、6年以上の補佐経験、役員と補佐体制を組み合わせる特殊ルート、事前相談、証明元の廃業・非協力等がある。",
+      },
+    },
+    sengi: {
+      label: "営業所技術者要件の確認負担",
+      reasonLabel: "営業所技術者要件の判定理由",
+      reasonName: "sengiReason",
+      addonAmounts: { "建設業許可": 30000, "業種追加": 30000 },
+      criteria: {
+        "低": "申請業種に直接対応する国家資格があり、資格・常勤資料がそろっている。",
+        "中": "指定学科卒業後3年・5年の実務経験、第一次検定合格後3年・5年の実務経験などで、経験資料の確認が必要。",
+        "高": "資格なしで10年以上の実務経験、複数勤務先・複数業種の経験合算、期間重複、資料不足、特定建設業の指導監督的経験等がある。",
+      },
+    },
+    zaisan: {
+      label: "財産要件の確認負担",
+      reasonLabel: "財産要件の判定理由",
+      reasonName: "zaisanReason",
+      addonAmounts: { "建設業許可": 20000 },
+      criteria: {
+        "低": "一般建設業で、直前決算の自己資本が500万円以上、または5年目更新で要件が明確。",
+        "中": "一般建設業で500万円以上の預金残高証明を使用する、新設法人・個人、基準付近で資料確認が必要。",
+        "高": "特定建設業、または欠損・流動比率・資本金・自己資本について詳細確認や基準抵触の可能性がある。",
+      },
+    },
+  };
   const BASE = {
     "建設業許可|法人|新規|知事": 150000,
     "建設業許可|個人|新規|知事": 120000,
@@ -84,7 +123,8 @@
     default: {
       corporateType: "法人/個人", governorType: "知事/大臣", generalSpecific: "一般/特定", industryCount: "業種数", officerCount: "役員数", officeCount: "営業所数", documentLevel: "書類不足レベル", urgent: "急ぎ対応", keikan: "経管確認難易度", sengi: "専技確認難易度", zaisan: "財産要件確認難易度", visit: "訪問対応", agent: "代理取得", urlNotification: "URL届出", selfCertification: "自認書", usageConsent: "使用承諾証明書", baseLocationCheck: "保管場所の本拠確認", qualifiedStaffCheck: "専任者/資格者確認", guaranteeAssociation: "保証協会/営業保証金", courseCompletion: "講習修了証", renewalDeadline: "更新期限",
     },
-    "業種追加": { industryCount: "追加業種数", sengi: "専技確認難易度" },
+    "建設業許可": { keikan: "経管要件の確認負担", sengi: "営業所技術者要件の確認負担", zaisan: "財産要件の確認負担" },
+    "業種追加": { industryCount: "追加業種数", sengi: "営業所技術者要件の確認負担" },
     "決算変更届": { industryCount: "対象年数", documentLevel: "資料整理難易度", agent: "税理士連携" },
     "各種変更届": { officerCount: "変更対象役員数", officeCount: "対象営業所数", documentLevel: "資料整理難易度" },
     "宅建業免許": { officerCount: "専任宅建士数", officeCount: "営業所数", qualifiedStaffCheck: "専任者/資格者確認", guaranteeAssociation: "保証協会/営業保証金", documentLevel: "資料整理難易度", agent: "保証協会・供託関連確認" },
@@ -105,6 +145,15 @@
   function setOptions(select, options, currentValue) { select.innerHTML = (options || []).map(value => `<option value="${h(value)}">${h(value)}</option>`).join(""); if (currentValue && Array.from(select.options).some(o => o.value === currentValue)) select.value = currentValue; }
   function parseAddonBreakdown(v) { try { const parsed = typeof v === "string" ? JSON.parse(v || "[]") : v; return Array.isArray(parsed) ? parsed : []; } catch { return []; } }
   function getClientName(app, calc) { const clients = app?.getClients?.() || []; const client = clients.find((c) => String(c.id) === String(calc.client_id || "")); return client?.name || client?.companyName || client?.contactName || calc.client_name || calc.customer_name || "-"; }
+  function getConstructionBurdenAddonAmount(workType, fieldName, level) {
+    if (level !== "高") return 0;
+    return n(CONSTRUCTION_BURDEN_CONFIG[fieldName]?.addonAmounts?.[workType]);
+  }
+  function renderConstructionBurdenField(fieldName) {
+    const config = CONSTRUCTION_BURDEN_CONFIG[fieldName];
+    const criteria = Object.entries(config.criteria).map(([level, text]) => `<p><strong>${h(level)}：</strong>${h(text)}</p>`).join("");
+    return `<div class="estimate-burden-field" data-field="${h(fieldName)}"><label><span data-field-label>${h(config.label)}</span><select name="${h(fieldName)}"><option>低</option><option>高</option></select></label><p class="estimate-burden-addition" data-burden-addition="${h(fieldName)}" hidden></p><details class="estimate-burden-criteria" data-burden-criteria="${h(fieldName)}" hidden><summary>判定基準を見る</summary><div>${criteria}</div></details><label class="estimate-burden-reason" data-burden-reason="${h(fieldName)}" hidden><span>${h(config.reasonLabel)}</span><textarea name="${h(config.reasonName)}" rows="3"></textarea></label></div>`;
+  }
   async function waitForGyoseiApp(maxMs = 10000) { const start = Date.now(); while (Date.now() - start < maxMs) { if (window.GyoseiApp) return window.GyoseiApp; await new Promise(resolve => setTimeout(resolve, 100)); } return window.GyoseiApp || null; }
   async function waitForCurrentUser(app, maxMs = 10000) { const start = Date.now(); while (Date.now() - start < maxMs) { const u = app?.getCurrentUser?.(); if (u?.id) return u; await new Promise(resolve => setTimeout(resolve, 100)); } return app?.getCurrentUser?.() || null; }
 
@@ -112,8 +161,8 @@
   function calculateAddons(f) {
     const wt = f.workType.value; const addons = []; const add = (name, amount) => { if (amount > 0) addons.push({ name, amount }); }; const doc = f.documentLevel.value; const docMidHigh = (mid, high) => doc === "中" ? mid : (doc === "高" ? high : 0);
     switch (wt) {
-      case "建設業許可": add("業種加算", Math.max(0, n(f.industryCount.value) - 1) * 10000); add("役員加算", Math.max(0, n(f.officerCount.value) - 2) * 5000); add("営業所加算", Math.max(0, n(f.officeCount.value) - 1) * 30000); add("急ぎ対応", n(f.urgent.value) ? 30000 : 0); add("書類不足", docMidHigh(20000, 40000)); add("経管確認", f.keikan.value === "高" ? 30000 : 0); add("専技確認", f.sengi.value === "高" ? 30000 : 0); add("財産要件", f.zaisan.value === "高" ? 20000 : 0); add("訪問対応", n(f.visit.value) ? 10000 : 0); add("代理取得", n(f.agent.value) ? 10000 : 0); break;
-      case "業種追加": add("追加業種加算", Math.max(0, n(f.industryCount.value) - 1) * 30000); add("営業所加算", Math.max(0, n(f.officeCount.value) - 1) * 20000); add("急ぎ対応", n(f.urgent.value) ? 25000 : 0); add("書類不足", docMidHigh(15000, 30000)); add("専技確認", f.sengi.value === "高" ? 30000 : 0); add("訪問対応", n(f.visit.value) ? 10000 : 0); add("代理取得", n(f.agent.value) ? 10000 : 0); break;
+      case "建設業許可": add("業種加算", Math.max(0, n(f.industryCount.value) - 1) * 10000); add("役員加算", Math.max(0, n(f.officerCount.value) - 2) * 5000); add("営業所加算", Math.max(0, n(f.officeCount.value) - 1) * 30000); add("急ぎ対応", n(f.urgent.value) ? 30000 : 0); add("書類不足", docMidHigh(20000, 40000)); add("経管要件の確認負担", getConstructionBurdenAddonAmount(wt, "keikan", f.keikan.value)); add("営業所技術者要件の確認負担", getConstructionBurdenAddonAmount(wt, "sengi", f.sengi.value)); add("財産要件の確認負担", getConstructionBurdenAddonAmount(wt, "zaisan", f.zaisan.value)); add("訪問対応", n(f.visit.value) ? 10000 : 0); add("代理取得", n(f.agent.value) ? 10000 : 0); break;
+      case "業種追加": add("追加業種加算", Math.max(0, n(f.industryCount.value) - 1) * 30000); add("営業所加算", Math.max(0, n(f.officeCount.value) - 1) * 20000); add("急ぎ対応", n(f.urgent.value) ? 25000 : 0); add("書類不足", docMidHigh(15000, 30000)); add("営業所技術者要件の確認負担", getConstructionBurdenAddonAmount(wt, "sengi", f.sengi.value)); add("訪問対応", n(f.visit.value) ? 10000 : 0); add("代理取得", n(f.agent.value) ? 10000 : 0); break;
       case "決算変更届": add("対象年数加算", Math.max(0, n(f.industryCount.value) - 1) * 30000); add("資料整理", docMidHigh(10000, 25000)); add("急ぎ対応", n(f.urgent.value) ? 15000 : 0); add("訪問対応", n(f.visit.value) ? 10000 : 0); add("税理士連携", n(f.agent.value) ? 10000 : 0); break;
       case "各種変更届": add("変更役員加算", Math.max(0, n(f.officerCount.value) - 1) * 5000); add("営業所加算", Math.max(0, n(f.officeCount.value) - 1) * 15000); add("資料整理", docMidHigh(10000, 25000)); add("急ぎ対応", n(f.urgent.value) ? 15000 : 0); add("訪問対応", n(f.visit.value) ? 10000 : 0); add("代理取得", n(f.agent.value) ? 10000 : 0); break;
       case "宅建業免許": add("営業所加算", Math.max(0, n(f.officeCount.value) - 1) * 40000); add("専任宅建士確認", Math.max(0, n(f.officerCount.value) - 1) * 10000); add("資料整理", docMidHigh(15000, 30000)); add("急ぎ対応", n(f.urgent.value) ? 30000 : 0); add("訪問対応", n(f.visit.value) ? 10000 : 0); add("保証協会・供託関連確認", n(f.agent.value) ? 20000 : 0); break;
@@ -135,14 +184,91 @@
   async function init() {
     const root = document.getElementById("estimate-calculator-root"); if (!root) return;
     root.innerHTML = `<form id="estimate-calc-form" class="form"><div class="grid cols-2"><label data-field="clientId">顧客<select name="clientId"></select></label><label data-field="projectName">案件名<input name="projectName" /></label><label data-field="workType">業務種別<select name="workType"><option>建設業許可</option><option>業種追加</option><option>決算変更届</option><option>各種変更届</option><option>宅建業免許</option><option>株式会社設立</option><option>合同会社設立</option><option>創業融資</option><option>車庫証明</option><option>会社設立</option><option>産業廃棄物収集運搬業許可</option><option>在留資格関連</option><option>古物商許可</option></select></label><label data-field="applicationType">申請区分<select name="applicationType"></select></label><label data-field="corporateType">法人/個人<select name="corporateType"><option>法人</option><option>個人</option></select></label><label data-field="governorType">知事/大臣<select name="governorType"><option>知事</option><option>大臣</option></select></label><label data-field="generalSpecific">一般/特定<select name="generalSpecific"><option>一般</option><option>特定</option></select></label><label data-field="industryCount">業種数<input name="industryCount" type="number" value="1" min="1" /></label><label data-field="officerCount">役員数<input name="officerCount" type="number" value="2" min="0" /></label><label data-field="officeCount">営業所数<input name="officeCount" type="number" value="1" min="1" /></label><label data-field="documentLevel">書類不足レベル<select name="documentLevel"><option>低</option><option>中</option><option>高</option></select></label><label data-field="urgent">急ぎ対応<select name="urgent"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="keikan">経管確認難易度<select name="keikan"><option>低</option><option>高</option></select></label><label data-field="sengi">専技確認難易度<select name="sengi"><option>低</option><option>高</option></select></label><label data-field="zaisan">財産要件確認難易度<select name="zaisan"><option>低</option><option>高</option></select></label><label data-field="visit">訪問対応<select name="visit"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="agent">代理取得<select name="agent"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="urlNotification">URL届出<select name="urlNotification"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="selfCertification">自認書<select name="selfCertification"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="usageConsent">使用承諾証明書<select name="usageConsent"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="baseLocationCheck">保管場所の本拠確認<select name="baseLocationCheck"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="qualifiedStaffCheck">専任者/資格者確認<select name="qualifiedStaffCheck"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="guaranteeAssociation">保証協会/営業保証金<select name="guaranteeAssociation"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="courseCompletion">講習修了証<select name="courseCompletion"><option value="0">未確認</option><option value="1">確認済</option></select></label><label data-field="renewalDeadline">更新期限<select name="renewalDeadline"><option value="0">通常</option><option value="1">期限迫る</option></select></label><label data-field="expense">実費<input name="expense" type="number" value="0" min="0" /></label><label data-field="discount">値引き<input name="discount" type="number" value="0" min="0" /></label></div><label data-field="memo">メモ<textarea name="memo"></textarea></label><div class="row-actions"><button type="button" id="calc-run" class="secondary-btn">再計算</button><button type="button" id="calc-save">保存</button><button type="button" id="calc-apply">見積へ反映</button></div><div id="calc-result" class="panel"></div></form><section class="panel" id="calc-saved-list-wrap"><h3>保存済み概算見積</h3><div id="calc-saved-list"></div></section>`;
+    root.querySelector('[data-field="keikan"]').insertAdjacentHTML("beforebegin", `<p id="construction-burden-notice" class="estimate-burden-notice" hidden>${h(CONSTRUCTION_BURDEN_NOTICE)}</p>`);
+    CONSTRUCTION_BURDEN_FIELDS.forEach((fieldName) => {
+      root.querySelector(`[data-field="${fieldName}"]`).outerHTML = renderConstructionBurdenField(fieldName);
+    });
     const app = await waitForGyoseiApp(); if (!app) return;
     const form = root.querySelector('#estimate-calc-form'); const cs = form.elements.clientId; const savedList = root.querySelector('#calc-saved-list');
     (app?.getClients?.() || []).forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.name || c.companyName || c.contactName || '未設定'; cs.appendChild(o); });
     const visibleFieldsFor = (workType) => new Set([...(FIELD_CONFIG.common || []), ...(FIELD_CONFIG[workType] || [])]);
     const labelFor = (workType, fieldName) => FIELD_LABELS[workType]?.[fieldName] || FIELD_LABELS.default[fieldName] || null;
-    const applyWorkTypeUi = (keepApplicationValue = false) => { const wt = form.elements.workType.value; const visible = visibleFieldsFor(wt); root.querySelectorAll('[data-field]').forEach(label => { const name = label.getAttribute('data-field'); label.style.display = visible.has(name) ? '' : 'none'; const labelText = labelFor(wt, name); if (labelText) label.firstChild.textContent = labelText; }); const currentApplication = keepApplicationValue ? form.elements.applicationType.value : ''; setOptions(form.elements.applicationType, OPTION_SETS.applicationByWorkType[wt] || OPTION_SETS.applicationDefault, currentApplication); };
+    const updateConstructionBurdenUi = (workType, visibleFields) => {
+      const isConstructionBurdenWork = CONSTRUCTION_BURDEN_WORK_TYPES.has(workType);
+      root.querySelector("#construction-burden-notice").hidden = !isConstructionBurdenWork;
+      CONSTRUCTION_BURDEN_FIELDS.forEach((fieldName) => {
+        const isApplicable = isConstructionBurdenWork
+          && visibleFields.has(fieldName)
+          && Object.prototype.hasOwnProperty.call(CONSTRUCTION_BURDEN_CONFIG[fieldName].addonAmounts, workType);
+        const level = form.elements[fieldName].value || "低";
+        const amount = getConstructionBurdenAddonAmount(workType, fieldName, level);
+        const addition = root.querySelector(`[data-burden-addition="${fieldName}"]`);
+        addition.hidden = !isApplicable;
+        addition.textContent = isApplicable ? `現在の選択：${level}　加算額${Math.floor(amount).toLocaleString("ja-JP")}円${level === "中" ? "（現行設定）" : ""}` : "";
+        root.querySelector(`[data-burden-criteria="${fieldName}"]`).hidden = !isApplicable;
+        root.querySelector(`[data-burden-reason="${fieldName}"]`).hidden = !(isApplicable && level !== "低");
+      });
+    };
+    const applyWorkTypeUi = (keepApplicationValue = false) => {
+      const wt = form.elements.workType.value;
+      const visible = visibleFieldsFor(wt);
+      root.querySelectorAll('[data-field]').forEach((field) => {
+        const name = field.getAttribute('data-field');
+        field.style.display = visible.has(name) ? '' : 'none';
+        const labelText = labelFor(wt, name);
+        const labelElement = field.querySelector?.('[data-field-label]');
+        if (labelText && labelElement) labelElement.textContent = labelText;
+        else if (labelText) field.firstChild.textContent = labelText;
+      });
+      const burdenLevels = CONSTRUCTION_BURDEN_WORK_TYPES.has(wt) ? ["低", "中", "高"] : ["低", "高"];
+      CONSTRUCTION_BURDEN_FIELDS.forEach((fieldName) => setOptions(form.elements[fieldName], burdenLevels, form.elements[fieldName].value));
+      const currentApplication = keepApplicationValue ? form.elements.applicationType.value : '';
+      setOptions(form.elements.applicationType, OPTION_SETS.applicationByWorkType[wt] || OPTION_SETS.applicationDefault, currentApplication);
+      updateConstructionBurdenUi(wt, visible);
+    };
     const run = () => { applyWorkTypeUi(true); const f = form.elements; const base = calculateBase(f); const addons = calculateAddons(f); const addon = addons.reduce((s, x) => s + x.amount, 0), discount = n(f.discount.value), expense = n(f.expense.value), taxable = base + addon - discount; const tax = Math.floor(taxable * (app?.getTaxRate?.() ?? 0.1)), total = taxable + tax + expense; form.dataset.result = JSON.stringify({ base, addons, addon, discount, expense, tax, taxable, total }); root.querySelector('#calc-result').innerHTML = `<p>基本報酬: ${yen(base)}</p><p>加算明細: ${(addons.map(a => `${a.name} ${yen(a.amount)}`).join(' / ') || 'なし')}</p><p>値引き: ${yen(discount)}</p><p>実費: ${yen(expense)}</p><p>消費税: ${yen(tax)}</p><p><strong>合計: ${yen(total)}</strong></p><p class='meta'>${NOTICE}</p>`; };
-    const fillForm = (calc) => { const f = form.elements; const dynamic = calc?.permit_dynamic_answers && typeof calc.permit_dynamic_answers === 'object' ? calc.permit_dynamic_answers : {}; const as01 = (v) => ['1','あり','要確認','確認済','期限迫る','要','true'].includes(String(v ?? '').trim()) ? '1' : '0'; f.clientId.value = calc.client_id || ""; f.projectName.value = calc.project_name || ""; f.workType.value = calc.work_type || "建設業許可"; applyWorkTypeUi(true); if (Array.from(f.applicationType.options).some(o => o.value === calc.application_type)) f.applicationType.value = calc.application_type; f.corporateType.value = calc.corporate_type || "法人"; f.governorType.value = calc.governor_type || "知事"; f.generalSpecific.value = calc.general_specific || "一般"; f.industryCount.value = n(calc.industry_count) || 1; f.officerCount.value = n(calc.officer_count) || 2; f.officeCount.value = n(calc.office_count) || 1; f.documentLevel.value = calc.document_level || "低"; f.urgent.value = calc.urgent ? "1" : "0"; f.keikan.value = calc.keikan_level || "低"; f.sengi.value = calc.sengi_level || "低"; f.zaisan.value = calc.zaisan_level || "低"; f.visit.value = calc.visit_required ? "1" : "0"; f.agent.value = calc.agent_required ? "1" : "0"; f.urlNotification.value = as01(calc.url_notification || dynamic.urlNotification || dynamic.permitHasWebsite); f.selfCertification.value = as01(dynamic.selfCertification || (dynamic.permitStorageCategory === '自己所有' ? '1' : '0')); f.usageConsent.value = as01(dynamic.usageConsent || (dynamic.permitStorageCategory === '他人所有' && dynamic.permitParkingProofType === '使用承諾証明書' ? '1' : '0')); f.baseLocationCheck.value = as01(dynamic.baseLocationCheck || dynamic.permitBaseLocation); f.qualifiedStaffCheck.value = as01(dynamic.qualifiedStaffCheck || dynamic.permitQualifiedCount); f.guaranteeAssociation.value = as01(dynamic.guaranteeAssociation); f.courseCompletion.value = as01(dynamic.courseCompletion || dynamic.permitCourseCertificate); f.renewalDeadline.value = as01(dynamic.renewalDeadline); f.expense.value = n(calc.expense_amount) || 0; f.discount.value = n(calc.discount_amount) || 0; f.memo.value = calc.memo || ""; run(); };
+    const fillForm = (calc) => {
+      const f = form.elements;
+      const dynamic = calc?.permit_dynamic_answers && typeof calc.permit_dynamic_answers === 'object' ? calc.permit_dynamic_answers : {};
+      const as01 = (v) => ['1','あり','要確認','確認済','期限迫る','要','true'].includes(String(v ?? '').trim()) ? '1' : '0';
+      const setLevel = (select, value) => {
+        const normalized = ["低", "中", "高"].includes(value) ? value : "低";
+        select.value = Array.from(select.options).some((option) => option.value === normalized) ? normalized : "低";
+      };
+      f.clientId.value = calc.client_id || "";
+      f.projectName.value = calc.project_name || "";
+      f.workType.value = calc.work_type || "建設業許可";
+      applyWorkTypeUi(true);
+      if (Array.from(f.applicationType.options).some(o => o.value === calc.application_type)) f.applicationType.value = calc.application_type;
+      f.corporateType.value = calc.corporate_type || "法人";
+      f.governorType.value = calc.governor_type || "知事";
+      f.generalSpecific.value = calc.general_specific || "一般";
+      f.industryCount.value = n(calc.industry_count) || 1;
+      f.officerCount.value = n(calc.officer_count) || 2;
+      f.officeCount.value = n(calc.office_count) || 1;
+      f.documentLevel.value = calc.document_level || "低";
+      f.urgent.value = calc.urgent ? "1" : "0";
+      setLevel(f.keikan, calc.keikan_level);
+      setLevel(f.sengi, calc.sengi_level);
+      setLevel(f.zaisan, calc.zaisan_level);
+      f.keikanReason.value = calc.keikan_reason || "";
+      f.sengiReason.value = calc.sengi_reason || "";
+      f.zaisanReason.value = calc.zaisan_reason || "";
+      f.visit.value = calc.visit_required ? "1" : "0";
+      f.agent.value = calc.agent_required ? "1" : "0";
+      f.urlNotification.value = as01(calc.url_notification || dynamic.urlNotification || dynamic.permitHasWebsite);
+      f.selfCertification.value = as01(dynamic.selfCertification || (dynamic.permitStorageCategory === '自己所有' ? '1' : '0'));
+      f.usageConsent.value = as01(dynamic.usageConsent || (dynamic.permitStorageCategory === '他人所有' && dynamic.permitParkingProofType === '使用承諾証明書' ? '1' : '0'));
+      f.baseLocationCheck.value = as01(dynamic.baseLocationCheck || dynamic.permitBaseLocation);
+      f.qualifiedStaffCheck.value = as01(dynamic.qualifiedStaffCheck || dynamic.permitQualifiedCount);
+      f.guaranteeAssociation.value = as01(dynamic.guaranteeAssociation);
+      f.courseCompletion.value = as01(dynamic.courseCompletion || dynamic.permitCourseCertificate);
+      f.renewalDeadline.value = as01(dynamic.renewalDeadline);
+      f.expense.value = n(calc.expense_amount) || 0;
+      f.discount.value = n(calc.discount_amount) || 0;
+      f.memo.value = calc.memo || "";
+      run();
+    };
 
     const applyBridgeData = () => {
       const bridge = app?.getEstimateCalculatorBridgeData?.();
@@ -160,8 +286,60 @@
     const toggleSavedCalculationSelection = (id) => { const normalized = String(id); if (!normalized) return; if (selectedSavedCalculationIds.includes(normalized)) selectedSavedCalculationIds = selectedSavedCalculationIds.filter((entry) => entry !== normalized); else selectedSavedCalculationIds = [...selectedSavedCalculationIds, normalized]; };
     const renderSavedList = () => { const appCalcs = app?.getEstimateCalculations?.() || []; const sourceCalcs = appCalcs.length ? appCalcs : localEstimateCalculations; const calcs = sourceCalcs.slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)); const idSet = new Set(calcs.map((entry) => String(entry.id))); selectedSavedCalculationIds = selectedSavedCalculationIds.filter((id) => idSet.has(id)); if (!calcs.length) { savedList.innerHTML = '<p class="meta">保存済みデータはありません。</p>'; return; } const selectedCount = selectedSavedCalculationIds.length; savedList.innerHTML = `<div class="row-actions"><button type="button" class="secondary-btn" data-calc-action="select_all">全選択</button><button type="button" class="secondary-btn" data-calc-action="clear_all">全解除</button><button type="button" class="danger-btn" data-calc-action="bulk_delete">選択を一括削除</button><span class="meta">選択件数: ${h(String(selectedCount))}件 ${selectedCount ? '' : '（対象を選択してください）'}</span></div><p class="meta">保存済み概算見積は新しい順で表示しています。</p><div class="saved-calc-list">${calcs.map(c => `<article class="panel saved-calc-card"><div class="saved-calc-header"><label><input type="checkbox" data-calc-action="toggle_select" data-id="${h(c.id)}" ${selectedSavedCalculationIds.includes(String(c.id)) ? 'checked' : ''}/> 選択</label> <strong>${h(c.project_name || "-")}</strong> / <span>${h(c.work_type || "-")}</span> / <strong>${h(yen(c.total || 0))}</strong> ${getReflectionInfo(c).isReflected ? `<span class="status-badge">反映済み</span>` : ''}</div><div class="saved-calc-meta">作成日: ${h(fmtDate(c.created_at))} / 顧客名: ${h(c.client_name || c.customer_name || "-")} / 申請区分: ${h(c.application_type || "-")}</div><div class="saved-calc-money">基本報酬: ${h(yen(c.base_fee || 0))} / 加算: ${h(yen(c.addon_fee || 0))} / 実費: ${h(yen(c.expense_amount || 0))} / 消費税: ${h(yen(c.tax || 0))}</div><div class="saved-calc-note">メモ: ${h(c.memo || "-")}</div><div class="row-actions saved-calc-actions"><button type="button" data-calc-action="detail" data-id="${h(c.id)}" class="secondary-btn">詳細表示</button><button type="button" data-calc-action="reload" data-id="${h(c.id)}" class="secondary-btn">フォームに再読込</button><button type="button" data-calc-action="reflect" data-id="${h(c.id)}" class="secondary-btn">見積へ反映</button><button type="button" data-calc-action="print" data-id="${h(c.id)}" class="secondary-btn">概算書出力</button><button type="button" data-calc-action="delete" data-id="${h(c.id)}" class="danger-btn">削除</button></div></article>`).join('')}</div>`; };
     form.elements.workType.addEventListener('change', () => { applyWorkTypeUi(false); run(); });
+    CONSTRUCTION_BURDEN_FIELDS.forEach((fieldName) => form.elements[fieldName].addEventListener('change', run));
     root.querySelector('#calc-run').addEventListener('click', run);
-    root.querySelector('#calc-save').addEventListener('click', async () => { const sb = app?.getSupabaseClient?.(); const u = app?.getCurrentUser?.(); if (!sb || !u) return; run(); const r = JSON.parse(form.dataset.result || '{}'); const f = form.elements; const memoSuffix = n(f.urlNotification.value) > 0 ? 'URL届出: あり' : ''; const mergedMemo = [f.memo.value || '', memoSuffix].filter(Boolean).join('\n'); const rawPayload = { user_id: u.id, client_id: f.clientId.value || null, project_name: f.projectName.value || null, work_type: f.workType.value, application_type: f.applicationType.value, corporate_type: f.corporateType.value, governor_type: f.governorType.value, general_specific: f.generalSpecific.value, industry_count: n(f.industryCount.value), officer_count: n(f.officerCount.value), office_count: n(f.officeCount.value), document_level: f.documentLevel.value, urgent: n(f.urgent.value) > 0, expense_amount: r.expense || 0, discount_amount: r.discount || 0, memo: mergedMemo || null, base_fee: r.base || 0, addon_fee: r.addon || 0, taxable_subtotal: r.taxable || 0, tax: r.tax || 0, total: r.total || 0, addon_breakdown: JSON.stringify(r.addons || []) }; const payload = pickObjectKeys(rawPayload, ESTIMATE_CALCULATION_MUTATION_COLUMNS); const res = await sb.from('estimate_calculations').insert(payload); if (res.error) { app.showMessage(buildSaveErrorMessage('見積自動算出', res.error), true); return; } await app.reloadAllData(); await loadSavedCalculations(); renderSavedList(); app.showMessage('見積自動算出を保存しました。'); });
+    root.querySelector('#calc-save').addEventListener('click', async () => {
+      const sb = app?.getSupabaseClient?.();
+      const u = app?.getCurrentUser?.();
+      if (!sb || !u) return;
+      run();
+      const r = JSON.parse(form.dataset.result || '{}');
+      const f = form.elements;
+      const memoSuffix = n(f.urlNotification.value) > 0 ? 'URL届出: あり' : '';
+      const mergedMemo = [f.memo.value || '', memoSuffix].filter(Boolean).join('\n');
+      const workType = f.workType.value;
+      const reasonOrNull = (field) => String(field?.value || "").trim() || null;
+      const rawPayload = {
+        user_id: u.id,
+        client_id: f.clientId.value || null,
+        project_name: f.projectName.value || null,
+        work_type: workType,
+        application_type: f.applicationType.value,
+        corporate_type: f.corporateType.value,
+        governor_type: f.governorType.value,
+        general_specific: f.generalSpecific.value,
+        industry_count: n(f.industryCount.value),
+        officer_count: n(f.officerCount.value),
+        office_count: n(f.officeCount.value),
+        document_level: f.documentLevel.value,
+        urgent: n(f.urgent.value) > 0,
+        keikan_level: f.keikan.value,
+        sengi_level: f.sengi.value,
+        zaisan_level: f.zaisan.value,
+        keikan_reason: workType === "建設業許可" ? reasonOrNull(f.keikanReason) : null,
+        sengi_reason: CONSTRUCTION_BURDEN_WORK_TYPES.has(workType) ? reasonOrNull(f.sengiReason) : null,
+        zaisan_reason: workType === "建設業許可" ? reasonOrNull(f.zaisanReason) : null,
+        expense_amount: r.expense || 0,
+        discount_amount: r.discount || 0,
+        memo: mergedMemo || null,
+        base_fee: r.base || 0,
+        addon_fee: r.addon || 0,
+        taxable_subtotal: r.taxable || 0,
+        tax: r.tax || 0,
+        total: r.total || 0,
+        addon_breakdown: JSON.stringify(r.addons || []),
+      };
+      const payload = pickObjectKeys(rawPayload, ESTIMATE_CALCULATION_MUTATION_COLUMNS);
+      const res = await sb.from('estimate_calculations').insert(payload);
+      if (res.error) {
+        app.showMessage(buildSaveErrorMessage('見積自動算出', res.error), true);
+        return;
+      }
+      await app.reloadAllData();
+      await loadSavedCalculations();
+      renderSavedList();
+      app.showMessage('見積自動算出を保存しました。');
+    });
     root.querySelector('#calc-apply').addEventListener('click', async () => { run(); const r = JSON.parse(form.dataset.result || '{}'); const f = form.elements; await reflectToEstimate({ client_id: f.clientId.value || null, project_name: f.projectName.value || null, memo: f.memo.value || null, base_fee: r.base || 0, addon_fee: r.addon || 0, discount_amount: r.discount || 0, expense_amount: r.expense || 0, taxable_subtotal: r.taxable || 0, tax: r.tax || 0, total: r.total || 0 }); });
     savedList.addEventListener('click', async (event) => { const actionElement = event.target.closest('[data-calc-action]'); if (!actionElement) return; const action = actionElement.dataset.calcAction; const targetId = actionElement.dataset.id; if (action === 'toggle_select') { toggleSavedCalculationSelection(targetId); renderSavedList(); return; } if (action === 'select_all') { const appCalcs = app?.getEstimateCalculations?.() || []; const sourceCalcs = appCalcs.length ? appCalcs : localEstimateCalculations; selectedSavedCalculationIds = sourceCalcs.map((entry) => String(entry.id)); renderSavedList(); return; } if (action === 'clear_all') { selectedSavedCalculationIds = []; renderSavedList(); return; } if (action === 'bulk_delete') { if (!selectedSavedCalculationIds.length) { app.showMessage('対象を選択してください。', true); return; } if (!confirm(`選択した${selectedSavedCalculationIds.length}件を削除しますか？`)) return; const sb = app?.getSupabaseClient?.(); if (!sb) return; const del = await sb.from('estimate_calculations').delete().in('id', selectedSavedCalculationIds); if (del.error) { app.showMessage('選択データの削除に失敗しました。' + del.error.message, true); return; } selectedSavedCalculationIds = []; await loadSavedCalculations(); renderSavedList(); if (app?.reloadAllData) await app.reloadAllData(); app.showMessage('選択した保存済み算出データを削除しました。'); return; } const btn = event.target.closest('button[data-calc-action]'); if (!btn) return; const calc = getCalculationById(btn.dataset.id); if (!calc) return; if (action === 'detail') { const addon = parseAddonBreakdown(calc.addon_breakdown).map(a => `${a.name}: ${yen(a.amount)}`).join(' / ') || 'なし'; alert(`作成日: ${fmtDate(calc.created_at)}\n顧客: ${calc.client_name || '-'}\n案件: ${calc.project_name || '-'}\n業務種別: ${calc.work_type || '-'}\n申請区分: ${calc.application_type || '-'}\n基本報酬: ${yen(calc.base_fee || 0)}\n加算: ${yen(calc.addon_fee || 0)}\n値引き: ${yen(calc.discount_amount || 0)}\n実費: ${yen(calc.expense_amount || 0)}\n消費税: ${yen(calc.tax || 0)}\n合計: ${yen(calc.total || 0)}\n加算明細: ${addon}\nメモ: ${calc.memo || '-'}`); } else if (action === 'reload') { fillForm(calc); app.showMessage('保存済みデータをフォームへ再読込しました。'); } else if (action === 'reflect') { await reflectToEstimate(calc); } else if (action === 'print') { openPrintWindow(app, calc); } else if (action === 'delete') { if (!confirm('この保存済み算出データを削除しますか？')) return; const sb = app?.getSupabaseClient?.(); if (!sb) return; const del = await sb.from('estimate_calculations').delete().eq('id', calc.id); if (del.error) { app.showMessage('保存済み算出データの削除に失敗しました。' + del.error.message, true); return; } await loadSavedCalculations(); renderSavedList(); if (app?.reloadAllData) await app.reloadAllData(); app.showMessage('保存済み算出データを削除しました。'); } });
     applyWorkTypeUi(false); run(); applyBridgeData(); window.addEventListener('estimate-calculator-bridge-updated', applyBridgeData); if (app?.reloadAllData) await app.reloadAllData(); await loadSavedCalculations(); renderSavedList();
