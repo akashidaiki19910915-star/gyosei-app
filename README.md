@@ -249,6 +249,9 @@ create table if not exists estimate_calculations (
   keikan_level text,
   sengi_level text,
   zaisan_level text,
+  keikan_reason text,
+  sengi_reason text,
+  zaisan_reason text,
   visit_required boolean default false,
   agent_required boolean default false,
   expense_amount bigint default 0,
@@ -278,6 +281,9 @@ alter table estimate_calculations add column if not exists urgent boolean defaul
 alter table estimate_calculations add column if not exists keikan_level text;
 alter table estimate_calculations add column if not exists sengi_level text;
 alter table estimate_calculations add column if not exists zaisan_level text;
+alter table estimate_calculations add column if not exists keikan_reason text;
+alter table estimate_calculations add column if not exists sengi_reason text;
+alter table estimate_calculations add column if not exists zaisan_reason text;
 alter table estimate_calculations add column if not exists visit_required boolean default false;
 alter table estimate_calculations add column if not exists agent_required boolean default false;
 alter table estimate_calculations add column if not exists memo text;
