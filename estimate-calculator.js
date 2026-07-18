@@ -23,6 +23,8 @@
   const CONSTRUCTION_BURDEN_NOTICE = "この区分は許可取得の可否を示すものではなく、要件確認・証明資料収集の作業負担を見積金額へ反映するためのものです。";
   const CONSTRUCTION_BURDEN_WORK_TYPES = new Set(["建設業許可", "業種追加"]);
   const CONSTRUCTION_BURDEN_FIELDS = ["keikan", "sengi", "zaisan"];
+  const CONSTRUCTION_BURDEN_LEVEL_ORDER = { "低": 0, "中": 1, "高": 2 };
+  const CONSTRUCTION_BURDEN_AUTO_REASON_PREFIX = "【ヒアリング自動判定】";
   const CONSTRUCTION_BURDEN_CONFIG = {
     keikan: {
       label: "経管要件の確認負担",
@@ -152,7 +154,8 @@
   function renderConstructionBurdenField(fieldName) {
     const config = CONSTRUCTION_BURDEN_CONFIG[fieldName];
     const criteria = Object.entries(config.criteria).map(([level, text]) => `<p><strong>${h(level)}：</strong>${h(text)}</p>`).join("");
-    return `<div class="estimate-burden-field" data-field="${h(fieldName)}"><label><span data-field-label>${h(config.label)}</span><select name="${h(fieldName)}"><option>低</option><option>高</option></select></label><p class="estimate-burden-addition" data-burden-addition="${h(fieldName)}" hidden></p><details class="estimate-burden-criteria" data-burden-criteria="${h(fieldName)}" hidden><summary>判定基準を見る</summary><div>${criteria}</div></details><label class="estimate-burden-reason" data-burden-reason="${h(fieldName)}" hidden><span>${h(config.reasonLabel)}</span><textarea name="${h(config.reasonName)}" rows="3"></textarea></label></div>`;
+    const hearingOptions = Object.entries(config.criteria).map(([level, text]) => `<label class="estimate-burden-hearing-option"><input type="checkbox" value="${h(level)}" data-burden-hearing-option="${h(fieldName)}"><span><strong>${h(level)}：</strong>${h(text)}</span></label>`).join("");
+    return `<div class="estimate-burden-field" data-field="${h(fieldName)}"><label><span data-field-label>${h(config.label)}</span><select name="${h(fieldName)}"><option>低</option><option>高</option></select></label><p class="estimate-burden-addition" data-burden-addition="${h(fieldName)}" hidden></p><details class="estimate-burden-hearing" data-burden-hearing="${h(fieldName)}" hidden><summary>ヒアリング回答から自動判定</summary><div class="estimate-burden-hearing-body"><p class="meta">顧客から確認できた内容をすべて選択してください。選択した回答のうち、最も確認負担が高い区分を暫定判定します。</p><div class="estimate-burden-hearing-options">${hearingOptions}</div><div class="estimate-burden-hearing-result-row"><p class="estimate-burden-hearing-result" data-burden-hearing-result="${h(fieldName)}">自動判定：未判定</p><button type="button" class="secondary-btn" data-burden-hearing-clear="${h(fieldName)}">回答をクリア</button></div><p class="meta">自動判定は見積作業負担の目安です。許可可否や法的判断を示すものではなく、判定後も区分を手動で変更できます。</p></div></details><details class="estimate-burden-criteria" data-burden-criteria="${h(fieldName)}" hidden><summary>判定基準を見る</summary><div>${criteria}</div></details><label class="estimate-burden-reason" data-burden-reason="${h(fieldName)}" hidden><span>${h(config.reasonLabel)}</span><textarea name="${h(config.reasonName)}" rows="3"></textarea></label></div>`;
   }
   async function waitForGyoseiApp(maxMs = 10000) { const start = Date.now(); while (Date.now() - start < maxMs) { if (window.GyoseiApp) return window.GyoseiApp; await new Promise(resolve => setTimeout(resolve, 100)); } return window.GyoseiApp || null; }
   async function waitForCurrentUser(app, maxMs = 10000) { const start = Date.now(); while (Date.now() - start < maxMs) { const u = app?.getCurrentUser?.(); if (u?.id) return u; await new Promise(resolve => setTimeout(resolve, 100)); } return app?.getCurrentUser?.() || null; }
@@ -205,9 +208,76 @@
         const addition = root.querySelector(`[data-burden-addition="${fieldName}"]`);
         addition.hidden = !isApplicable;
         addition.textContent = isApplicable ? `現在の選択：${level}　加算額${Math.floor(amount).toLocaleString("ja-JP")}円${level === "中" ? "（現行設定）" : ""}` : "";
+        root.querySelector(`[data-burden-hearing="${fieldName}"]`).hidden = !isApplicable;
         root.querySelector(`[data-burden-criteria="${fieldName}"]`).hidden = !isApplicable;
         root.querySelector(`[data-burden-reason="${fieldName}"]`).hidden = !(isApplicable && level !== "低");
+        syncHearingManualOverride(fieldName);
       });
+    };
+    const getBurdenHearingInputs = (fieldName) => Array.from(root.querySelectorAll(`[data-burden-hearing-option="${fieldName}"]`));
+    const removeAutoReasonLine = (fieldName) => {
+      const reason = form.elements[CONSTRUCTION_BURDEN_CONFIG[fieldName].reasonName];
+      reason.value = String(reason.value || "")
+        .split(/\r?\n/)
+        .filter((line) => !line.startsWith(CONSTRUCTION_BURDEN_AUTO_REASON_PREFIX))
+        .join("\n")
+        .trim();
+    };
+    const syncHearingManualOverride = (fieldName) => {
+      const result = root.querySelector(`[data-burden-hearing-result="${fieldName}"]`);
+      const autoLevel = result?.dataset.autoLevel;
+      const baseText = result?.dataset.baseText;
+      if (!result || !autoLevel || !baseText) return;
+      const currentLevel = form.elements[fieldName].value || "低";
+      result.textContent = currentLevel === autoLevel
+        ? baseText
+        : `${baseText}／現在の選択：${currentLevel}（手動変更）`;
+    };
+    const applyBurdenHearingDecision = (fieldName, { applyLevel = true, updateReason = true } = {}) => {
+      const config = CONSTRUCTION_BURDEN_CONFIG[fieldName];
+      const selected = getBurdenHearingInputs(fieldName)
+        .filter((input) => input.checked)
+        .map((input) => ({ level: input.value, text: config.criteria[input.value] }))
+        .filter((entry) => entry.text);
+      const result = root.querySelector(`[data-burden-hearing-result="${fieldName}"]`);
+      if (!selected.length) {
+        delete result.dataset.autoLevel;
+        delete result.dataset.baseText;
+        result.textContent = "自動判定：未判定（現在の区分は変更していません）";
+        if (updateReason) removeAutoReasonLine(fieldName);
+        return null;
+      }
+      const level = selected.reduce((highest, entry) => (
+        CONSTRUCTION_BURDEN_LEVEL_ORDER[entry.level] > CONSTRUCTION_BURDEN_LEVEL_ORDER[highest]
+          ? entry.level
+          : highest
+      ), "低");
+      if (applyLevel) form.elements[fieldName].value = level;
+      if (updateReason) {
+        const reason = form.elements[config.reasonName];
+        const manualReason = String(reason.value || "")
+          .split(/\r?\n/)
+          .filter((line) => !line.startsWith(CONSTRUCTION_BURDEN_AUTO_REASON_PREFIX))
+          .join("\n")
+          .trim();
+        const autoReason = `${CONSTRUCTION_BURDEN_AUTO_REASON_PREFIX}区分：${level}／回答：${selected.map((entry) => `${entry.level}：${entry.text}`).join("／")}`;
+        reason.value = [autoReason, manualReason].filter(Boolean).join("\n");
+      }
+      const highestCount = selected.filter((entry) => entry.level === level).length;
+      const baseText = `自動判定：${level}（${level}の該当内容${highestCount}件／選択${selected.length}件）`;
+      result.dataset.autoLevel = level;
+      result.dataset.baseText = baseText;
+      syncHearingManualOverride(fieldName);
+      return level;
+    };
+    const restoreBurdenHearingAnswers = (fieldName) => {
+      const config = CONSTRUCTION_BURDEN_CONFIG[fieldName];
+      const reason = String(form.elements[config.reasonName].value || "");
+      const autoReasonLine = reason.split(/\r?\n/).find((line) => line.startsWith(CONSTRUCTION_BURDEN_AUTO_REASON_PREFIX)) || "";
+      getBurdenHearingInputs(fieldName).forEach((input) => {
+        input.checked = !!autoReasonLine && autoReasonLine.includes(`${input.value}：${config.criteria[input.value]}`);
+      });
+      applyBurdenHearingDecision(fieldName, { applyLevel: false, updateReason: false });
     };
     const applyWorkTypeUi = (keepApplicationValue = false) => {
       const wt = form.elements.workType.value;
@@ -254,6 +324,7 @@
       f.keikanReason.value = calc.keikan_reason || "";
       f.sengiReason.value = calc.sengi_reason || "";
       f.zaisanReason.value = calc.zaisan_reason || "";
+      CONSTRUCTION_BURDEN_FIELDS.forEach(restoreBurdenHearingAnswers);
       f.visit.value = calc.visit_required ? "1" : "0";
       f.agent.value = calc.agent_required ? "1" : "0";
       f.urlNotification.value = as01(calc.url_notification || dynamic.urlNotification || dynamic.permitHasWebsite);
@@ -286,7 +357,21 @@
     const toggleSavedCalculationSelection = (id) => { const normalized = String(id); if (!normalized) return; if (selectedSavedCalculationIds.includes(normalized)) selectedSavedCalculationIds = selectedSavedCalculationIds.filter((entry) => entry !== normalized); else selectedSavedCalculationIds = [...selectedSavedCalculationIds, normalized]; };
     const renderSavedList = () => { const appCalcs = app?.getEstimateCalculations?.() || []; const sourceCalcs = appCalcs.length ? appCalcs : localEstimateCalculations; const calcs = sourceCalcs.slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)); const idSet = new Set(calcs.map((entry) => String(entry.id))); selectedSavedCalculationIds = selectedSavedCalculationIds.filter((id) => idSet.has(id)); if (!calcs.length) { savedList.innerHTML = '<p class="meta">保存済みデータはありません。</p>'; return; } const selectedCount = selectedSavedCalculationIds.length; savedList.innerHTML = `<div class="row-actions"><button type="button" class="secondary-btn" data-calc-action="select_all">全選択</button><button type="button" class="secondary-btn" data-calc-action="clear_all">全解除</button><button type="button" class="danger-btn" data-calc-action="bulk_delete">選択を一括削除</button><span class="meta">選択件数: ${h(String(selectedCount))}件 ${selectedCount ? '' : '（対象を選択してください）'}</span></div><p class="meta">保存済み概算見積は新しい順で表示しています。</p><div class="saved-calc-list">${calcs.map(c => `<article class="panel saved-calc-card"><div class="saved-calc-header"><label><input type="checkbox" data-calc-action="toggle_select" data-id="${h(c.id)}" ${selectedSavedCalculationIds.includes(String(c.id)) ? 'checked' : ''}/> 選択</label> <strong>${h(c.project_name || "-")}</strong> / <span>${h(c.work_type || "-")}</span> / <strong>${h(yen(c.total || 0))}</strong> ${getReflectionInfo(c).isReflected ? `<span class="status-badge">反映済み</span>` : ''}</div><div class="saved-calc-meta">作成日: ${h(fmtDate(c.created_at))} / 顧客名: ${h(c.client_name || c.customer_name || "-")} / 申請区分: ${h(c.application_type || "-")}</div><div class="saved-calc-money">基本報酬: ${h(yen(c.base_fee || 0))} / 加算: ${h(yen(c.addon_fee || 0))} / 実費: ${h(yen(c.expense_amount || 0))} / 消費税: ${h(yen(c.tax || 0))}</div><div class="saved-calc-note">メモ: ${h(c.memo || "-")}</div><div class="row-actions saved-calc-actions"><button type="button" data-calc-action="detail" data-id="${h(c.id)}" class="secondary-btn">詳細表示</button><button type="button" data-calc-action="reload" data-id="${h(c.id)}" class="secondary-btn">フォームに再読込</button><button type="button" data-calc-action="reflect" data-id="${h(c.id)}" class="secondary-btn">見積へ反映</button><button type="button" data-calc-action="print" data-id="${h(c.id)}" class="secondary-btn">概算書出力</button><button type="button" data-calc-action="delete" data-id="${h(c.id)}" class="danger-btn">削除</button></div></article>`).join('')}</div>`; };
     form.elements.workType.addEventListener('change', () => { applyWorkTypeUi(false); run(); });
-    CONSTRUCTION_BURDEN_FIELDS.forEach((fieldName) => form.elements[fieldName].addEventListener('change', run));
+    CONSTRUCTION_BURDEN_FIELDS.forEach((fieldName) => {
+      form.elements[fieldName].addEventListener('change', () => {
+        syncHearingManualOverride(fieldName);
+        run();
+      });
+      getBurdenHearingInputs(fieldName).forEach((input) => input.addEventListener('change', () => {
+        applyBurdenHearingDecision(fieldName);
+        run();
+      }));
+      root.querySelector(`[data-burden-hearing-clear="${fieldName}"]`).addEventListener('click', () => {
+        getBurdenHearingInputs(fieldName).forEach((input) => { input.checked = false; });
+        applyBurdenHearingDecision(fieldName);
+        run();
+      });
+    });
     root.querySelector('#calc-run').addEventListener('click', run);
     root.querySelector('#calc-save').addEventListener('click', async () => {
       const sb = app?.getSupabaseClient?.();
