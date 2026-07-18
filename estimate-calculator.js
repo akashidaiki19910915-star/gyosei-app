@@ -6,7 +6,7 @@
   const ESTIMATE_CALCULATION_MUTATION_COLUMNS = [
     "user_id", "client_id", "project_name", "work_type", "application_type", "corporate_type", "governor_type",
     "general_specific", "industry_count", "officer_count", "office_count", "document_level", "urgent",
-    "keikan_level", "sengi_level", "zaisan_level", "keikan_reason", "sengi_reason", "zaisan_reason",
+    "keikan_level", "sengi_level", "zaisan_level", "keikan_reason", "sengi_reason", "zaisan_reason", "document_level_reason",
     "expense_amount", "discount_amount", "memo", "base_fee", "addon_fee", "taxable_subtotal", "tax", "total",
     "addon_breakdown", "reflected_estimate_id", "reflected_at",
   ];
@@ -25,6 +25,7 @@
   const CONSTRUCTION_BURDEN_FIELDS = ["keikan", "sengi", "zaisan"];
   const CONSTRUCTION_BURDEN_LEVEL_ORDER = { "低": 0, "中": 1, "高": 2 };
   const CONSTRUCTION_BURDEN_AUTO_REASON_PREFIX = "【ヒアリング自動判定】";
+  const WORK_DIFFICULTY_AUTO_REASON_PREFIX = "【業務別ヒアリング自動判定】";
   const CONSTRUCTION_BURDEN_CONFIG = {
     keikan: {
       label: "経管要件の確認負担",
@@ -57,6 +58,125 @@
         "低": "一般建設業で、直前決算の自己資本が500万円以上、または5年目更新で要件が明確。",
         "中": "一般建設業で500万円以上の預金残高証明を使用する、新設法人・個人、基準付近で資料確認が必要。",
         "高": "特定建設業、または欠損・流動比率・資本金・自己資本について詳細確認や基準抵触の可能性がある。",
+      },
+    },
+  };
+  const WORK_DIFFICULTY_CONFIG = {
+    "建設業許可": {
+      label: "申請資料の確認負担",
+      addonAmounts: { "中": 20000, "高": 40000 },
+      criteria: {
+        "低": "必要年分の決算書、登記簿、工事関係資料、常勤資料などが整理され、申請内容との照合が容易。",
+        "中": "証明書の取寄せ、一部年度・工事資料の追加収集、記載内容の照合や軽微な補足説明が必要。",
+        "高": "複数年度・複数法人にまたがる資料不足、内容不一致、実績の再整理、行政庁への事前確認が必要。",
+      },
+    },
+    "業種追加": {
+      label: "追加業種資料の確認負担",
+      addonAmounts: { "中": 15000, "高": 30000 },
+      criteria: {
+        "低": "既存許可資料と追加業種の資格・工事実績資料がそろい、対象業種との対応関係が明確。",
+        "中": "追加業種の工事資料取寄せ、業種区分の照合、一部期間・請負内容の補足確認が必要。",
+        "高": "複数業種・複数勤務先の実績整理、業種判定の事前相談、資料不足や期間重複の詳細確認が必要。",
+      },
+    },
+    "決算変更届": {
+      label: "決算資料の整理負担",
+      addonAmounts: { "中": 10000, "高": 25000 },
+      criteria: {
+        "低": "対象年度の決算書、税務申告書、工事経歴書、直前三年の工事施工金額資料がそろっている。",
+        "中": "工事台帳・請求書との照合、工事区分の整理、一部資料の追加収集や税理士確認が必要。",
+        "高": "複数年度の未提出、工事資料の大幅不足、決算数値との不一致、工事実績の再構成が必要。",
+      },
+    },
+    "各種変更届": {
+      label: "変更事項の整理負担",
+      addonAmounts: { "中": 10000, "高": 25000 },
+      criteria: {
+        "低": "単一の変更で、変更日・登記事項・裏付け資料が明確かつ提出期限内。",
+        "中": "複数変更、過去日に遡る変更、役員・営業所等の関連資料の追加確認が必要。",
+        "高": "未届変更が累積し、変更順序・効力発生日が不明確、他の許可事項との整合や事前相談が必要。",
+      },
+    },
+    "宅建業免許": {
+      label: "宅建業免許資料の確認負担",
+      addonAmounts: { "中": 15000, "高": 30000 },
+      criteria: {
+        "低": "営業所、専任宅建士、役員、財務関係の必要資料がそろい、使用権限も明確。",
+        "中": "複数営業所・複数役員、使用承諾、専任性や常勤性について追加資料の確認が必要。",
+        "高": "営業所使用権限・専任性の資料不足、複雑な役員関係、複数行政庁との調整や事前相談が必要。",
+      },
+    },
+    "株式会社設立": {
+      label: "会社設計の確認負担",
+      addonAmounts: { "中": 10000, "高": 25000 },
+      criteria: {
+        "低": "発起人・役員が少数で、現金出資、標準的な機関設計・定款内容で確認事項が明確。",
+        "中": "発起人・役員が複数、事業目的の調整、任期・株式譲渡制限・資本構成の個別確認が必要。",
+        "高": "現物出資、種類株式、複雑な機関設計、外部投資家、専門家間の調整を伴う。",
+      },
+    },
+    "合同会社設立": {
+      label: "会社設計の確認負担",
+      addonAmounts: { "中": 10000, "高": 20000 },
+      criteria: {
+        "低": "社員が少数で、現金出資、標準的な定款・利益配分で確認事項が明確。",
+        "中": "社員が複数で、業務執行、代表、利益配分、退社時の取扱いについて個別調整が必要。",
+        "高": "法人社員、現物出資、外国関係者、複雑な利益配分・意思決定設計や専門家調整を伴う。",
+      },
+    },
+    "創業融資": {
+      label: "事業計画作成の確認負担",
+      addonAmounts: { "中": 20000, "高": 40000 },
+      criteria: {
+        "低": "事業内容、必要資金、見積書、自己資金、売上・経費見込みの根拠が整理されている。",
+        "中": "市場・競合、売上根拠、資金使途、返済計画について追加ヒアリングと資料補強が必要。",
+        "高": "複数事業・複数調達、資金計画の大幅な組直し、既存借入や収支根拠の詳細整理が必要。",
+      },
+    },
+    "車庫証明": {
+      label: "図面・使用権限資料の確認負担",
+      addonAmounts: { "中": 3000, "高": 8000 },
+      criteria: {
+        "低": "自己所有地または明確な契約駐車場で、所在図・配置図に必要な寸法情報がそろっている。",
+        "中": "使用承諾証明書の取得、現地寸法確認、所在図・配置図の追加作成が必要。",
+        "高": "保管場所の境界・使用権限・本拠との位置関係が不明確、複数台・複数区画や警察署確認が必要。",
+      },
+    },
+    "会社設立": {
+      label: "定款・機関設計の確認負担",
+      addonAmounts: { "中": 10000, "高": 25000 },
+      criteria: {
+        "低": "会社形態、出資者、役員、事業目的、資本金が確定し、標準的な定款設計で対応できる。",
+        "中": "複数関係者、事業目的・役員任期・持分や株式構成などの個別調整が必要。",
+        "高": "現物出資、外国関係者、複雑な機関・資本設計、種類株式等の専門家調整を伴う。",
+      },
+    },
+    "産業廃棄物収集運搬業許可": {
+      label: "許可要件資料の確認負担",
+      addonAmounts: { "中": 20000, "高": 40000 },
+      criteria: {
+        "低": "単一都道府県・少数車両で、講習修了証、車検証、駐車場、財務資料がそろっている。",
+        "中": "複数車両・複数品目、賃貸車両・駐車場、追加の使用権限資料や財務説明が必要。",
+        "高": "複数都道府県、特殊車両・品目、積替え保管等の個別確認、財務資料不足や行政庁との事前相談が必要。",
+      },
+    },
+    "在留資格関連": {
+      label: "疎明資料作成の確認負担",
+      addonAmounts: { "中": 15000, "高": 30000 },
+      criteria: {
+        "低": "本人情報、契約・雇用内容、所属機関資料、在留状況が明確で必要資料がそろっている。",
+        "中": "職務内容・学歴経歴・身分関係の追加説明、海外書類の取寄せや翻訳が必要。",
+        "高": "複雑な在留歴・活動変更、説明の不一致、複数国書類、所属機関側資料の大幅補強が必要。",
+      },
+    },
+    "古物商許可": {
+      label: "古物商許可資料の確認負担",
+      addonAmounts: { "中": 10000, "高": 25000 },
+      criteria: {
+        "低": "単一営業所・少数役員で、住民票、略歴書、誓約書、営業所使用権限がそろっている。",
+        "中": "複数営業所・複数役員、URL利用、使用承諾などの追加資料確認が必要。",
+        "高": "営業所使用権限や管理者関係が不明確、過去変更の未整理、外国関係書類や警察署への事前確認が必要。",
       },
     },
   };
@@ -151,11 +271,17 @@
     if (level !== "高") return 0;
     return n(CONSTRUCTION_BURDEN_CONFIG[fieldName]?.addonAmounts?.[workType]);
   }
+  function getWorkDifficultyAddonAmount(workType, level) {
+    return n(WORK_DIFFICULTY_CONFIG[workType]?.addonAmounts?.[level]);
+  }
   function renderConstructionBurdenField(fieldName) {
     const config = CONSTRUCTION_BURDEN_CONFIG[fieldName];
     const criteria = Object.entries(config.criteria).map(([level, text]) => `<p><strong>${h(level)}：</strong>${h(text)}</p>`).join("");
     const hearingOptions = Object.entries(config.criteria).map(([level, text]) => `<label class="estimate-burden-hearing-option"><input type="checkbox" value="${h(level)}" data-burden-hearing-option="${h(fieldName)}"><span><strong>${h(level)}：</strong>${h(text)}</span></label>`).join("");
     return `<div class="estimate-burden-field" data-field="${h(fieldName)}"><label><span data-field-label>${h(config.label)}</span><select name="${h(fieldName)}"><option>低</option><option>高</option></select></label><p class="estimate-burden-addition" data-burden-addition="${h(fieldName)}" hidden></p><details class="estimate-burden-hearing" data-burden-hearing="${h(fieldName)}" hidden><summary>ヒアリング回答から自動判定</summary><div class="estimate-burden-hearing-body"><p class="meta">顧客から確認できた内容をすべて選択してください。選択した回答のうち、最も確認負担が高い区分を暫定判定します。</p><div class="estimate-burden-hearing-options">${hearingOptions}</div><div class="estimate-burden-hearing-result-row"><p class="estimate-burden-hearing-result" data-burden-hearing-result="${h(fieldName)}">自動判定：未判定</p><button type="button" class="secondary-btn" data-burden-hearing-clear="${h(fieldName)}">回答をクリア</button></div><p class="meta">自動判定は見積作業負担の目安です。許可可否や法的判断を示すものではなく、判定後も区分を手動で変更できます。</p></div></details><details class="estimate-burden-criteria" data-burden-criteria="${h(fieldName)}" hidden><summary>判定基準を見る</summary><div>${criteria}</div></details><label class="estimate-burden-reason" data-burden-reason="${h(fieldName)}" hidden><span>${h(config.reasonLabel)}</span><textarea name="${h(config.reasonName)}" rows="3"></textarea></label></div>`;
+  }
+  function renderWorkDifficultyField() {
+    return `<div class="estimate-burden-field estimate-work-difficulty-field" data-field="documentLevel"><label><span data-field-label>書類不足レベル</span><select name="documentLevel"><option>低</option><option>中</option><option>高</option></select></label><p class="estimate-burden-addition" data-work-difficulty-addition></p><details class="estimate-burden-hearing" data-work-difficulty-hearing><summary>ヒアリング回答から自動判定</summary><div class="estimate-burden-hearing-body"><p class="meta">顧客から確認できた内容をすべて選択してください。選択した回答のうち、最も作業負担が高い区分を暫定判定します。</p><div class="estimate-burden-hearing-options" data-work-difficulty-options></div><div class="estimate-burden-hearing-result-row"><p class="estimate-burden-hearing-result" data-work-difficulty-result>自動判定：未判定</p><button type="button" class="secondary-btn" data-work-difficulty-clear>回答をクリア</button></div><p class="meta">自動判定は見積作業負担の目安です。許可可否、融資可否、在留可否その他の法的・行政上の結論を示すものではなく、判定後も区分を手動で変更できます。</p></div></details><label class="estimate-burden-reason" data-work-difficulty-reason hidden><span data-work-difficulty-reason-label>難易度の判定理由</span><textarea name="documentLevelReason" rows="3"></textarea></label></div>`;
   }
   async function waitForGyoseiApp(maxMs = 10000) { const start = Date.now(); while (Date.now() - start < maxMs) { if (window.GyoseiApp) return window.GyoseiApp; await new Promise(resolve => setTimeout(resolve, 100)); } return window.GyoseiApp || null; }
   async function waitForCurrentUser(app, maxMs = 10000) { const start = Date.now(); while (Date.now() - start < maxMs) { const u = app?.getCurrentUser?.(); if (u?.id) return u; await new Promise(resolve => setTimeout(resolve, 100)); } return app?.getCurrentUser?.() || null; }
@@ -187,6 +313,7 @@
   async function init() {
     const root = document.getElementById("estimate-calculator-root"); if (!root) return;
     root.innerHTML = `<form id="estimate-calc-form" class="form"><div class="grid cols-2"><label data-field="clientId">顧客<select name="clientId"></select></label><label data-field="projectName">案件名<input name="projectName" /></label><label data-field="workType">業務種別<select name="workType"><option>建設業許可</option><option>業種追加</option><option>決算変更届</option><option>各種変更届</option><option>宅建業免許</option><option>株式会社設立</option><option>合同会社設立</option><option>創業融資</option><option>車庫証明</option><option>会社設立</option><option>産業廃棄物収集運搬業許可</option><option>在留資格関連</option><option>古物商許可</option></select></label><label data-field="applicationType">申請区分<select name="applicationType"></select></label><label data-field="corporateType">法人/個人<select name="corporateType"><option>法人</option><option>個人</option></select></label><label data-field="governorType">知事/大臣<select name="governorType"><option>知事</option><option>大臣</option></select></label><label data-field="generalSpecific">一般/特定<select name="generalSpecific"><option>一般</option><option>特定</option></select></label><label data-field="industryCount">業種数<input name="industryCount" type="number" value="1" min="1" /></label><label data-field="officerCount">役員数<input name="officerCount" type="number" value="2" min="0" /></label><label data-field="officeCount">営業所数<input name="officeCount" type="number" value="1" min="1" /></label><label data-field="documentLevel">書類不足レベル<select name="documentLevel"><option>低</option><option>中</option><option>高</option></select></label><label data-field="urgent">急ぎ対応<select name="urgent"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="keikan">経管確認難易度<select name="keikan"><option>低</option><option>高</option></select></label><label data-field="sengi">専技確認難易度<select name="sengi"><option>低</option><option>高</option></select></label><label data-field="zaisan">財産要件確認難易度<select name="zaisan"><option>低</option><option>高</option></select></label><label data-field="visit">訪問対応<select name="visit"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="agent">代理取得<select name="agent"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="urlNotification">URL届出<select name="urlNotification"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="selfCertification">自認書<select name="selfCertification"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="usageConsent">使用承諾証明書<select name="usageConsent"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="baseLocationCheck">保管場所の本拠確認<select name="baseLocationCheck"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="qualifiedStaffCheck">専任者/資格者確認<select name="qualifiedStaffCheck"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="guaranteeAssociation">保証協会/営業保証金<select name="guaranteeAssociation"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="courseCompletion">講習修了証<select name="courseCompletion"><option value="0">未確認</option><option value="1">確認済</option></select></label><label data-field="renewalDeadline">更新期限<select name="renewalDeadline"><option value="0">通常</option><option value="1">期限迫る</option></select></label><label data-field="expense">実費<input name="expense" type="number" value="0" min="0" /></label><label data-field="discount">値引き<input name="discount" type="number" value="0" min="0" /></label></div><label data-field="memo">メモ<textarea name="memo"></textarea></label><div class="row-actions"><button type="button" id="calc-run" class="secondary-btn">再計算</button><button type="button" id="calc-save">保存</button><button type="button" id="calc-apply">見積へ反映</button></div><div id="calc-result" class="panel"></div></form><section class="panel" id="calc-saved-list-wrap"><h3>保存済み概算見積</h3><div id="calc-saved-list"></div></section>`;
+    root.querySelector('[data-field="documentLevel"]').outerHTML = renderWorkDifficultyField();
     root.querySelector('[data-field="keikan"]').insertAdjacentHTML("beforebegin", `<p id="construction-burden-notice" class="estimate-burden-notice" hidden>${h(CONSTRUCTION_BURDEN_NOTICE)}</p>`);
     CONSTRUCTION_BURDEN_FIELDS.forEach((fieldName) => {
       root.querySelector(`[data-field="${fieldName}"]`).outerHTML = renderConstructionBurdenField(fieldName);
@@ -196,6 +323,120 @@
     (app?.getClients?.() || []).forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.name || c.companyName || c.contactName || '未設定'; cs.appendChild(o); });
     const visibleFieldsFor = (workType) => new Set([...(FIELD_CONFIG.common || []), ...(FIELD_CONFIG[workType] || [])]);
     const labelFor = (workType, fieldName) => FIELD_LABELS[workType]?.[fieldName] || FIELD_LABELS.default[fieldName] || null;
+    const workDifficultyStateByType = new Map();
+    const getWorkDifficultyInputs = () => Array.from(root.querySelectorAll("[data-work-difficulty-option]"));
+    const removeWorkDifficultyAutoReasonLine = () => {
+      const reason = form.elements.documentLevelReason;
+      reason.value = String(reason.value || "")
+        .split(/\r?\n/)
+        .filter((line) => !line.startsWith(WORK_DIFFICULTY_AUTO_REASON_PREFIX))
+        .join("\n")
+        .trim();
+    };
+    const syncWorkDifficultyManualOverride = () => {
+      const result = root.querySelector("[data-work-difficulty-result]");
+      const autoLevel = result?.dataset.autoLevel;
+      const baseText = result?.dataset.baseText;
+      if (!result || !autoLevel || !baseText) return;
+      const currentLevel = form.elements.documentLevel.value || "低";
+      result.textContent = currentLevel === autoLevel
+        ? baseText
+        : `${baseText}／現在の選択：${currentLevel}（手動変更）`;
+    };
+    const updateWorkDifficultySelectionUi = (workType) => {
+      const config = WORK_DIFFICULTY_CONFIG[workType];
+      if (!config) return;
+      const level = form.elements.documentLevel.value || "低";
+      const amount = getWorkDifficultyAddonAmount(workType, level);
+      root.querySelector("[data-work-difficulty-addition]").textContent = `現在の選択：${level}　加算額${Math.floor(amount).toLocaleString("ja-JP")}円`;
+      root.querySelector("[data-work-difficulty-reason]").hidden = level === "低";
+      root.querySelector("[data-work-difficulty-reason-label]").textContent = `${config.label}の判定理由`;
+      syncWorkDifficultyManualOverride();
+    };
+    const applyWorkDifficultyDecision = ({ applyLevel = true, updateReason = true } = {}) => {
+      const workType = form.elements.workType.value;
+      const config = WORK_DIFFICULTY_CONFIG[workType];
+      if (!config) return null;
+      const selected = getWorkDifficultyInputs()
+        .filter((input) => input.checked)
+        .map((input) => ({ level: input.value, text: config.criteria[input.value] }))
+        .filter((entry) => entry.text);
+      const result = root.querySelector("[data-work-difficulty-result]");
+      if (!selected.length) {
+        delete result.dataset.autoLevel;
+        delete result.dataset.baseText;
+        result.textContent = "自動判定：未判定（現在の区分は変更していません）";
+        if (updateReason) removeWorkDifficultyAutoReasonLine();
+        updateWorkDifficultySelectionUi(workType);
+        return null;
+      }
+      const level = selected.reduce((highest, entry) => (
+        CONSTRUCTION_BURDEN_LEVEL_ORDER[entry.level] > CONSTRUCTION_BURDEN_LEVEL_ORDER[highest]
+          ? entry.level
+          : highest
+      ), "低");
+      if (applyLevel) form.elements.documentLevel.value = level;
+      if (updateReason) {
+        const reason = form.elements.documentLevelReason;
+        const manualReason = String(reason.value || "")
+          .split(/\r?\n/)
+          .filter((line) => !line.startsWith(WORK_DIFFICULTY_AUTO_REASON_PREFIX))
+          .join("\n")
+          .trim();
+        const autoReason = `${WORK_DIFFICULTY_AUTO_REASON_PREFIX}区分：${level}／回答：${selected.map((entry) => `${entry.level}：${entry.text}`).join("／")}`;
+        reason.value = [autoReason, manualReason].filter(Boolean).join("\n");
+      }
+      const highestCount = selected.filter((entry) => entry.level === level).length;
+      const baseText = `自動判定：${level}（${level}の該当内容${highestCount}件／選択${selected.length}件）`;
+      result.dataset.autoLevel = level;
+      result.dataset.baseText = baseText;
+      updateWorkDifficultySelectionUi(workType);
+      return level;
+    };
+    const restoreWorkDifficultyAnswers = () => {
+      const workType = form.elements.workType.value;
+      const config = WORK_DIFFICULTY_CONFIG[workType];
+      if (!config) return;
+      const reason = String(form.elements.documentLevelReason.value || "");
+      const autoReasonLine = reason.split(/\r?\n/).find((line) => line.startsWith(WORK_DIFFICULTY_AUTO_REASON_PREFIX)) || "";
+      getWorkDifficultyInputs().forEach((input) => {
+        input.checked = !!autoReasonLine && autoReasonLine.includes(`${input.value}：${config.criteria[input.value]}`);
+      });
+      applyWorkDifficultyDecision({ applyLevel: false, updateReason: false });
+    };
+    const renderWorkDifficultyOptions = (workType, selectedLevels = []) => {
+      const config = WORK_DIFFICULTY_CONFIG[workType];
+      const options = root.querySelector("[data-work-difficulty-options]");
+      options.innerHTML = Object.entries(config.criteria).map(([level, text]) => `<label class="estimate-burden-hearing-option"><input type="checkbox" value="${h(level)}" data-work-difficulty-option ${selectedLevels.includes(level) ? "checked" : ""}><span><strong>${h(level)}：</strong>${h(text)}</span></label>`).join("");
+      getWorkDifficultyInputs().forEach((input) => input.addEventListener("change", () => {
+        applyWorkDifficultyDecision();
+        run();
+      }));
+    };
+    const activateWorkDifficultyUi = (workType) => {
+      const config = WORK_DIFFICULTY_CONFIG[workType];
+      const panel = root.querySelector(".estimate-work-difficulty-field");
+      if (!config || !panel) return;
+      const previousWorkType = panel.dataset.workType || "";
+      if (previousWorkType !== workType) {
+        if (previousWorkType && WORK_DIFFICULTY_CONFIG[previousWorkType]) {
+          workDifficultyStateByType.set(previousWorkType, {
+            level: form.elements.documentLevel.value || "低",
+            reason: form.elements.documentLevelReason.value || "",
+            selectedLevels: getWorkDifficultyInputs().filter((input) => input.checked).map((input) => input.value),
+          });
+        }
+        const savedState = workDifficultyStateByType.get(workType);
+        panel.dataset.workType = workType;
+        form.elements.documentLevel.value = savedState?.level || "低";
+        form.elements.documentLevelReason.value = savedState?.reason || "";
+        renderWorkDifficultyOptions(workType, savedState?.selectedLevels || []);
+        if (savedState?.selectedLevels?.length) applyWorkDifficultyDecision({ applyLevel: false, updateReason: false });
+        else applyWorkDifficultyDecision({ applyLevel: false, updateReason: false });
+      }
+      panel.querySelector("[data-field-label]").textContent = config.label;
+      updateWorkDifficultySelectionUi(workType);
+    };
     const updateConstructionBurdenUi = (workType, visibleFields) => {
       const isConstructionBurdenWork = CONSTRUCTION_BURDEN_WORK_TYPES.has(workType);
       root.querySelector("#construction-burden-notice").hidden = !isConstructionBurdenWork;
@@ -290,6 +531,7 @@
         if (labelText && labelElement) labelElement.textContent = labelText;
         else if (labelText) field.firstChild.textContent = labelText;
       });
+      activateWorkDifficultyUi(wt);
       const burdenLevels = CONSTRUCTION_BURDEN_WORK_TYPES.has(wt) ? ["低", "中", "高"] : ["低", "高"];
       CONSTRUCTION_BURDEN_FIELDS.forEach((fieldName) => setOptions(form.elements[fieldName], burdenLevels, form.elements[fieldName].value));
       const currentApplication = keepApplicationValue ? form.elements.applicationType.value : '';
@@ -317,6 +559,8 @@
       f.officerCount.value = n(calc.officer_count) || 2;
       f.officeCount.value = n(calc.office_count) || 1;
       f.documentLevel.value = calc.document_level || "低";
+      f.documentLevelReason.value = calc.document_level_reason || "";
+      restoreWorkDifficultyAnswers();
       f.urgent.value = calc.urgent ? "1" : "0";
       setLevel(f.keikan, calc.keikan_level);
       setLevel(f.sengi, calc.sengi_level);
@@ -357,6 +601,15 @@
     const toggleSavedCalculationSelection = (id) => { const normalized = String(id); if (!normalized) return; if (selectedSavedCalculationIds.includes(normalized)) selectedSavedCalculationIds = selectedSavedCalculationIds.filter((entry) => entry !== normalized); else selectedSavedCalculationIds = [...selectedSavedCalculationIds, normalized]; };
     const renderSavedList = () => { const appCalcs = app?.getEstimateCalculations?.() || []; const sourceCalcs = appCalcs.length ? appCalcs : localEstimateCalculations; const calcs = sourceCalcs.slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)); const idSet = new Set(calcs.map((entry) => String(entry.id))); selectedSavedCalculationIds = selectedSavedCalculationIds.filter((id) => idSet.has(id)); if (!calcs.length) { savedList.innerHTML = '<p class="meta">保存済みデータはありません。</p>'; return; } const selectedCount = selectedSavedCalculationIds.length; savedList.innerHTML = `<div class="row-actions"><button type="button" class="secondary-btn" data-calc-action="select_all">全選択</button><button type="button" class="secondary-btn" data-calc-action="clear_all">全解除</button><button type="button" class="danger-btn" data-calc-action="bulk_delete">選択を一括削除</button><span class="meta">選択件数: ${h(String(selectedCount))}件 ${selectedCount ? '' : '（対象を選択してください）'}</span></div><p class="meta">保存済み概算見積は新しい順で表示しています。</p><div class="saved-calc-list">${calcs.map(c => `<article class="panel saved-calc-card"><div class="saved-calc-header"><label><input type="checkbox" data-calc-action="toggle_select" data-id="${h(c.id)}" ${selectedSavedCalculationIds.includes(String(c.id)) ? 'checked' : ''}/> 選択</label> <strong>${h(c.project_name || "-")}</strong> / <span>${h(c.work_type || "-")}</span> / <strong>${h(yen(c.total || 0))}</strong> ${getReflectionInfo(c).isReflected ? `<span class="status-badge">反映済み</span>` : ''}</div><div class="saved-calc-meta">作成日: ${h(fmtDate(c.created_at))} / 顧客名: ${h(c.client_name || c.customer_name || "-")} / 申請区分: ${h(c.application_type || "-")}</div><div class="saved-calc-money">基本報酬: ${h(yen(c.base_fee || 0))} / 加算: ${h(yen(c.addon_fee || 0))} / 実費: ${h(yen(c.expense_amount || 0))} / 消費税: ${h(yen(c.tax || 0))}</div><div class="saved-calc-note">メモ: ${h(c.memo || "-")}</div><div class="row-actions saved-calc-actions"><button type="button" data-calc-action="detail" data-id="${h(c.id)}" class="secondary-btn">詳細表示</button><button type="button" data-calc-action="reload" data-id="${h(c.id)}" class="secondary-btn">フォームに再読込</button><button type="button" data-calc-action="reflect" data-id="${h(c.id)}" class="secondary-btn">見積へ反映</button><button type="button" data-calc-action="print" data-id="${h(c.id)}" class="secondary-btn">概算書出力</button><button type="button" data-calc-action="delete" data-id="${h(c.id)}" class="danger-btn">削除</button></div></article>`).join('')}</div>`; };
     form.elements.workType.addEventListener('change', () => { applyWorkTypeUi(false); run(); });
+    form.elements.documentLevel.addEventListener("change", () => {
+      updateWorkDifficultySelectionUi(form.elements.workType.value);
+      run();
+    });
+    root.querySelector("[data-work-difficulty-clear]").addEventListener("click", () => {
+      getWorkDifficultyInputs().forEach((input) => { input.checked = false; });
+      applyWorkDifficultyDecision();
+      run();
+    });
     CONSTRUCTION_BURDEN_FIELDS.forEach((fieldName) => {
       form.elements[fieldName].addEventListener('change', () => {
         syncHearingManualOverride(fieldName);
@@ -397,6 +650,7 @@
         officer_count: n(f.officerCount.value),
         office_count: n(f.officeCount.value),
         document_level: f.documentLevel.value,
+        document_level_reason: reasonOrNull(f.documentLevelReason),
         urgent: n(f.urgent.value) > 0,
         keikan_level: f.keikan.value,
         sengi_level: f.sengi.value,

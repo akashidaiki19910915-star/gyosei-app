@@ -277,6 +277,7 @@ alter table estimate_calculations add column if not exists industry_count intege
 alter table estimate_calculations add column if not exists officer_count integer default 0;
 alter table estimate_calculations add column if not exists office_count integer default 1;
 alter table estimate_calculations add column if not exists document_level text;
+alter table estimate_calculations add column if not exists document_level_reason text;
 alter table estimate_calculations add column if not exists urgent boolean default false;
 alter table estimate_calculations add column if not exists keikan_level text;
 alter table estimate_calculations add column if not exists sengi_level text;
