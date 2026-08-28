@@ -5,7 +5,7 @@
   };
   const ESTIMATE_CALCULATION_MUTATION_COLUMNS = [
     "user_id", "client_id", "project_name", "work_type", "application_type", "corporate_type", "governor_type",
-    "general_specific", "industry_count", "officer_count", "office_count", "document_level", "urgent",
+    "general_specific", "industry_count", "officer_count", "office_count", "document_level", "urgent", "visit_required", "agent_required",
     "keikan_level", "sengi_level", "zaisan_level", "keikan_reason", "sengi_reason", "zaisan_reason", "document_level_reason",
     "expense_amount", "discount_amount", "memo", "base_fee", "addon_fee", "taxable_subtotal", "tax", "total",
     "addon_breakdown", "reflected_estimate_id", "reflected_at",
@@ -143,6 +143,15 @@
         "高": "保管場所の境界・使用権限・本拠との位置関係が不明確、複数台・複数区画や警察署確認が必要。",
       },
     },
+    "ナンバープレート変更": {
+      label: "登録・車両資料の確認負担",
+      addonAmounts: { "中": 5000, "高": 10000 },
+      criteria: {
+        "低": "車検証、本人確認資料、委任状がそろい、所有者・使用者・変更理由と住所のつながりが明確。",
+        "中": "住所・氏名変更の証明書、車庫証明、希望番号の申込みなど、追加資料または事前手配が必要。",
+        "高": "複数回の住所移転、所有者と使用者の関係、紛失・盗難、書類不一致などにより、追加疎明や運輸支局等への事前確認が必要。",
+      },
+    },
     "会社設立": {
       label: "定款・機関設計の確認負担",
       addonAmounts: { "中": 10000, "高": 25000 },
@@ -195,6 +204,8 @@
     "創業融資|事業計画書作成": 80000,
     "創業融資|面談対策込み": 120000,
     "車庫証明": 10000,
+    "ナンバープレート変更|普通車": 22000,
+    "ナンバープレート変更|軽自動車": 15000,
     "会社設立|株式会社": 90000,
     "会社設立|合同会社": 70000,
     "産業廃棄物収集運搬業許可|新規": 140000,
@@ -217,10 +228,15 @@
       "合同会社設立": ["設立"],
       "創業融資": ["事業計画書作成", "面談対策込み"],
       "車庫証明": ["新規", "変更", "代替"],
+      "ナンバープレート変更": ["管轄変更（通常番号）", "管轄変更（希望番号）", "希望番号への変更", "再交付・番号変更"],
       "会社設立": ["株式会社", "合同会社"],
       "産業廃棄物収集運搬業許可": ["新規"],
       "在留資格関連": ["認定", "変更", "更新"],
       "古物商許可": ["新規"],
+    },
+    generalSpecificDefault: ["一般", "特定"],
+    generalSpecificByWorkType: {
+      "ナンバープレート変更": ["普通車", "軽自動車"],
     },
   };
 
@@ -235,6 +251,7 @@
     "合同会社設立": ["officerCount", "documentLevel", "urgent", "visit", "agent"],
     "創業融資": ["documentLevel", "urgent", "keikan", "sengi", "zaisan", "visit", "agent"],
     "車庫証明": ["industryCount", "selfCertification", "usageConsent", "baseLocationCheck", "documentLevel", "urgent", "visit", "agent"],
+    "ナンバープレート変更": ["generalSpecific", "industryCount", "documentLevel", "urgent", "visit", "agent"],
     "会社設立": ["officerCount", "documentLevel", "urgent", "visit", "agent"],
     "産業廃棄物収集運搬業許可": ["corporateType", "industryCount", "officeCount", "courseCompletion", "documentLevel", "urgent", "visit", "agent"],
     "在留資格関連": ["industryCount", "renewalDeadline", "documentLevel", "urgent", "visit", "agent"],
@@ -254,6 +271,7 @@
     "合同会社設立": { officerCount: "社員数", documentLevel: "設計・確認事項の多さ", visit: "許認可同時相談", agent: "定款・登記連携調整" },
     "創業融資": { documentLevel: "事業計画作成難易度", keikan: "資金繰り表作成", sengi: "面談対策", zaisan: "補助金・許認可併用確認", visit: "面談同席", agent: "追加資料作成" },
     "車庫証明": { industryCount: "台数", selfCertification: "自認書", usageConsent: "使用承諾証明書", baseLocationCheck: "保管場所の本拠確認", documentLevel: "図面・資料作成難易度", visit: "現地調査", agent: "使用承諾等の取得支援" },
+    "ナンバープレート変更": { generalSpecific: "車種", industryCount: "台数", documentLevel: "登録・車両資料の確認難易度", visit: "車両持込・現地対応", agent: "ナンバー取付・封印対応" },
     "会社設立": { officerCount: "関係者数", documentLevel: "定款・機関設計難易度", visit: "面談対応", agent: "公証人・司法書士連携調整" },
     "産業廃棄物収集運搬業許可": { industryCount: "運搬車両数", officeCount: "収集運搬先都道府県数", courseCompletion: "講習修了証", documentLevel: "許可要件整理難易度", visit: "現地確認", agent: "講習会・証明書取得支援" },
     "在留資格関連": { industryCount: "対象人数", renewalDeadline: "更新期限", documentLevel: "疎明資料作成難易度", visit: "本人面談対応", agent: "受入機関調整・追加資料対応" },
@@ -286,7 +304,7 @@
   async function waitForGyoseiApp(maxMs = 10000) { const start = Date.now(); while (Date.now() - start < maxMs) { if (window.GyoseiApp) return window.GyoseiApp; await new Promise(resolve => setTimeout(resolve, 100)); } return window.GyoseiApp || null; }
   async function waitForCurrentUser(app, maxMs = 10000) { const start = Date.now(); while (Date.now() - start < maxMs) { const u = app?.getCurrentUser?.(); if (u?.id) return u; await new Promise(resolve => setTimeout(resolve, 100)); } return app?.getCurrentUser?.() || null; }
 
-  function calculateBase(f) { const wt = f.workType.value; if (wt === "建設業許可") return BASE[`建設業許可|${f.corporateType.value}|${f.applicationType.value}|${f.governorType.value}`] || 0; if (wt === "宅建業免許") return BASE[`宅建業免許|${f.applicationType.value}`] || 0; if (wt === "創業融資") return BASE[`創業融資|${f.applicationType.value}`] || BASE["創業融資|事業計画書作成"] || 0; if (wt === "会社設立") return BASE[`会社設立|${f.applicationType.value}`] || BASE["会社設立|株式会社"] || 0; if (wt === "産業廃棄物収集運搬業許可") return BASE[`産業廃棄物収集運搬業許可|${f.applicationType.value}`] || BASE["産業廃棄物収集運搬業許可|新規"] || 0; if (wt === "在留資格関連") return BASE[`在留資格関連|${f.applicationType.value}`] || BASE["在留資格関連|認定"] || 0; if (wt === "古物商許可") return BASE[`古物商許可|${f.corporateType.value}`] || BASE["古物商許可|法人"] || 0; return BASE[wt] || 0; }
+  function calculateBase(f) { const wt = f.workType.value; if (wt === "建設業許可") return BASE[`建設業許可|${f.corporateType.value}|${f.applicationType.value}|${f.governorType.value}`] || 0; if (wt === "宅建業免許") return BASE[`宅建業免許|${f.applicationType.value}`] || 0; if (wt === "創業融資") return BASE[`創業融資|${f.applicationType.value}`] || BASE["創業融資|事業計画書作成"] || 0; if (wt === "ナンバープレート変更") return BASE[`ナンバープレート変更|${f.generalSpecific.value}`] || BASE["ナンバープレート変更|普通車"] || 0; if (wt === "会社設立") return BASE[`会社設立|${f.applicationType.value}`] || BASE["会社設立|株式会社"] || 0; if (wt === "産業廃棄物収集運搬業許可") return BASE[`産業廃棄物収集運搬業許可|${f.applicationType.value}`] || BASE["産業廃棄物収集運搬業許可|新規"] || 0; if (wt === "在留資格関連") return BASE[`在留資格関連|${f.applicationType.value}`] || BASE["在留資格関連|認定"] || 0; if (wt === "古物商許可") return BASE[`古物商許可|${f.corporateType.value}`] || BASE["古物商許可|法人"] || 0; return BASE[wt] || 0; }
   function calculateAddons(f) {
     const wt = f.workType.value; const addons = []; const add = (name, amount) => { if (amount > 0) addons.push({ name, amount }); }; const doc = f.documentLevel.value; const docMidHigh = (mid, high) => doc === "中" ? mid : (doc === "高" ? high : 0);
     switch (wt) {
@@ -299,6 +317,7 @@
       case "合同会社設立": add("社員数加算", Math.max(0, n(f.officerCount.value) - 1) * 5000); add("設計・確認事項加算", docMidHigh(10000, 20000)); add("急ぎ対応", n(f.urgent.value) ? 15000 : 0); add("許認可同時相談", n(f.visit.value) ? 20000 : 0); add("定款・登記連携調整", n(f.agent.value) ? 10000 : 0); break;
       case "創業融資": add("事業計画難易度", docMidHigh(20000, 40000)); add("急ぎ対応", n(f.urgent.value) ? 20000 : 0); add("資金繰り表作成", f.keikan.value === "高" ? 20000 : 0); add("面談対策強化", f.sengi.value === "高" ? 20000 : 0); add("補助金・許認可併用確認", f.zaisan.value === "高" ? 20000 : 0); add("面談同席", n(f.visit.value) ? 30000 : 0); add("追加資料作成", n(f.agent.value) ? 15000 : 0); break;
       case "車庫証明": add("台数加算", Math.max(0, n(f.industryCount.value) - 1) * 5000); add("図面・資料作成", docMidHigh(3000, 8000)); add("急ぎ対応", n(f.urgent.value) ? 5000 : 0); add("現地調査", n(f.visit.value) ? 5000 : 0); add("使用承諾等の取得支援", n(f.agent.value) ? 5000 : 0); break;
+      case "ナンバープレート変更": add("台数加算", Math.max(0, n(f.industryCount.value) - 1) * 10000); add("希望番号手配", f.applicationType.value.includes("希望番号") ? 5000 : 0); add("再交付・番号変更対応", f.applicationType.value === "再交付・番号変更" ? 3000 : 0); add("登録・車両資料整理", docMidHigh(5000, 10000)); add("急ぎ対応", n(f.urgent.value) ? 8000 : 0); add("車両持込・現地対応", n(f.visit.value) ? 8000 : 0); add("ナンバー取付・封印対応", n(f.agent.value) ? 10000 : 0); break;
       case "会社設立": add("関係者加算", Math.max(0, n(f.officerCount.value) - 2) * 5000); add("定款・機関設計", docMidHigh(10000, 25000)); add("急ぎ対応", n(f.urgent.value) ? 20000 : 0); add("面談対応", n(f.visit.value) ? 10000 : 0); add("公証人・司法書士連携調整", n(f.agent.value) ? 15000 : 0); break;
       case "産業廃棄物収集運搬業許可": add("車両台数加算", Math.max(0, n(f.industryCount.value) - 1) * 7000); add("都道府県加算", Math.max(0, n(f.officeCount.value) - 1) * 12000); add("要件整理", docMidHigh(20000, 40000)); add("急ぎ対応", n(f.urgent.value) ? 30000 : 0); add("現地確認", n(f.visit.value) ? 15000 : 0); add("講習会・証明書取得支援", n(f.agent.value) ? 15000 : 0); break;
       case "在留資格関連": add("対象人数加算", Math.max(0, n(f.industryCount.value) - 1) * 15000); add("疎明資料作成", docMidHigh(15000, 30000)); add("急ぎ対応", n(f.urgent.value) ? 20000 : 0); add("本人面談対応", n(f.visit.value) ? 10000 : 0); add("受入機関調整・追加資料対応", n(f.agent.value) ? 15000 : 0); break;
@@ -312,7 +331,7 @@
 
   async function init() {
     const root = document.getElementById("estimate-calculator-root"); if (!root) return;
-    root.innerHTML = `<form id="estimate-calc-form" class="form"><div class="grid cols-2"><label data-field="clientId">顧客<select name="clientId"></select></label><label data-field="projectName">案件名<input name="projectName" /></label><label data-field="workType">業務種別<select name="workType"><option>建設業許可</option><option>業種追加</option><option>決算変更届</option><option>各種変更届</option><option>宅建業免許</option><option>株式会社設立</option><option>合同会社設立</option><option>創業融資</option><option>車庫証明</option><option>会社設立</option><option>産業廃棄物収集運搬業許可</option><option>在留資格関連</option><option>古物商許可</option></select></label><label data-field="applicationType">申請区分<select name="applicationType"></select></label><label data-field="corporateType">法人/個人<select name="corporateType"><option>法人</option><option>個人</option></select></label><label data-field="governorType">知事/大臣<select name="governorType"><option>知事</option><option>大臣</option></select></label><label data-field="generalSpecific">一般/特定<select name="generalSpecific"><option>一般</option><option>特定</option></select></label><label data-field="industryCount">業種数<input name="industryCount" type="number" value="1" min="1" /></label><label data-field="officerCount">役員数<input name="officerCount" type="number" value="2" min="0" /></label><label data-field="officeCount">営業所数<input name="officeCount" type="number" value="1" min="1" /></label><label data-field="documentLevel">書類不足レベル<select name="documentLevel"><option>低</option><option>中</option><option>高</option></select></label><label data-field="urgent">急ぎ対応<select name="urgent"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="keikan">経管確認難易度<select name="keikan"><option>低</option><option>高</option></select></label><label data-field="sengi">専技確認難易度<select name="sengi"><option>低</option><option>高</option></select></label><label data-field="zaisan">財産要件確認難易度<select name="zaisan"><option>低</option><option>高</option></select></label><label data-field="visit">訪問対応<select name="visit"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="agent">代理取得<select name="agent"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="urlNotification">URL届出<select name="urlNotification"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="selfCertification">自認書<select name="selfCertification"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="usageConsent">使用承諾証明書<select name="usageConsent"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="baseLocationCheck">保管場所の本拠確認<select name="baseLocationCheck"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="qualifiedStaffCheck">専任者/資格者確認<select name="qualifiedStaffCheck"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="guaranteeAssociation">保証協会/営業保証金<select name="guaranteeAssociation"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="courseCompletion">講習修了証<select name="courseCompletion"><option value="0">未確認</option><option value="1">確認済</option></select></label><label data-field="renewalDeadline">更新期限<select name="renewalDeadline"><option value="0">通常</option><option value="1">期限迫る</option></select></label><label data-field="expense">実費<input name="expense" type="number" value="0" min="0" /></label><label data-field="discount">値引き<input name="discount" type="number" value="0" min="0" /></label></div><label data-field="memo">メモ<textarea name="memo"></textarea></label><div class="row-actions"><button type="button" id="calc-run" class="secondary-btn">再計算</button><button type="button" id="calc-save">保存</button><button type="button" id="calc-apply">見積へ反映</button></div><div id="calc-result" class="panel"></div></form><section class="panel" id="calc-saved-list-wrap"><h3>保存済み概算見積</h3><div id="calc-saved-list"></div></section>`;
+    root.innerHTML = `<form id="estimate-calc-form" class="form"><div class="grid cols-2"><label data-field="clientId">顧客<select name="clientId"></select></label><label data-field="projectName">案件名<input name="projectName" /></label><label data-field="workType">業務種別<select name="workType"><option>建設業許可</option><option>業種追加</option><option>決算変更届</option><option>各種変更届</option><option>宅建業免許</option><option>株式会社設立</option><option>合同会社設立</option><option>創業融資</option><option>車庫証明</option><option>ナンバープレート変更</option><option>会社設立</option><option>産業廃棄物収集運搬業許可</option><option>在留資格関連</option><option>古物商許可</option></select></label><label data-field="applicationType">申請区分<select name="applicationType"></select></label><label data-field="corporateType">法人/個人<select name="corporateType"><option>法人</option><option>個人</option></select></label><label data-field="governorType">知事/大臣<select name="governorType"><option>知事</option><option>大臣</option></select></label><label data-field="generalSpecific">一般/特定<select name="generalSpecific"><option>一般</option><option>特定</option></select></label><label data-field="industryCount">業種数<input name="industryCount" type="number" value="1" min="1" /></label><label data-field="officerCount">役員数<input name="officerCount" type="number" value="2" min="0" /></label><label data-field="officeCount">営業所数<input name="officeCount" type="number" value="1" min="1" /></label><label data-field="documentLevel">書類不足レベル<select name="documentLevel"><option>低</option><option>中</option><option>高</option></select></label><label data-field="urgent">急ぎ対応<select name="urgent"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="keikan">経管確認難易度<select name="keikan"><option>低</option><option>高</option></select></label><label data-field="sengi">専技確認難易度<select name="sengi"><option>低</option><option>高</option></select></label><label data-field="zaisan">財産要件確認難易度<select name="zaisan"><option>低</option><option>高</option></select></label><label data-field="visit">訪問対応<select name="visit"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="agent">代理取得<select name="agent"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="urlNotification">URL届出<select name="urlNotification"><option value="0">なし</option><option value="1">あり</option></select></label><label data-field="selfCertification">自認書<select name="selfCertification"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="usageConsent">使用承諾証明書<select name="usageConsent"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="baseLocationCheck">保管場所の本拠確認<select name="baseLocationCheck"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="qualifiedStaffCheck">専任者/資格者確認<select name="qualifiedStaffCheck"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="guaranteeAssociation">保証協会/営業保証金<select name="guaranteeAssociation"><option value="0">不要</option><option value="1">要確認</option></select></label><label data-field="courseCompletion">講習修了証<select name="courseCompletion"><option value="0">未確認</option><option value="1">確認済</option></select></label><label data-field="renewalDeadline">更新期限<select name="renewalDeadline"><option value="0">通常</option><option value="1">期限迫る</option></select></label><label data-field="expense">実費<input name="expense" type="number" value="0" min="0" /></label><label data-field="discount">値引き<input name="discount" type="number" value="0" min="0" /></label></div><label data-field="memo">メモ<textarea name="memo"></textarea></label><div class="row-actions"><button type="button" id="calc-run" class="secondary-btn">再計算</button><button type="button" id="calc-save">保存</button><button type="button" id="calc-apply">見積へ反映</button></div><div id="calc-result" class="panel"></div></form><section class="panel" id="calc-saved-list-wrap"><h3>保存済み概算見積</h3><div id="calc-saved-list"></div></section>`;
     root.querySelector('[data-field="documentLevel"]').outerHTML = renderWorkDifficultyField();
     root.querySelector('[data-field="keikan"]').insertAdjacentHTML("beforebegin", `<p id="construction-burden-notice" class="estimate-burden-notice" hidden>${h(CONSTRUCTION_BURDEN_NOTICE)}</p>`);
     CONSTRUCTION_BURDEN_FIELDS.forEach((fieldName) => {
@@ -536,9 +555,11 @@
       CONSTRUCTION_BURDEN_FIELDS.forEach((fieldName) => setOptions(form.elements[fieldName], burdenLevels, form.elements[fieldName].value));
       const currentApplication = keepApplicationValue ? form.elements.applicationType.value : '';
       setOptions(form.elements.applicationType, OPTION_SETS.applicationByWorkType[wt] || OPTION_SETS.applicationDefault, currentApplication);
+      const currentGeneralSpecific = keepApplicationValue ? form.elements.generalSpecific.value : '';
+      setOptions(form.elements.generalSpecific, OPTION_SETS.generalSpecificByWorkType[wt] || OPTION_SETS.generalSpecificDefault, currentGeneralSpecific);
       updateConstructionBurdenUi(wt, visible);
     };
-    const run = () => { applyWorkTypeUi(true); const f = form.elements; const base = calculateBase(f); const addons = calculateAddons(f); const addon = addons.reduce((s, x) => s + x.amount, 0), discount = n(f.discount.value), expense = n(f.expense.value), taxable = base + addon - discount; const tax = Math.floor(taxable * (app?.getTaxRate?.() ?? 0.1)), total = taxable + tax + expense; form.dataset.result = JSON.stringify({ base, addons, addon, discount, expense, tax, taxable, total }); root.querySelector('#calc-result').innerHTML = `<p>基本報酬: ${yen(base)}</p><p>加算明細: ${(addons.map(a => `${a.name} ${yen(a.amount)}`).join(' / ') || 'なし')}</p><p>値引き: ${yen(discount)}</p><p>実費: ${yen(expense)}</p><p>消費税: ${yen(tax)}</p><p><strong>合計: ${yen(total)}</strong></p><p class='meta'>${NOTICE}</p>`; };
+    const run = () => { applyWorkTypeUi(true); const f = form.elements; const base = calculateBase(f); const addons = calculateAddons(f); const addon = addons.reduce((s, x) => s + x.amount, 0), discount = n(f.discount.value), expense = n(f.expense.value), taxable = base + addon - discount; const tax = Math.floor(taxable * (app?.getTaxRate?.() ?? 0.1)), total = taxable + tax + expense; const expenseNotice = f.workType.value === "ナンバープレート変更" ? "<p class='meta'>ナンバープレート代、希望番号申込料、登録手数料、証明書取得費等は地域・種類に応じて実費欄へ入力してください。</p>" : ""; form.dataset.result = JSON.stringify({ base, addons, addon, discount, expense, tax, taxable, total }); root.querySelector('#calc-result').innerHTML = `<p>基本報酬: ${yen(base)}</p><p>加算明細: ${(addons.map(a => `${a.name} ${yen(a.amount)}`).join(' / ') || 'なし')}</p><p>値引き: ${yen(discount)}</p><p>実費: ${yen(expense)}</p><p>消費税: ${yen(tax)}</p><p><strong>合計: ${yen(total)}</strong></p>${expenseNotice}<p class='meta'>${NOTICE}</p>`; };
     const fillForm = (calc) => {
       const f = form.elements;
       const dynamic = calc?.permit_dynamic_answers && typeof calc.permit_dynamic_answers === 'object' ? calc.permit_dynamic_answers : {};
@@ -554,7 +575,7 @@
       if (Array.from(f.applicationType.options).some(o => o.value === calc.application_type)) f.applicationType.value = calc.application_type;
       f.corporateType.value = calc.corporate_type || "法人";
       f.governorType.value = calc.governor_type || "知事";
-      f.generalSpecific.value = calc.general_specific || "一般";
+      f.generalSpecific.value = calc.general_specific || (f.workType.value === "ナンバープレート変更" ? "普通車" : "一般");
       f.industryCount.value = n(calc.industry_count) || 1;
       f.officerCount.value = n(calc.officer_count) || 2;
       f.officeCount.value = n(calc.office_count) || 1;
@@ -652,6 +673,8 @@
         document_level: f.documentLevel.value,
         document_level_reason: reasonOrNull(f.documentLevelReason),
         urgent: n(f.urgent.value) > 0,
+        visit_required: n(f.visit.value) > 0,
+        agent_required: n(f.agent.value) > 0,
         keikan_level: f.keikan.value,
         sengi_level: f.sengi.value,
         zaisan_level: f.zaisan.value,
