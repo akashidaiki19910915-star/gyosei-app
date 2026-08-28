@@ -1088,7 +1088,7 @@ const RESTORE_MUTATION_COLUMNS = {
   permit_hearings: ["id", "user_id", "case_id", "scenario_key", "scenario_label", "industry_primary", "industry_secondary", "industry_notes", "preparation_status", "application_route", "corporation_plan", "applicant_name", "applicant_kana", "contact_name", "contact_tel", "contact_email", "office_name", "office_address", "office_postal_code", "business_type", "capital", "employees_count", "officers_count", "years_in_business", "fiscal_month", "insurance_joined", "construction_career_system", "social_insurance_notes", "requested_permissions", "existing_permits", "past_admin_dispositions", "documents", "tasks", "hearing_notes", "next_actions", "status", "updated_at"],
   estimates: ["user_id", "client_id", "customer_name", "estimate_title", "estimate_date", "valid_until", "status", "memo", "subtotal", "tax", "total", "estimate_source", "estimate_number", "case_id"],
   estimate_items: ["user_id", "estimate_id", "item_name", "item_type", "quantity", "unit_price", "amount", "memo", "sort_order"],
-  estimate_calculations: ["user_id", "client_id", "project_name", "work_type", "application_type", "corporate_type", "governor_type", "general_specific", "industry_count", "officer_count", "office_count", "document_level", "document_level_reason", "urgent", "keikan_level", "sengi_level", "zaisan_level", "keikan_reason", "sengi_reason", "zaisan_reason", "expense_amount", "discount_amount", "memo", "base_fee", "addon_fee", "taxable_subtotal", "tax", "total", "addon_breakdown", "reflected_estimate_id", "reflected_at"],
+  estimate_calculations: ["user_id", "client_id", "project_name", "work_type", "application_type", "corporate_type", "governor_type", "general_specific", "industry_count", "officer_count", "office_count", "document_level", "document_level_reason", "urgent", "visit_required", "agent_required", "keikan_level", "sengi_level", "zaisan_level", "keikan_reason", "sengi_reason", "zaisan_reason", "expense_amount", "discount_amount", "memo", "base_fee", "addon_fee", "taxable_subtotal", "tax", "total", "addon_breakdown", "reflected_estimate_id", "reflected_at"],
   daily_reports: ["user_id", "client_id", "case_id", "report_date", "interaction_type", "work_content", "work_minutes", "next_action", "next_action_date", "next_action_status", "next_action_completed_at", "memo"],
   app_settings: ["user_id", "office_name", "postal_code", "address", "tel", "email", "invoice_registration_number", "bank_info", "default_invoice_due_days", "tax_rate", "estimate_note", "invoice_note"],
 };
@@ -1416,6 +1416,7 @@ const PERMIT_SCENARIO_MASTER = {
   kei_hokan_todokede: { label: "軽自動車 保管場所届出", docs: ["保管場所届出書", "保管場所使用権原疎明書面", "保管場所所在図・配置図", "使用の本拠の位置確認資料", "車台番号情報"], tasks: ["届出要件確認", "保管場所情報確認", "必要書類回収", "届出書作成", "警察署届出・受領"] },
   jidousha_transfer: { label: "自動車 移転登録", docs: ["譲渡証明書", "委任状", "印鑑証明書", "車検証", "自動車保管場所証明書（必要時）"], tasks: ["登録要件確認", "必要書類案内", "書類回収・確認", "申請書作成", "運輸支局提出・補正対応"] },
   jidousha_change: { label: "自動車 変更登録", docs: ["変更登録申請書", "住民票/登記事項証明書", "車検証", "委任状", "自動車保管場所証明書（必要時）"], tasks: ["変更事項確認", "必要書類案内", "書類回収・確認", "申請書作成", "運輸支局提出・補正対応"] },
+  number_plate_change: { label: "ナンバープレート変更", docs: ["自動車検査証", "変更登録申請書または申請依頼書", "本人確認・住所変更の証明資料", "委任状", "希望番号予約済証（希望番号時）", "理由書・届出資料（紛失・盗難時）", "現在のナンバープレート（返納可能な場合）"], tasks: ["普通車・軽自動車区分確認", "変更理由確認", "管轄変更有無確認", "希望番号申込有無確認", "車庫証明要否確認", "必要書類回収・確認", "申請書作成", "車両持込方法確認", "運輸支局または軽自動車検査協会へ申請", "ナンバープレート返納・交付", "取付・封印対応"] },
   kk_teikan_ninsho: { label: "株式会社設立 定款作成・認証準備", docs: ["基本事項ヒアリングシート", "商号確認資料", "本店所在地確認資料", "事業目的案", "発起人情報", "役員情報", "出資内容", "定款案", "印鑑証明書", "本人確認資料", "司法書士連携用資料", "許認可要否確認メモ"], tasks: ["商号確認", "本店所在地確認", "事業目的確認", "許認可要否確認", "発起人確認", "役員確認", "資本金確認", "定款案作成", "公証役場または電子定款対応確認", "司法書士連携", "登記完了確認", "開業後の許認可・税務・社保導線案内"] },
   gk_teikan_check: { label: "合同会社設立 定款作成・設立前チェック", docs: ["基本事項ヒアリングシート", "商号確認資料", "本店所在地確認資料", "事業目的案", "発起人情報", "役員情報", "出資内容", "定款案", "印鑑証明書", "本人確認資料", "司法書士連携用資料", "許認可要否確認メモ"], tasks: ["定款作成", "定款認証不要の確認", "社員構成確認", "代表社員確認", "出資内容確認", "司法書士連携", "登記完了確認", "開業後の許認可・税務・社保導線案内"] },
   startup_finance_hearing: { label: "創業融資 事前ヒアリング", docs: ["創業計画書案", "資金繰り表", "自己資金確認資料", "見積書・契約予定資料", "事業実績資料（該当時）"], tasks: ["創業計画ヒアリング", "資金計画確認", "必要書類案内", "申込前チェック", "金融機関相談準備"] },
@@ -1432,6 +1433,9 @@ const WORK_TYPE_FIELD_SCHEMA = {
   default: [],
   automobile: [
     { name: "permitVehicleType", label: "普通車/軽自動車", type: "select", options: [{ value: "普通車", label: "普通車" }, { value: "軽自動車", label: "軽自動車" }] },
+    { name: "permitVehicleCount", label: "対象台数", type: "number", min: 1, value: 1 },
+    { name: "permitDesiredNumber", label: "希望番号", type: "select", options: [{ value: "なし", label: "なし" }, { value: "あり", label: "あり" }] },
+    { name: "permitPlateInstallation", label: "ナンバー取付・封印対応", type: "select", options: [{ value: "なし", label: "なし" }, { value: "あり", label: "あり" }] },
     { name: "permitVehicleNumber", label: "車両番号", type: "text", placeholder: "例: 大阪500 あ 12-34" },
     { name: "permitChassisNumber", label: "車台番号", type: "text", placeholder: "例: ABCD-1234567" },
     { name: "permitVehicleUser", label: "使用者", type: "text", placeholder: "例: 山田 太郎" },
@@ -1484,7 +1488,7 @@ const WORK_TYPE_FIELD_SCHEMA = {
   ],
 };
 const SCENARIO_WORK_TYPE_CONFIG = [
-  { key: "automobile", scenarios: ["shakoshomei_standard", "kei_hokan_todokede", "jidousha_transfer", "jidousha_change"] },
+  { key: "automobile", scenarios: ["shakoshomei_standard", "kei_hokan_todokede", "jidousha_transfer", "jidousha_change", "number_plate_change"] },
   { key: "construction", scenarios: ["construction_corp", "construction_solo", "keiei_shinsa_bidding"] },
   { key: "takken", scenarios: ["takken_corp", "takken_solo"] },
   { key: "kobutsu", scenarios: ["kobutsu_corp", "kobutsu_solo"] },
@@ -2027,7 +2031,12 @@ function resolvePermitEstimatePreset(hearing) {
   };
   let baseFee = 50000;
   let addon = 0;
-  if (category.includes("自動車") || category.includes("車庫証明")) {
+  if (category.includes("ナンバープレート") || category.includes("変更登録")) {
+    baseFee = dynamic.permitVehicleType === "軽自動車" ? 15000 : 22000;
+    addon += Math.max(0, Number(dynamic.permitVehicleCount || 1) - 1) * 10000;
+    if (dynamic.permitDesiredNumber === "あり") addon += 5000;
+    if (dynamic.permitPlateInstallation === "あり") addon += 10000;
+  } else if (category.includes("自動車") || category.includes("車庫証明")) {
     baseFee = category.includes("移転登録") ? 38000 : 28000;
     if (applicationType.includes("変更")) addon += 6000;
     if (dynamic.permitHasProxyLetter === "なし") addon += 4000;
@@ -2071,6 +2080,7 @@ function mapPermitCategoryToEstimateWorkType(category) {
   if (text.includes("建設")) return "建設業許可";
   if (text.includes("宅建")) return "宅建業免許";
   if (text.includes("産業廃棄物")) return "産業廃棄物収集運搬業許可";
+  if (text.includes("ナンバープレート") || text.includes("変更登録") || text.includes("number_plate")) return "ナンバープレート変更";
   if (text.includes("車庫証明") || text.includes("自動車") || text.includes("shako") || text.includes("automobile")) return "車庫証明";
   if (text.includes("古物") || text.includes("kobutsu")) return "古物商許可";
   if (text.includes("会社設立") || text.includes("company_establishment")) return "会社設立";
@@ -2096,16 +2106,21 @@ function mapPermitHearingToEstimateCalc(hearing, linkedCase) {
   const answers = hearing?.answers || parsedAnswerJson?.answers || hearing?.form_values || hearing?.entry || {};
   const dynamic = answers?.permitDynamicAnswers && typeof answers.permitDynamicAnswers === "object" ? answers.permitDynamicAnswers : {};
   const workType = mapPermitCategoryToEstimateWorkType(hearing?.permit_category || answers?.permitCategory || "");
+  const hearingApplicationType = hearing?.application_type || answers?.permitApplicationType || "新規";
+  const isPlateChange = workType === "ナンバープレート変更";
+  const plateApplicationType = dynamic.permitDesiredNumber === "あり"
+    ? (String(hearingApplicationType).includes("管轄") ? "管轄変更（希望番号）" : "希望番号への変更")
+    : (String(hearingApplicationType).includes("再交付") || String(hearingApplicationType).includes("紛失") ? "再交付・番号変更" : "管轄変更（通常番号）");
   return {
     source: "permit_hearing",
     source_hearing_id: hearing?.id || null,
     client_id: hearing?.client_id || linkedCase?.client_id || linkedCase?.clientId || "",
     project_name: hearing?.case_name || linkedCase?.case_name || linkedCase?.caseName || `${hearing?.permit_category || "許認可"} / ${hearing?.application_type || "新規"}`,
     work_type: workType,
-    application_type: hearing?.application_type || answers?.permitApplicationType || "新規",
+    application_type: isPlateChange ? plateApplicationType : hearingApplicationType,
     corporate_type: (hearing?.applicant_type || answers?.permitApplicantType) === "個人" ? "個人" : "法人",
     governor_type: String(dynamic.permitGovernorType || answers?.permitGovernorType || "").includes("大臣") ? "大臣" : "知事",
-    general_specific: String(dynamic.permitGeneralSpecific || answers?.permitGeneralSpecific || "").includes("特定") ? "特定" : "一般",
+    general_specific: isPlateChange ? (dynamic.permitVehicleType === "軽自動車" ? "軽自動車" : "普通車") : (String(dynamic.permitGeneralSpecific || answers?.permitGeneralSpecific || "").includes("特定") ? "特定" : "一般"),
     industry_count: Number(dynamic.permitBusinessTypes || dynamic.permitVehicleCount || 1),
     officer_count: Number(dynamic.permitOfficerCount || hearing?.officer_count || 2),
     office_count: Number(dynamic.permitOfficeCount || dynamic.permitOfficeNumber || 1),
@@ -2115,7 +2130,7 @@ function mapPermitHearingToEstimateCalc(hearing, linkedCase) {
     sengi_level: String(dynamic.permitSengiLevel || "").includes("高") ? "高" : (String(dynamic.permitSengiLevel || "").includes("中") ? "中" : "低"),
     zaisan_level: String(dynamic.permitZaisanLevel || "").includes("高") ? "高" : (String(dynamic.permitZaisanLevel || "").includes("中") ? "中" : "低"),
     visit_required: String(dynamic.permitVisitRequired || "") === "あり",
-    agent_required: String(dynamic.permitAgentRequired || "") === "あり",
+    agent_required: isPlateChange ? dynamic.permitPlateInstallation === "あり" : String(dynamic.permitAgentRequired || "") === "あり",
     expense_amount: 0,
     discount_amount: 0,
     memo: hearing?.memo || answers?.permitMemo || "",
